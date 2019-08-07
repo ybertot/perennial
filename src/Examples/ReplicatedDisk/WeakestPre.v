@@ -914,6 +914,67 @@ Proof.
   iNext. iIntros (?) "(?&?)". iApply "HΦ"; iFrame.
 Qed.
 
+(* If we know only disk 0 is active, then we can be certain a read from disk1 will fail *)
+Lemma wp_read_disk1_only_disk0' s E i v :
+  {{{ ▷ i d1◯↦ v ∗ ▷ is_OnlyDisk d0 }}}
+    read_disk d1 i @ s; E
+  {{{ RET None; i d1◯↦ v }}}.
+Proof.
+  iIntros (Φ) "(>Hi&#Hod) HΦ". iApply wp_lift_call_step.
+  iIntros ((n, σ)) "Hown".
+  iModIntro. iSplit.
+  { destruct s; auto. iPureIntro. apply snd_lift_non_err.
+    inversion 1; inv_step. repeat deex. inv_step.
+  }
+  iIntros (e2 (n2, σ2) Hstep) "!>".
+  inversion Hstep; subst.
+  inv_step.
+  iDestruct "Hown" as "(?&Hown)".
+  iDestruct "Hown" as (mems disk0 disk1) "(Hown_mem&Hown0&Hown1&Hstatus&Hp)".
+  iDestruct "Hp" as %(Heq_mem&Heq_disk&Hsize&?).
+  iDestruct (gen_heap_valid with "Hown1 Hi") as %Hin_bound.
+  simpl in Heq_disk. simpl.
+  iDestruct (disk_status_agree with "[$] [$]") as %Hstatus.
+  destruct Hstatus as (?&Heq). subst.
+  rewrite Heq in Heq_disk. subst.
+  - eapply disk_fail_only_one in Hhd; eauto. subst.
+    simpl. iFrame. iSplitR "Hi HΦ".
+    * iExists _, _, disk1. iFrame.
+      iFrame. simpl. intuition; eauto. subst.
+      iPureIntro.
+      split_and!; eauto.
+      subst; rewrite /maybe_fail_disk Heq => //=.
+      split_and!; intuition eauto with twodb.
+    * rewrite /lookup_disk/get_disk/TwoDisk.disk0/TwoDisk.disk1 ?Heq_state //=.
+      rewrite Heq. iApply "HΦ"; eauto.
+Qed.
+
+Lemma wp_read_disk1_only_disk0 s E i v :
+  {{{ ▷ i d1↦ v ∗ ▷ is_OnlyDisk d0 }}}
+    read_disk d1 i @ s; E
+  {{{ RET None; i d1↦ v }}}.
+Proof.
+  iIntros (Φ) "((>Hi&?)&?) HΦ".
+  iApply (wp_read_disk1_only_disk0' with "[$]").
+  iNext. iIntros "?". iApply "HΦ"; iFrame.
+Qed.
+
+Lemma wp_read_disk1_maybe_disk0 s E i v P :
+  {{{ ▷ i d1↦ v ∗ (P ∨ is_OnlyDisk d0) }}}
+    read_disk d1 i @ s; E
+  {{{ mv, RET mv;
+      i d1↦ v ∗ match mv with
+                | None => is_OnlyDisk d0
+                | Some v' => ⌜ v = v' ⌝ ∗ P
+                end }}}.
+Proof.
+  iIntros (Φ) "((>Hi&?)&[?|#?]) HΦ".
+  - iApply (wp_read_disk1 with "[$]").
+    iNext. iIntros (?) "(?&?)". iApply "HΦ". iFrame. destruct a; iFrame.
+  - iApply (wp_read_disk1_only_disk0' with "[$]").
+    iNext. iIntros "?". iApply "HΦ"; by iFrame.
+Qed.
+
 (* Once disk0 has failed, we can do a "ghost write" to it at any point *)
 Lemma wp_write_disk0_only1' {T} s E1 E2 i v v' (p: proc Op T) Φ:
   to_val p = None →

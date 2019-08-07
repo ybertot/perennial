@@ -30,6 +30,22 @@ Definition read (addr: nat) :=
    Ret v
    else (_ <- Ret tt; Ret 0))%proc.
 
+(* A lock free version of read. The idea is to read d1 first, before checking d0 *)
+
+Definition lock_free_read (addr: nat) :=
+  (if lt_dec addr size then
+   v <- (rd1 <- read_disk d1 addr;
+           match rd1 with
+           | Some v => Ret v
+           | None => rd0 <- read_disk d0 addr;
+             match rd0 with
+             | Some v => Ret v
+             | None => Ret 0
+             end
+           end);
+   Ret v
+   else (_ <- Ret tt; Ret 0))%proc.
+
 Definition fixup (a: addr) : proc Op unit :=
   (rd0 <- read_disk d0 a;
    match rd0 with
@@ -51,5 +67,13 @@ Definition impl : LayerImpl TwoDisk.Op OneDisk.Op :=
        match op with
        | OneDisk.Write_Disk a v => write a v
        | OneDisk.Read_Disk a => read a
+       end;
+     recover := Seq_Cons (recv) (Seq_Nil); |}.
+
+Definition lock_free_impl : LayerImpl TwoDisk.Op OneDisk.Op :=
+  {| compile_op T (op: OneDisk.Op T) :=
+       match op with
+       | OneDisk.Write_Disk a v => write a v
+       | OneDisk.Read_Disk a => lock_free_read a
        end;
      recover := Seq_Cons (recv) (Seq_Nil); |}.
