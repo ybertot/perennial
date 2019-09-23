@@ -49,6 +49,8 @@ Module Type refinement_type.
   Context (set_inv_reg: exmachG Σ → invG Σ → tregG Σ → exmachG Σ).
   Context (init_absr: Λa.(OpState) → Λc.(OpState) → Prop).
 
+  Context (data_rel: forall {_ : @cfgG OpT Λa Σ} {_: exmachG Σ} {T1 T2}, T1 -> T2 -> iProp Σ).
+
 End refinement_type.
 
 Module refinement_definitions (RT: refinement_type).
@@ -128,10 +130,11 @@ Module refinement_definitions (RT: refinement_type).
           post_finish (λ H, source_ctx ∗ source_state σ2a' ==∗ |={⊤}=> exec_inner Hcfg' H)).
 
   Definition refinement_base_triples_type :=
-             forall H1 H2 T1 T2 j K `{LanguageCtx OpT T1 T2 Λa K} (p: proc OpT T1) p',
+    forall H1 H2 T1 T1' T2 j K `{LanguageCtx OpT T1 T2 Λa K} (p: proc OpT T1)
+           (p': proc _ T1'),
                compile_rel_base p p' →
                j ⤇ K p ∗ Registered ∗ (@exec_inv H1 H2) ⊢
-                 WP p' {{ v, j ⤇ K (Ret v) ∗ Registered }}.
+                 WP p' {{ v, ∃ v', j ⤇ K (Ret v') ∗ data_rel _ _ _ _ v v' ∗ Registered }}.
 
 End refinement_definitions.
 
@@ -209,13 +212,14 @@ Module refinement (RT: refinement_type) (RO: refinement_obligations RT).
   Qed.
 
   Lemma refinement_triples:
-             forall {H1 H2 T1 T2} j K `{LanguageCtx OpT T1 T2 Λa K} (e: proc OpT T1) e',
+    forall {H1 H2 T1 T1' T2} j K `{LanguageCtx OpT T1 T2 Λa K} (e: proc OpT T1)
+           (e' : proc OpC T1'),
                wf_client e →
                compile_rel e e' →
                j ⤇ K e ∗ Registered ∗ (@exec_inv H1 H2) ⊢
-                 WP e' {{ v, j ⤇ K (Ret v) ∗ Registered }}.
+                 WP e' {{ v', ∃ v, j ⤇ K (Ret v) ∗ data_rel _ _ _ _ v' v ∗ Registered }}.
   Proof.
-    intros ???? j K Hctx e e' Hwf Hcompile.
+    intros ????? j K Hctx e e' Hwf Hcompile.
     iIntros "(Hj&Hreg&#Hinv)".
     iAssert (⌜∃ ea: State Λa, True⌝)%I as %[? _].
     {
@@ -226,23 +230,26 @@ Module refinement (RT: refinement_type) (RO: refinement_obligations RT).
     { eexists. eauto. }
     assert (Inhabited Λa.(OpState)).
     { eexists. destruct x; eauto. }
-    rename T2 into T2'.
-    iInduction Hcompile as [] "IH" forall (T2' j K Hctx Hwf).
+    rename T1 into T1a.
+    rename T2 into T2a.
+    iInduction Hcompile as [] "IH" forall (T2a j K Hctx Hwf).
     - iApply refinement_base_triples; eauto. by iFrame.
-    - wp_ret. iFrame.
+    - wp_ret. iExists _. iFrame. admit.
     - wp_bind.
       iApply wp_wand_l. iSplitL ""; last first.
       * unshelve (iApply ("IH1" $! _ j (fun x => K (Bind x p1')) with "[] [] [Hj]"); try iFrame).
         { iPureIntro. apply comp_ctx; auto. apply _. }
         { inversion Hwf; eauto. }
-      * iIntros (?) "(Hj&Hreg)".
+      * iIntros (?) "H".
+        iDestruct "H" as (v) "(Hj&Hrel&Hreg)".
         iDestruct (exec_inv_source_ctx with "Hinv") as "#Hctx".
         iMod (ghost_step_bind_ret with "Hj []") as "Hj".
         { set_solver+. }
         { eauto. }
-        iApply ("IH" with "[] [] Hj Hreg"); auto.
+        iApply ("IH" with "[] [] [] Hj Hreg"); auto.
+        { admit. }
         { iPureIntro. eapply Hwf. }
-    - iLöb as "IHloop" forall (init Hwf).
+    - iLöb as "IHloop" forall (init init' H Hwf).
       iDestruct (exec_inv_source_ctx with "Hinv") as "#Hctx".
       iMod (ghost_step_loop with "Hj []") as "Hj".
       { set_solver+. }
@@ -251,20 +258,23 @@ Module refinement (RT: refinement_type) (RO: refinement_obligations RT).
       iApply wp_wand_l.
       iSplitL ""; last first.
       * rewrite /loop1. simpl.
-        unshelve (iApply ("IH" $! _ _ _ (fun x => K (Bind x
+        unshelve (iApply ("IH" $! _ _ _ _ _ (fun x => K (Bind x
                                (fun out => match out with
                                | ContinueOutcome x => Loop b x
                                | DoneWithOutcome r => Ret r
                                end))) with "[] [] Hj Hreg")%proc).
+        { eauto. }
         { iPureIntro. apply comp_ctx; auto. apply _. }
         { simpl in Hwf. eauto. }
-      * iIntros (out) "(Hj&Hreg)".
-        destruct out.
+      * iIntros (out) "H".
+        iDestruct "H" as (v) "(Hj&Hrel&Hreg)".
+        destruct out. destruct v.
         ** iNext.
            iMod (ghost_step_bind_ret with "Hj []") as "Hj".
            { set_solver+. }
            { eauto. }
-           iApply ("IHloop" with "[] Hj Hreg").
+           iApply ("IHloop" with "[] [] Hj Hreg").
+           { admit. }
            { eauto. }
         ** iNext.
            iMod (ghost_step_bind_ret with "Hj []") as "Hj".
