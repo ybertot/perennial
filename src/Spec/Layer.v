@@ -106,13 +106,13 @@ Inductive compile_rel Op C_Op `(impl: LayerImplRel C_Op Op) sTy
                 reln sTy w' x y ->
                 compile_rel impl sTy w' (p1' x) (p2' y)) ->
     compile_rel impl sTy w (Bind p1 p1') (Bind p2 p2')
-(*
-| cr_loop {T1 T2 R1 R2} (b: T1 -> proc Op (LoopOutcome T1 R1))
+| cr_loop {T1 T2 R1 R2} w (b: T1 -> proc Op (LoopOutcome T1 R1))
                     (b': T2 -> proc C_Op (LoopOutcome T2 R2)) init init':
-    R _ _ init init' ->
-    (forall mt mt', R _ _ mt mt' -> compile_rel impl R (b mt) (b' mt')) ->
-    compile_rel impl R (Loop b init) (Loop b' init')
-*)
+    reln sTy w init init' ->
+    (forall w' mt mt', wimpl sTy w' w ->
+                       reln sTy w' mt mt' ->
+                       compile_rel impl sTy w' (b mt) (b' mt')) ->
+    compile_rel impl sTy w (Loop b init) (Loop b' init')
 | cr_unregister w:
     compile_rel impl sTy w Unregister Unregister
 | cr_wait w:
@@ -127,23 +127,21 @@ Inductive compile_rel_whole Op C_Op `(impl: LayerImplRel C_Op Op) sTy T1 T2 w:
     compile_rel impl sTy w p p' ->
     compile_rel_whole impl sTy w p (Bind p' (fun v => _ <- Wait; Ret v))%proc.
 
-(*
-Inductive compile_rel_proc_seq {T1 T2 Op C_Op} `(impl: LayerImplRel C_Op Op)
-          (R: forall T1 T2, T1 -> T2 -> Prop):
+Inductive compile_rel_proc_seq {T1 T2 Op C_Op} `(impl: LayerImplRel C_Op Op) sTy w:
   proc_seq Op T1 -> proc_seq C_Op T2 -> Prop :=
 | cr_seq_nil (v: T1) (v': T2):
-    R _ _ v v' ->
-    compile_rel_proc_seq impl R (Proc_Seq_Nil v) (Proc_Seq_Nil v')
+    reln sTy w v v' ->
+    compile_rel_proc_seq impl sTy w (Proc_Seq_Nil v) (Proc_Seq_Nil v')
 | cr_seq_cons {T' T2'} (p: proc Op T') (p': proc C_Op T2') f f':
-    compile_rel_whole impl R p p' ->
-    (forall x y, R _ _ x y -> compile_rel_proc_seq impl R (f x) (f' y)) ->
-    compile_rel_proc_seq impl R (Proc_Seq_Bind p f) (Proc_Seq_Bind p' f').
+    compile_rel_whole impl sTy w p p' ->
+    (forall w' x y, wimpl sTy w' w ->
+        reln sTy w' x y ->
+        compile_rel_proc_seq impl sTy w (f x) (f' y)) ->
+    compile_rel_proc_seq impl sTy w (Proc_Seq_Bind p f) (Proc_Seq_Bind p' f').
 
 Definition LayerImpl_to_LayerImplRel {C_Op Op} (impl: LayerImpl C_Op Op): LayerImplRel C_Op Op :=
   {|
-    compile_rel_base {T1 T2} :=
-      fun p p' => exists (pf : T1 = T2) (op: Op T1),
+    compile_rel_base sTy {T1 T2} :=
+      fun w p p' => exists (pf : T1 = T2) (op: Op T1),
           eq_rect_r _ (fun p' => p = Call op /\ p' = compile impl (Call op)) (eq_sym pf) p';
      recover_rel := recover impl |}.
-
-*)
