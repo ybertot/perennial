@@ -134,7 +134,7 @@ Module refinement_definitions (RT: refinement_type).
           ∀ `{Hcfg': cfgG OpT Λa Σ},
           post_finish (λ H, source_ctx ∗ source_state σ2a' ==∗ |={⊤}=> exec_inner Hcfg' H)).
 
-  Definition iTy_world := forall {_ : @cfgG OpT Λa Σ} {_: exmachG Σ}, iProp Σ.
+  Definition iTy_world := forall (_ : @cfgG OpT Λa Σ) {_: exmachG Σ}, iProp Σ.
   Definition iTy_reln :=
     λ T1 T2 (w: iTy_world) v1 v2, (∀ H1 H2, □ w _ _ ⊢ data_rel H1 H2 T1 T2 v1 v2).
   Definition iTy_wimpl (w1 w2: iTy_world) := ∀ H1 H2, □ w1 H1 H2 ⊢ □ w2 H1 H2.
