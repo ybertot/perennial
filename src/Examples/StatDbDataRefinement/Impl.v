@@ -1,7 +1,7 @@
 From Coq Require Import List.
 
 Require Import ExMach.ExMachAPI.
-From Perennial Require Export Lib Spec.TypedLayer.
+From Perennial Require Export Lib.
 
 
 Module DB.
@@ -36,20 +36,8 @@ Module DB.
     dynamics.(crash_step) s ret -> ret ≠ Err.
   Proof. inversion 1; congruence. Qed.
 
-  Print TypedLayer.
-
-  Inductive OpTy :=
-    | dbTy | natTy.
-
-  Inductive has_type : forall T, Op T -> OpTy -> Prop :=
-    | NewType : has_type New dbTy
-    | AddType db n : has_type (Add db n) dbTy
-    | AvgType db: has_type (Avg db) natTy.
-
-  Definition l : TypedLayer Op :=
-    {| TypedLayer.OpState := State;
-       TypedLayer.OpTy := OpTy;
-       op_has_type := has_type;
+  Definition l : Layer Op :=
+    {| Layer.OpState := State;
        sem := dynamics;
        trace_proj := fun _ => nil;
        crash_preserves_trace := fun _ _ _ => eq_refl;
@@ -64,21 +52,18 @@ Definition new : proc ExMach.Op _ := Ret (0, 0).
 Definition add db n : proc ExMach.Op _ := (Ret (n + fst db, 1 + snd db))%proc.
 Definition avg db : proc ExMach.Op _ := (Ret (fst db / snd db)).
 
-Inductive compile_stat_val : forall T1 T2, T1 -> T2 -> Prop :=
-  | compile_val_refl {T} (x : T) : compile_stat_val x x.
-
-Inductive compile_stat_base : forall T1 T2, proc DB.Op T1 -> proc ExMach.Op T2 -> Prop :=
-  | new_compile : compile_stat_base (Call DB.New) new
-  | add_compile db db' n:
-      compile_stat_val db db' ->
-      compile_stat_base (Call (DB.Add db n)) (add db' n)
-  | avg_compile db db':
-      compile_stat_val db db' ->
-      compile_stat_base (Call (DB.Avg db)) (avg db').
+Inductive compile_stat_base sTy :
+  forall T1 T2, world sTy -> proc DB.Op T1 -> proc ExMach.Op T2 -> Prop :=
+  | new_compile w : compile_stat_base sTy w (Call DB.New) new
+  | add_compile w db db' n:
+      reln sTy w db db' ->
+      compile_stat_base sTy w (Call (DB.Add db n)) (add db' n)
+  | avg_compile w db db':
+      reln sTy w db db' ->
+      compile_stat_base sTy w (Call (DB.Avg db)) (avg db').
 
 Definition impl : LayerImplRel ExMach.Op DB.Op :=
   {| compile_rel_base := compile_stat_base;
-     compile_rel_val := compile_stat_val;
      recover_rel := Seq_Cons (Ret tt) (Seq_Nil); |}.
 
 
@@ -88,8 +73,8 @@ Import DB.
 Definition test00 :=
   (db <- Call New; db <- Call (Add db 2); db <- Call (Add db 4); Call (Avg db))%proc.
 
-Lemma test00_compile :
-  exists (e': proc _ nat), compile_rel impl test00 e'.
+Lemma test00_compile sTy w :
+  exists (e': proc _ nat), compile_rel impl sTy w test00 e'.
 Proof.
   eexists.
   eapply cr_bind; intros.

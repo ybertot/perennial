@@ -72,64 +72,78 @@ Definition compile_rec Op C_Op `(impl: LayerImpl C_Op Op) (rec: rec_seq Op) : re
    procs in the layer below. We represent these translations as relations instead of functions.
    This is fine because we use these for Goose layers, where we don't need to literally
    extract the compile translation as runnable code *)
+
+Record semTy :=
+  {
+    world : Type;
+    init : world;
+    wimpl : world -> world -> Prop;
+    wimpl_PreOrd : RelationClasses.PreOrder wimpl;
+    reln : forall T1 T2, world -> T1 -> T2 -> Prop;
+    reln_compat:
+      forall w1 w2, wimpl w1 w2 -> forall T1 T2 t1 t2, @reln T1 T2 w2 t1 t2 -> reln w1 t1 t2
+  }.
+
+
 Record LayerImplRel C_Op Op :=
   {
-    compile_rel_val {T1 T2}: T1 -> T2 -> Prop;
-    compile_rel_base {T1 T2} : proc Op T1 -> proc C_Op T2 -> Prop;
+    compile_rel_base (sTy : semTy) {T1 T2} : world sTy -> proc Op T1 -> proc C_Op T2 -> Prop;
     recover_rel: rec_seq C_Op;
   }.
 
-Inductive compile_rel Op C_Op `(impl: LayerImplRel C_Op Op): forall T1 T2,
-  proc Op T1 -> proc C_Op T2 -> Prop :=
-| cr_base {T1 T2} (p1: proc Op T1) (p2: proc C_Op T2):
-    impl.(compile_rel_base) p1 p2 ->
-    compile_rel impl p1 p2
-| cr_ret {T} (v: T): compile_rel impl (Ret v) (Ret v)
-| cr_bind {T1 T1' T2 T2'} (p1: proc Op T1) (p1': forall T1, proc Op T1')
+Inductive compile_rel Op C_Op `(impl: LayerImplRel C_Op Op) sTy
+  : forall T1 T2, world sTy -> proc Op T1 -> proc C_Op T2 -> Prop :=
+| cr_base {T1 T2} w (p1: proc Op T1) (p2: proc C_Op T2):
+    impl.(compile_rel_base) sTy w p1 p2 ->
+    compile_rel impl sTy w p1 p2
+| cr_ret {T1 T2} w (v1: T1) (v2: T2):
+    reln sTy w v1 v2 ->
+    compile_rel impl sTy w (Ret v1) (Ret v2)
+| cr_bind {T1 T1' T2 T2'} w (p1: proc Op T1) (p1': forall T1, proc Op T1')
                           (p2: proc C_Op T2) (p2': forall T2, proc C_Op T2'):
-    compile_rel impl p1 p2 ->
-    (forall x y, compile_rel_val impl x y -> compile_rel impl (p1' x) (p2' y)) ->
-    compile_rel impl (Bind p1 p1') (Bind p2 p2')
+    compile_rel impl sTy w p1 p2 ->
+    (forall w' x y, wimpl sTy w' w ->
+                reln sTy w' x y ->
+                compile_rel impl sTy w' (p1' x) (p2' y)) ->
+    compile_rel impl sTy w (Bind p1 p1') (Bind p2 p2')
+(*
 | cr_loop {T1 T2 R1 R2} (b: T1 -> proc Op (LoopOutcome T1 R1))
                     (b': T2 -> proc C_Op (LoopOutcome T2 R2)) init init':
-    compile_rel_val impl init init' ->
-    (forall mt mt', compile_rel_val impl mt mt' -> compile_rel impl (b mt) (b' mt')) ->
-    compile_rel impl (Loop b init) (Loop b' init')
-| cr_unregister:
-    compile_rel impl Unregister Unregister
-| cr_wait:
-    compile_rel impl Wait Wait
-| cr_spawn {T1 T2} (p: proc Op T1) (p': proc C_Op T2):
-    compile_rel impl p p' ->
-    compile_rel impl (Spawn p) (Spawn p').
+    R _ _ init init' ->
+    (forall mt mt', R _ _ mt mt' -> compile_rel impl R (b mt) (b' mt')) ->
+    compile_rel impl R (Loop b init) (Loop b' init')
+*)
+| cr_unregister w:
+    compile_rel impl sTy w Unregister Unregister
+| cr_wait w:
+    compile_rel impl sTy w Wait Wait
+| cr_spawn {T1 T2} w (p: proc Op T1) (p': proc C_Op T2):
+    compile_rel impl sTy w p p' ->
+    compile_rel impl sTy w (Spawn p) (Spawn p').
 
-Inductive compile_rel_whole Op C_Op `(impl: LayerImplRel C_Op Op) T1 T2:
+Inductive compile_rel_whole Op C_Op `(impl: LayerImplRel C_Op Op) sTy T1 T2 w:
   proc Op T1 -> proc C_Op T2 -> Prop :=
 | cr_whole p p':
-    compile_rel impl p p' ->
-    compile_rel_whole impl p (Bind p' (fun v => _ <- Wait; Ret v))%proc.
+    compile_rel impl sTy w p p' ->
+    compile_rel_whole impl sTy w p (Bind p' (fun v => _ <- Wait; Ret v))%proc.
 
-Inductive compile_rel_proc_seq {T1 T2 Op C_Op} `(impl: LayerImplRel C_Op Op):
+(*
+Inductive compile_rel_proc_seq {T1 T2 Op C_Op} `(impl: LayerImplRel C_Op Op)
+          (R: forall T1 T2, T1 -> T2 -> Prop):
   proc_seq Op T1 -> proc_seq C_Op T2 -> Prop :=
 | cr_seq_nil (v: T1) (v': T2):
-    compile_rel_val impl v v' ->
-    compile_rel_proc_seq impl (Proc_Seq_Nil v) (Proc_Seq_Nil v')
+    R _ _ v v' ->
+    compile_rel_proc_seq impl R (Proc_Seq_Nil v) (Proc_Seq_Nil v')
 | cr_seq_cons {T' T2'} (p: proc Op T') (p': proc C_Op T2') f f':
-    compile_rel_whole impl p p' ->
-    (forall x y, compile_rel_val impl x y -> compile_rel_proc_seq impl (f x) (f' y)) ->
-    compile_rel_proc_seq impl (Proc_Seq_Bind p f) (Proc_Seq_Bind p' f').
-
-Definition compile_rel_val_eq {T1 T2} : T1 -> T2 -> Prop.
-Proof.
-  intros x y.
-  refine (exists (pf: T1 = T2), _).
-  subst. apply (x = y).
-Defined.
+    compile_rel_whole impl R p p' ->
+    (forall x y, R _ _ x y -> compile_rel_proc_seq impl R (f x) (f' y)) ->
+    compile_rel_proc_seq impl R (Proc_Seq_Bind p f) (Proc_Seq_Bind p' f').
 
 Definition LayerImpl_to_LayerImplRel {C_Op Op} (impl: LayerImpl C_Op Op): LayerImplRel C_Op Op :=
   {|
-    compile_rel_val T1 T2 := compile_rel_val_eq;
     compile_rel_base {T1 T2} :=
       fun p p' => exists (pf : T1 = T2) (op: Op T1),
           eq_rect_r _ (fun p' => p = Call op /\ p' = compile impl (Call op)) (eq_sym pf) p';
      recover_rel := recover impl |}.
+
+*)
