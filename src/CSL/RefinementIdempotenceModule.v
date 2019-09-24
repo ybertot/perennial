@@ -24,9 +24,7 @@ Module Type refinement_type.
   Context (exmachG : gFunctors → Type).
   Existing Class exmachG.
   Notation compile_rel_base := (compile_rel_base impl).
-  (*
   Notation compile_rel_proc_seq := (compile_rel_proc_seq impl).
-   *)
   Notation compile_rel := (compile_rel impl).
   Notation recover := (recover_rel impl).
   Notation compile_proc_seq := (compile_proc_seq impl).
@@ -55,6 +53,18 @@ Module Type refinement_type.
   Context (data_rel: forall {_ : @cfgG OpT Λa Σ} {_: exmachG Σ} {T1 T2}, T1 -> T2 -> iProp Σ).
   Context (data_rel_Pers: ∀ H1 H2 T1 T2 t1 t2, Persistent (data_rel H1 H2 T1 T2 t1 t2)).
   Context (data_rel_unit: ∀ H1 H2, data_rel H1 H2 _ _ () ()).
+
+  (* The data relation has to imply that related loop outcomes either both continue
+     or both are done, in each case with relaed values *)
+  Context (data_rel_loop: ∀ H1 H2 T1 R1 T2 R2 (b1: LoopOutcome T1 R1) (b2: LoopOutcome T2 R2),
+              data_rel H1 H2 _ _ b1 b2 -∗
+                       match b1, b2 with
+                       | ContinueOutcome t1, ContinueOutcome t2 =>
+                         data_rel H1 H2 _ _ t1 t2
+                       | DoneWithOutcome r1, DoneWithOutcome r2 =>
+                         data_rel H1 H2 _ _ r1 r2
+                       | _, _ => False
+                       end).
 
 End refinement_type.
 
@@ -292,8 +302,10 @@ Module refinement (RT: refinement_type) (RO: refinement_obligations RT).
         { iPureIntro. eapply Hwf. }
         iDestruct "Hrel" as "#Hrel".
         iAlways. iFrame "#".
-        (*
-    - iLöb as "IHloop" forall (init init' H Hwf).
+    - iDestruct "Hw" as "#Hw".
+      iRevert "Hw IH".
+      iLöb as "IHloop" forall (init init' w H H0 Hwf).
+      iIntros "#Hw #IH".
       iDestruct (exec_inv_source_ctx with "Hinv") as "#Hctx".
       iMod (ghost_step_loop with "Hj []") as "Hj".
       { set_solver+. }
@@ -302,30 +314,50 @@ Module refinement (RT: refinement_type) (RO: refinement_obligations RT).
       iApply wp_wand_l.
       iSplitL ""; last first.
       * rewrite /loop1. simpl.
-        unshelve (iApply ("IH" $! _ _ _ _ _ (fun x => K (Bind x
+        unshelve (iApply ("IH" $! (λ H1 H2, w _ _ ∗ data_rel H1 H2 _ _ init init')%I _ _
+                               _ _ _ _
+                               (fun x => K (Bind x
                                (fun out => match out with
                                | ContinueOutcome x => Loop b x
                                | DoneWithOutcome r => Ret r
                                end))) with "[] [] Hj Hreg")%proc).
-        { eauto. }
+        { iIntros (??) "(?&?)". eauto. }
+        { iIntros (??) "(?&?)". eauto. }
         { iPureIntro. apply comp_ctx; auto. apply _. }
         { simpl in Hwf. eauto. }
+        { iAlways. iFrame "Hw". iApply H. eauto. }
       * iIntros (out) "H".
         iDestruct "H" as (v) "(Hj&Hrel&Hreg)".
-        destruct out. destruct v.
+        destruct out as [t2|r2]; destruct v as [t1|r1].
         ** iNext.
            iMod (ghost_step_bind_ret with "Hj []") as "Hj".
            { set_solver+. }
            { eauto. }
-           iApply ("IHloop" with "[] [] Hj Hreg").
-           { admit. }
+           iApply ("IHloop" $! t1 t2 (λ H1 H2, w _ _ ∗ data_rel H1 H2 _ _ t1 t2)%I
+                     with "[] [] [] Hj Hreg [Hrel] []").
+           { iPureIntro. iIntros (??) "(?&?)". eauto. }
+           { iPureIntro. intros. eapply H0; eauto. etransitivity; eauto.
+             iIntros (??) "(?&?)"; eauto. }
            { eauto. }
-        ** iNext.
-           iMod (ghost_step_bind_ret with "Hj []") as "Hj".
+           { iDestruct "Hrel" as "#Hrel". iAlways. iFrame "Hw".
+             iApply (data_rel_loop with "Hrel").
+           }
+           { iAlways. iIntros (w' ????). iIntros.
+             iApply ("IH" $! (λ H1 H2, w H1 H2 ∗ w' H1 H2)%I with "[] [] [] [] [$] [$]").
+             { iPureIntro. iIntros (??) "(?&?)". by iFrame. }
+             { iPureIntro. iIntros (??) "(?&?)". iApply a2. eauto. }
+             { eauto. }
+             { eauto. }
+             { iAlways. iFrame "#". }
+           }
+       ** iExFalso. iApply (data_rel_loop with "[$]").
+       ** iExFalso. iApply (data_rel_loop with "[$]").
+       ** iNext.
+          iDestruct (data_rel_loop with "[$]") as "H".
+          iMod (ghost_step_bind_ret with "Hj []") as "Hj".
            { set_solver+. }
            { eauto. }
-           wp_ret. iFrame.
-         *)
+           wp_ret. iExists _. iFrame.
    - inversion Hwf.
    - inversion Hwf.
    - iDestruct (exec_inv_source_ctx with "Hinv") as "#Hctx".
