@@ -73,7 +73,7 @@ Definition compile_rec Op C_Op `(impl: LayerImpl C_Op Op) (rec: rec_seq Op) : re
    This is fine because we use these for Goose layers, where we don't need to literally
    extract the compile translation as runnable code *)
 
-Record semTy :=
+Record semTy (base: forall T1 T2, T1 -> T2 -> Prop) :=
   {
     world : Type;
     init : world;
@@ -81,13 +81,24 @@ Record semTy :=
     wimpl_PreOrd : RelationClasses.PreOrder wimpl;
     reln : forall T1 T2, world -> T1 -> T2 -> Prop;
     reln_compat:
-      forall w1 w2, wimpl w1 w2 -> forall T1 T2 t1 t2, @reln T1 T2 w2 t1 t2 -> reln w1 t1 t2
+      forall w1 w2, wimpl w1 w2 -> forall T1 T2 t1 t2, @reln T1 T2 w2 t1 t2 -> reln w1 t1 t2;
+    reln_intro:
+      forall w T1 T2 v1 v2,
+        base _ _ v1 v2 ->
+        @reln T1 T2 w v1 v2;
+    reln_elim:
+      forall w T1 T2 v1 v2 T1' T2' v1' v2',
+        @reln T1' T2' w v1' v2' ->
+        (base _ _ v1' v2' -> @reln T1 T2 w v1 v2) ->
+        @reln T1 T2 w v1 v2
   }.
 
 
 Record LayerImplRel C_Op Op :=
   {
-    compile_rel_base (sTy : semTy) {T1 T2} : world sTy -> proc Op T1 -> proc C_Op T2 -> Prop;
+    compile_rel_val {T1 T2} : T1 -> T2 -> Prop;
+    compile_rel_base (sTy : semTy (@compile_rel_val)) {T1 T2} :
+      world sTy -> proc Op T1 -> proc C_Op T2 -> Prop;
     recover_rel: rec_seq C_Op;
   }.
 
@@ -130,7 +141,7 @@ Inductive compile_rel_whole Op C_Op `(impl: LayerImplRel C_Op Op) sTy T1 T2 w:
 Inductive compile_rel_proc_seq {T1 T2 Op C_Op} `(impl: LayerImplRel C_Op Op) sTy w:
   proc_seq Op T1 -> proc_seq C_Op T2 -> Prop :=
 | cr_seq_nil (v: T1) (v': T2):
-    reln sTy w v v' ->
+    (reln sTy w v v' \/ compile_rel_val impl v v') ->
     compile_rel_proc_seq impl sTy w (Proc_Seq_Nil v) (Proc_Seq_Nil v')
 | cr_seq_cons {T' T2'} (p: proc Op T') (p': proc C_Op T2') f f':
     compile_rel_whole impl sTy w p p' ->
@@ -141,6 +152,7 @@ Inductive compile_rel_proc_seq {T1 T2 Op C_Op} `(impl: LayerImplRel C_Op Op) sTy
 
 Definition LayerImpl_to_LayerImplRel {C_Op Op} (impl: LayerImpl C_Op Op): LayerImplRel C_Op Op :=
   {|
+    compile_rel_val {T1 T2} v1 v2 := forall pf: T1 = T2, v1 = eq_rect_r _ v2 pf;
     compile_rel_base sTy {T1 T2} :=
       fun w p p' => exists (pf : T1 = T2) (op: Op T1),
           eq_rect_r _ (fun p' => p = Call op /\ p' = compile impl (Call op)) (eq_sym pf) p';

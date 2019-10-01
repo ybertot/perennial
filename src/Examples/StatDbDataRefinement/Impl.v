@@ -52,7 +52,11 @@ Definition new : proc ExMach.Op _ := Ret (0, 0).
 Definition add db n : proc ExMach.Op _ := (Ret (n + fst db, 1 + snd db))%proc.
 Definition avg db : proc ExMach.Op _ := (Ret (fst db / snd db)).
 
-Inductive compile_stat_base sTy :
+Inductive compile_stat_val : forall T1 T2, T1 -> T2 -> Prop :=
+  | rel_nat_eq (n1 n2: nat): n1 = n2 -> compile_stat_val n1 n2
+  | rel_bool_eq (b1 b2: bool): b1 = b2 -> compile_stat_val b1 b2.
+
+Inductive compile_stat_base (sTy: semTy compile_stat_val) :
   forall T1 T2, world sTy -> proc DB.Op T1 -> proc ExMach.Op T2 -> Prop :=
   | new_compile w : compile_stat_base sTy w (Call DB.New) new
   | add_compile w db db' n:
@@ -63,7 +67,8 @@ Inductive compile_stat_base sTy :
       compile_stat_base sTy w (Call (DB.Avg db)) (avg db').
 
 Definition impl : LayerImplRel ExMach.Op DB.Op :=
-  {| compile_rel_base := compile_stat_base;
+  {| compile_rel_val := compile_stat_val;
+     compile_rel_base := compile_stat_base;
      recover_rel := Seq_Cons (Ret tt) (Seq_Nil); |}.
 
 
@@ -84,4 +89,35 @@ Proof.
   eapply cr_bind; intros.
   { repeat econstructor. eauto. }
   repeat econstructor. eauto.
+Qed.
+
+Definition test01 :=
+  (db <- Call New; db <- Call (Add db 2); db <- Call (Add db 4); avg <- Call (Avg db); Ret (avg + 4))%proc.
+
+Require Import Coq.Program.Equality.
+
+Lemma test01_compile sTy w :
+  exists (e': proc _ nat), compile_rel impl sTy w test01 e'.
+Proof.
+  eexists.
+  eapply cr_bind; intros.
+  { repeat econstructor. }
+  eapply cr_bind; intros.
+  { repeat econstructor. eauto. }
+  eapply cr_bind; intros.
+  { repeat econstructor. eauto. }
+  eapply cr_bind; intros.
+  { repeat econstructor. eauto. }
+  eapply cr_ret.
+  Unshelve. 2: {
+    idtac. exact (y2+4).
+  }
+  eapply reln_elim; eauto; intros Hrel.
+  simpl in Hrel.
+  dependent destruction Hrel.
+  -  eapply reln_intro. econstructor. eauto.
+  -  assert (x2 = y2) as ->.
+     {  apply JMeq_eq. etransitivity. symmetry. eauto.
+        subst. eauto. }
+     eapply reln_intro. econstructor. eauto.
 Qed.

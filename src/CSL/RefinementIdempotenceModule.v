@@ -66,6 +66,11 @@ Module Type refinement_type.
                        | _, _ => False
                        end).
 
+  (* The data relation must imply the "base" value relation specified by compilation. *)
+  Context (data_rel_val: ∀ H1 H2 T1 T2 v1 v2,
+              data_rel H1 H2 T1 T2 v1 v2 -∗
+              ⌜ compile_rel_val impl v1 v2 ⌝).
+
 End refinement_type.
 
 Module refinement_definitions (RT: refinement_type).
@@ -158,6 +163,40 @@ Module refinement_definitions (RT: refinement_type).
     iApply Hi. iApply H. eauto.
   Qed.
 
+  Lemma iTy_reln_intro:
+    forall w T1 T2 v1 v2,
+      compile_rel_val impl v1 v2 ->
+      @iTy_reln T1 T2 w v1 v2.
+  Proof.
+    rewrite /iTy_reln. intros.
+    admit.
+  Admitted.
+
+  Lemma iTy_reln_elim:
+    forall w T1 T2 v1 v2 T1' T2' v1' v2',
+      @iTy_reln T1' T2' w v1' v2' ->
+      (compile_rel_val impl v1' v2' -> @iTy_reln T1 T2 w v1 v2) ->
+      @iTy_reln T1 T2 w v1 v2.
+  Proof.
+    rewrite /iTy_reln. intros.
+    iIntros "#HW".
+    iDestruct (H with "[$]") as "Hrel".
+    iDestruct (data_rel_val with "Hrel") as %Hval.
+    iApply H0; eauto.
+  Qed.
+
+  Lemma iTy_reln_elim:
+    forall w T1 T2 v1 v2,
+      ((forall T1 T2 v1 v2, @iTy_reln T1 T2 w v1 v2 <-> compile_rel_val impl v1 v2)
+       -> @iTy_reln T1 T2 w v1 v2) ->
+      @iTy_reln T1 T2 w v1 v2.
+  Proof.
+    rewrite /iTy_reln. intros.
+    iIntros "Hw". iPoseProof H as "H". iApply H; last by eauto.
+    intros. split.  simpl.
+    intros. rewrite /iT simpl.
+
+
   Instance iTy_wimpl_Pred : PreOrder iTy_wimpl.
   Proof.
     split.
@@ -166,7 +205,7 @@ Module refinement_definitions (RT: refinement_type).
       iIntros "Hx". iApply H2. iApply H1. eauto.
   Qed.
 
-  Definition iTy : semTy :=
+  Definition iTy : semTy (@compile_rel_val _ _ impl) :=
     {| world := iTy_world;
        init := λ _ _, True%I;
        reln := iTy_reln;
@@ -408,13 +447,14 @@ Module refinement (RT: refinement_type) (RO: refinement_obligations RT).
     by rewrite -Hinstance_eta set_inv_reg_spec2 set_inv_reg_spec3.
   Qed.
 
-  Lemma crash_refinement_seq {T} σ1c σ1a (es: proc_seq OpT T) es' :
+  Lemma crash_refinement_seq {T T'} σ1c σ1a (es: proc_seq OpT T) es' :
     init_absr σ1a σ1c →
     wf_client_seq es →
-    compile_rel_proc_seq es es' →
+    compile_rel_proc_seq RD.iTy (init RD.iTy) es es' →
     ¬ proc_exec_seq Λa es (rec_singleton (Ret ())) (1, σ1a) Err →
-    ∀ σ2c res, proc_exec_seq Λc es' (rec_singleton recv) (1, σ1c) (Val σ2c res) →
-    ∃ σ2a, proc_exec_seq Λa es (rec_singleton (Ret tt)) (1, σ1a) (Val σ2a res).
+    ∀ σ2c (res: T'), proc_exec_seq Λc es' (rec_singleton recv) (1, σ1c) (Val σ2c res) →
+    ∃ σ2a (res': T), proc_exec_seq Λa es (rec_singleton (Ret tt)) (1, σ1a) (Val σ2a res')
+      ∧ data_rel _ _ _ _ res res'.
   Proof.
     intros Hinit Hwf_seq Hcompile Hno_err σ2c0 ?.
     unshelve (eapply wp_proc_seq_refinement_adequacy with
