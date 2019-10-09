@@ -1135,11 +1135,16 @@ Section refinement_triples.
       wp_ret.
       iApply "HΦ".
       iFrame.
+
     - wp_ret.
       iDestruct "H" as "[[%H]|H]".
-      + admit.
+      + iApply "HΦ". iFrame.
       + iDestruct "H" as (txid) "[%H]". congruence.
-  Admitted.
+
+  Unshelve.
+    simpl.
+    eauto.
+  Qed.
 
   Lemma read_blocks_ok nblocks off res bs:
     (
