@@ -2,6 +2,7 @@ From iris.algebra Require Import auth gmap list.
 Require Export CSL.Refinement CSL.NamedDestruct.
 Require Import Log2API ImplLog2 ExMach.WeakestPre ExMach.RefinementAdequacy.
 Require Import Logging2.Helpers.
+Require Import Equality.
 Set Default Proof Using "All".
 Unset Implicit Arguments.
 
@@ -211,8 +212,8 @@ Section refinement_triples.
             !inG Σ (authR (optionUR (exclR (listO pending_appendC)))),
             !inG Σ (authR mnatUR)}.
 
-  (* hDone maps transaction IDs to the thread ID that's waiting for completion *)
-  Context {hDone: gen_heapG nat nat Σ}.
+  (* hDone maps transaction IDs to the thread ID and its K value that's waiting for completion *)
+  Context {hDone: gen_heapG nat pending_done Σ}.
   Import ExMach.
 
   Notation "l s↦{ q } v " := (mapsto (hG := hDone) l q v)
@@ -280,7 +281,7 @@ Section refinement_triples.
        (pending : list pending_append) (diskpending : list pending_append)
        (next_committed_id : nat)
        (committed_pending : gmap nat pending_done)
-       (txid_map : gmap nat nat),
+       (txid_map : gmap nat pending_done),
 
         source_state (firstn len_val bs) ∗
         ⌜ len_val <= length bs ⌝ ∗
@@ -289,14 +290,14 @@ Section refinement_triples.
         own γmemblocks (◯ (Excl' memblocks)) ∗
         ⌜ firstn len_val memblocks = firstn len_val bs ⌝ ∗
         ⌜ skipn len_val memblocks = concat (map pending_blocks pending) ⌝ ∗
-        ( [∗ list] pending_off ↦ p ∈ pending, pending_call p ∗ (next_committed_id + pending_off) s↦{1/2} (pending_append_j p)) ∗
+        ( [∗ list] pending_off ↦ p ∈ pending, pending_call p ∗ (next_committed_id + pending_off) s↦{1/2} (pending_append_to_done p)) ∗
 
         own γcommit_id (● (next_committed_id : mnat)) ∗
         own γcommit_id_exact (◯ (Excl' next_committed_id)) ∗
         ⌜ ∀ txid, txid < next_committed_id -> is_Some (txid_map !! txid) -> is_Some (committed_pending !! txid) ⌝ ∗
         ⌜ ∀ txid, txid >= next_committed_id -> committed_pending !! txid = None ⌝ ∗
         ⌜ ∀ txid, txid >= next_committed_id + length pending -> txid_map !! txid = None ⌝ ∗
-        ( [∗ map] txid ↦ done ∈ committed_pending, pending_ret done ∗ txid s↦{1/2} (pending_j done) ) ∗
+        ( [∗ map] txid ↦ done ∈ committed_pending, pending_ret done ∗ txid s↦{1/2} done ) ∗
         gen_heap_ctx txid_map ∗
 
         (* diskpending is a snapshot that [disk_append] took and is in
@@ -710,7 +711,7 @@ Section refinement_triples.
         v,
         Registered ∗
         ( ( ⌜v = false⌝ ∗ j ⤇ K (Ret false) ) ∨
-          ( ∃ txid, ⌜v = true⌝ ∗ txid s↦{1/2} j )
+          ( ∃ txid, ⌜v = true⌝ ∗ txid s↦{1/2} (PendingDone j K) )
         )
       }}
     )%I.
@@ -886,19 +887,9 @@ Section refinement_triples.
       iFrame.
   Qed.
 
-  Lemma mnat_split :
-    forall γ (v v' : mnat),
-      v' <= v ->
-      own γ (● v) -∗
-      own γ (● v) ∗ own γ (◯ v').
-  Proof.
-    intros.
-    iIntros "H".
-  Admitted.
-
   Lemma big_sepL_pending_append_to_done : forall off pending,
-    ([∗ list] k↦x ∈ pending, pending_ret (pending_append_to_done x) ∗ (off + k) s↦{1 / 2} pending_append_j x) -∗
-    ([∗ list] k↦x ∈ map pending_append_to_done pending, pending_ret x ∗ (off + k) s↦{1 / 2} pending_j x).
+    ([∗ list] k↦x ∈ pending, pending_ret (pending_append_to_done x) ∗ (off + k) s↦{1 / 2} (pending_append_to_done x)) -∗
+    ([∗ list] k↦x ∈ map pending_append_to_done pending, pending_ret x ∗ (off + k) s↦{1 / 2} x).
   Proof.
     intros.
     iIntros "H".
@@ -906,13 +897,11 @@ Section refinement_triples.
     iApply (big_sepL_impl with "H").
     iModIntro. iIntros (k x) "%[Hp Hs]".
     iFrame.
-    destruct x; simpl.
-    iFrame.
   Qed.
 
   Lemma disk_append {T} γcommit_id txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
     (
-      ( Registered ∗ ExecInv γcommit_id ∗ txid s↦{1/2} j )
+      ( Registered ∗ ExecInv γcommit_id ∗ txid s↦{1/2} (PendingDone j K) )
       -∗
       WP disk_append {{
         tt,
@@ -1078,12 +1067,12 @@ Section refinement_triples.
 
     iDestruct (gen_heap_valid with "Htxid_heap Hretj") as %Hretj.
     simpl in *.
-    rewrite Hcaller_some in Hretj. inversion Hretj. subst.
+    rewrite Hcaller_some in Hretj. inversion Hretj. subst. simpl_existT. subst.
 
     setoid_rewrite plus_assoc.
 
     iFrame.
-    iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact Hret".
+    iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact".
     2: {
       wp_bind.
       wp_unlock "[Hleaseblocks Hleaselen Hdiskpendingown Hnext_committed_exact]".
@@ -1091,8 +1080,7 @@ Section refinement_triples.
         iExists _, _, _, _. iFrame. iPureIntro. lia.
       }
       wp_ret.
-      (* XXX we got two different K values here... *)
-      admit. (* done. *)
+      done.
     }
 
     iSplitL "Hsource".
