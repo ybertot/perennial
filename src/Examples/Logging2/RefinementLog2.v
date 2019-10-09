@@ -838,7 +838,9 @@ Section refinement_triples.
           apply Hcid_post. lia.
         }
 
-        admit.
+        rewrite take_app_le. auto.
+        rewrite <- Hpendingprefix.
+        rewrite firstn_length. lia.
       }
 
       wp_ret.
@@ -1090,7 +1092,7 @@ Section refinement_triples.
       admit.
     }
 
-    iPureIntro. intuition try lia.
+    iPureIntro. intuition; try lia.
     - admit.
     - admit.
     - destruct (lt_dec txid0 next_committed_id).
@@ -1099,7 +1101,8 @@ Section refinement_triples.
       + admit.
     - admit.
     - apply Hcid_post1.
-      admit.
+      rewrite drop_length in H3.
+      lia.
 
   Unshelve.
     solve_ndisj.
