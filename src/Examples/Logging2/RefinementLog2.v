@@ -127,6 +127,31 @@ Proof.
   apply IHp; try lia.
 Qed.
 
+Lemma lookup_list_insert_plus
+  {T MM}
+  {_: FMap MM}
+  {_: ∀ A : Type, Lookup nat A (MM A)}
+  {_: ∀ A : Type, Empty (MM A)}
+  {PA: ∀ A : Type, PartialAlter nat A (MM A)}
+  {_: OMap MM}
+  {_: Merge MM}
+  {_: ∀ A : Type, FinMapToList nat A (MM A)}
+  {_: FinMap nat MM}
+  :
+    forall (p : list T) off x (m : MM T),
+      x < length p ->
+      list_inserts m off p !! (off+x) = p !! x.
+Proof.
+  induction p; simpl; intros; auto.
+  - lia.
+  - rewrite insert_list_insert_commute_map; try lia.
+    destruct x; simpl.
+    + replace (off+0) with off by lia. rewrite lookup_insert. auto.
+    + rewrite lookup_insert_ne; try lia.
+      rewrite <- plus_n_Sm. rewrite <- plus_Sn_m. replace (S off) with (off + 1) by lia. rewrite IHp.
+      auto. lia.
+Qed.
+
 Lemma list_inserts_length {T} : forall vs (l : list T) off,
   length (list_inserts l off vs) = length l.
 Proof.
@@ -885,14 +910,14 @@ Section refinement_triples.
     iFrame.
   Qed.
 
-  Lemma disk_append γcommit_id txid j:
+  Lemma disk_append {T} γcommit_id txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
     (
       ( Registered ∗ ExecInv γcommit_id ∗ txid s↦{1/2} j )
       -∗
       WP disk_append {{
         tt,
         Registered ∗
-        own γcommit_id (◯ (txid+1 : mnat))
+        j ⤇ K (Ret true)
       }}
     )%I.
   Proof.
@@ -1015,12 +1040,8 @@ Section refinement_triples.
     iExists _.
     iExists _.
     iExists _.
-    iExists (list_inserts committed_pending1 next_committed_id (map pending_append_to_done diskpending)).
+    iExists (delete txid (list_inserts committed_pending1 next_committed_id (map pending_append_to_done diskpending))).
     iExists _.
-
-    iDestruct (mnat_split _ _ (txid+1) with "Howncommitid") as "[Howncommitid Htxid]".
-    lia.
-    setoid_rewrite plus_assoc.
 
     iDestruct (big_sepL_sep with "[Hpending0b Hdone]") as "Hdone".
     { iFrame. }
@@ -1034,8 +1055,35 @@ Section refinement_triples.
     }
     { auto. }
 
+    iDestruct (gen_heap_valid with "Htxid_heap Hcaller_txid") as %Hcaller_some.
+    assert (is_Some (list_inserts committed_pending1 next_committed_id (map pending_append_to_done diskpending) !! txid)) as Hretsome.
+    {
+      destruct (lt_dec txid next_committed_id).
+      {
+        rewrite lookup_list_insert_lt; [|lia].
+        apply Hcid_pre1; try lia.
+        eexists. apply Hcaller_some.
+      }
+      {
+        replace (txid) with (next_committed_id + (txid-next_committed_id)) by lia.
+        rewrite lookup_list_insert_plus.
+        apply lookup_lt_is_Some_2. rewrite map_length. lia. rewrite map_length. lia.
+      }
+    }
+
+    destruct Hretsome as [pd Hretsome].
+    destruct pd; simpl in *.
+    iDestruct (big_sepM_delete _ _ txid with "Hcommitted_pending") as "[[Hret Hretj] Hcommitted_pending]".
+    eassumption.
+
+    iDestruct (gen_heap_valid with "Htxid_heap Hretj") as %Hretj.
+    simpl in *.
+    rewrite Hcaller_some in Hretj. inversion Hretj. subst.
+
+    setoid_rewrite plus_assoc.
+
     iFrame.
-    iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact".
+    iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact Hret".
     2: {
       wp_bind.
       wp_unlock "[Hleaseblocks Hleaselen Hdiskpendingown Hnext_committed_exact]".
@@ -1043,7 +1091,8 @@ Section refinement_triples.
         iExists _, _, _, _. iFrame. iPureIntro. lia.
       }
       wp_ret.
-      done.
+      (* XXX we got two different K values here... *)
+      admit. (* done. *)
     }
 
     iSplitL "Hsource".
@@ -1057,7 +1106,8 @@ Section refinement_triples.
     - admit.
     - admit.
     - destruct (lt_dec txid0 next_committed_id).
-      + rewrite lookup_list_insert_lt; try lia. auto.
+      + (* XXX we need gen_heap_delete to drop txid from the heap... *)
+        admit. (* rewrite lookup_list_insert_lt; try lia. auto. *)
       + admit.
     - admit.
     - apply Hcid_post1.
@@ -1093,134 +1143,18 @@ Section refinement_triples.
       }
 
       iIntros "% [Hreg H]".
-
-
-
-
-    wp_wand 
-    wp_lock "(Hlocked&HEL)".
-    iDestruct "HEL" as (len_val bs)
-                         "((Hlen_ghost&Hbs_ghost)&Hbs_bounds)".
-    iPure "Hbs_bounds" as Hbs_bounds.
-    wp_bind.
-
-    iInv "Hinv" as "H".
-    destruct_einner "H".
-    wp_step.
-
-    destruct (gt_dec (len_val + strings.length p) log_size).
-
-    - iPure "Hlen" as Hlen. intuition.
-      iMod (ghost_step_lifting with "Hj Hsource_inv Hsource") as "(Hj&Hsource&_)".
-      { intros. eexists. do 2 eexists; split; last by eauto. econstructor; eauto.
-        econstructor.
-        eexists.
-        econstructor.
-        econstructor.
-        rewrite firstn_length_le; try (simpl; lia).
-        destruct (gt_dec (len_val + strings.length p) log_size); try lia.
-        econstructor.
-      }
-      { solve_ndisj. }
-      iModIntro; iExists _, _; iFrame.
-      iSplit.
-      { iPureIntro. auto. }
-
-      wp_bind.
-      wp_unlock "[-HΦ Hreg Hj]"; iFrame.
-      {
-        iExists _, _.
-        iFrame.
-        iPureIntro. lia.
-      }
-
       wp_ret.
-      iApply "HΦ"; iFrame.
+      (* XXX why does iApply not work?  the triangle? *)
+      (*
+      iApply "HΦ".
+      *)
+      admit.
 
-    - iModIntro; iExists _, _; iFrame.
-      wp_bind.
-
-      iApply (wp_wand with "[Hlen_ghost Hbs_ghost]").
-      {
-        iApply write_blocks_ok.
-        iFrame.
-        iSplitL.
-        - unfold ExecInv. iSplitL. iApply "Hsource_inv". iExists _. iSplitL. iApply "Hlockinv". iApply "Hinv".
-          (* XXX how to automate that? *)
-        - iPureIntro. intuition. lia.
-      }
-
-      iIntros "% [Hleaselen Hleaseblocks]".
-
-      wp_bind.
-
-      iInv "Hinv" as "H".
-      destruct_einner "H".
-      iPure "Hlen" as Hlen. intuition.
-      wp_step.
-
-      iMod (ghost_step_lifting with "Hj Hsource_inv Hsource") as "(Hj&Hsource&_)".
-      { intros. eexists. do 2 eexists; split; last by eauto. econstructor; eauto.
-        econstructor.
-        eexists.
-        econstructor.
-        econstructor.
-        rewrite firstn_length_le; try (simpl; lia).
-        destruct (gt_dec (len_val + strings.length p) log_size); try lia.
-        econstructor.
-        eexists.
-        econstructor.
-        econstructor.
-        econstructor.
-      }
-      { solve_ndisj. }
-      iModIntro.
-      iExists (len_val + length p).
-      iExists (H5).
-
-      iDestruct (disk_lease_agree_log_data with "Hbs Hleaseblocks") as %Hx; subst.
-      rewrite list_inserts_length. lia.
-
-      iFrame.
-      iSplitL "Hsource".
-      {
-        iSplitL "Hsource".
-        { rewrite take_list_inserts. iFrame. lia. }
-
-        iPureIntro.
-        intuition lia.
-      }
-
-      wp_bind.
-      wp_unlock "[-HΦ Hreg Hj]".
-      {
-        iExists _, _.
-        iFrame.
-        iPureIntro.
-        lia.
-      }
-
-      wp_ret.
-      iApply "HΦ"; iFrame.
-  Qed.
-
-  (**
-    Problem 0: how to think about the -* operator?
-
-    Problem 1: how to deal with [* list] stuff above?
-      use big_sepM_insert_acc
-
-    Problem 2: how to invoke write_blocks_ok without losing separation logic facts?
-      wp_wand
-
-    Problem 3: how to define a helper thread for batch commit?
-      Does the top-level API need to define a "helper noop" that
-      seems to have no effect but in practice implements the
-      group commit helper?
-
-    Problem 4: What is "Registered"?
-      thread existence
-  *)
+    - wp_ret.
+      iDestruct "H" as "[[%H]|H]".
+      + admit.
+      + iDestruct "H" as (txid) "[%H]". congruence.
+  Admitted.
 
   Lemma read_blocks_ok nblocks off res bs:
     (
