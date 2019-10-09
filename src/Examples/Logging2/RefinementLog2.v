@@ -1178,27 +1178,23 @@ Section refinement_triples.
       iDestruct (big_sepL_lookup_acc with "Hbs") as "[Hbsoff Hbsother]". apply Hoffbs.
       iDestruct (big_sepL_lookup_acc with "Hlease") as "[Hleaseoff Hleaseother]". apply Hoffbs.
       wp_step.
+      iDestruct ("Hbsother" with "Hbsoff") as "Hbs".
 
       iModIntro.
-      iExists _, _, _, _, _.
+      iExists _, _, _, _, _, _, _, _.
       iFrame.
-      iSplitL "Hbsoff Hbsother".
+      iSplitR.
       {
-        iSplit.
-        {
-          iNext. iPureIntro. intuition.
-        }
-
-        iApply "Hbsother".
-        iFrame.
+        iPureIntro. intuition.
       }
 
       iSpecialize ("IH" $! nblocks (off+1) (res ++ [boff])).
-      iApply (wp_wand with "[Hleaseoff Hleaseother] []").
+      iDestruct ("Hleaseother" with "Hleaseoff") as "Hlease".
+      iApply (wp_wand with "[Hlease] []").
       {
-        iApply ("IH" with "[%] [Hleaseoff Hleaseother]").
+        iApply ("IH" with "[%] [Hlease]").
         { lia. }
-        iApply "Hleaseother". iFrame.
+        iFrame.
       }
 
       iIntros "% [Hres Hlease]".
@@ -1223,19 +1219,20 @@ Section refinement_triples.
     {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
   Proof.
     iIntros (Φ) "(Hj&Hreg&#Hsource_inv&Hinv) HΦ".
-    iDestruct "Hinv" as (γlock) "(#Hlockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_lock "(Hlocked&HEL)".
-    iDestruct "HEL" as (len_val bs)
-                         "((Hlen_ghost&Hbs_ghost)&Hlenbound)".
-    iPure "Hlenbound" as Hlenbound.
+    iDestruct "HEL" as (len_val bs diskpending next_committed_id_exact)
+                         "((Hlen_ghost&Hbs_ghost)&Hbs_bounds&Hbs_len&Hdiskpendingown&Hnext_committed_exact)".
+    iPure "Hbs_bounds" as Hbs_bounds.
+    iPure "Hbs_len" as Hbs_len.
 
     wp_bind.
     iInv "Hinv" as "H".
     destruct_einner "H".
     wp_step.
 
-    iPure "Hlen" as Hlen. intuition.
     iDestruct (disk_lease_agree_log_data with "Hbs Hbs_ghost") as %Hx; subst. lia.
 
     iMod (ghost_step_lifting with "Hj Hsource_inv Hsource") as "(Hj&Hsource&_)".
@@ -1244,11 +1241,11 @@ Section refinement_triples.
       econstructor.
     }
     { solve_ndisj. }
-    iModIntro; iExists _, _; iFrame.
+    iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
 
     iSplit.
     {
-      iNext. iPureIntro. lia.
+      iPureIntro. intuition.
     }
 
     wp_bind.
@@ -1257,8 +1254,7 @@ Section refinement_triples.
       iApply read_blocks_ok.
       iFrame.
       iSplit.
-      - unfold ExecInv. iSplitL. iApply "Hsource_inv". iExists _. iSplitL. iApply "Hlockinv". iApply "Hinv".
-        (* XXX how to automate that? *)
+      - unfold ExecInv. iSplitL. iApply "Hsource_inv". iExists _, _, _, _, _. iSplitL. iApply "Hdisklockinv". iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv".
       - iPureIntro. intuition.
     }
 
@@ -1269,7 +1265,7 @@ Section refinement_triples.
     wp_bind.
     wp_unlock "[-HΦ Hreg Hj]"; iFrame.
     {
-      iExists _, _.
+      iExists _, _, _, _.
       iFrame.
       iPureIntro. lia.
     }
