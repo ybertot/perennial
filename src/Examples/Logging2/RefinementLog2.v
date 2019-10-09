@@ -153,6 +153,27 @@ Proof.
       auto. lia.
 Qed.
 
+Lemma lookup_list_insert_oob
+  {T MM}
+  {_: FMap MM}
+  {_: ∀ A : Type, Lookup nat A (MM A)}
+  {_: ∀ A : Type, Empty (MM A)}
+  {PA: ∀ A : Type, PartialAlter nat A (MM A)}
+  {_: OMap MM}
+  {_: Merge MM}
+  {_: ∀ A : Type, FinMapToList nat A (MM A)}
+  {_: FinMap nat MM}
+  :
+    forall (p : list T) off x (m : MM T),
+      x >= off + length p ->
+      list_inserts m off p !! x = m !! x.
+Proof.
+  induction p; simpl; intros; auto.
+  rewrite insert_list_insert_commute_map; try lia.
+  rewrite lookup_insert_ne; try lia.
+  rewrite IHp; auto. lia.
+Qed.
+
 Lemma list_inserts_length {T} : forall vs (l : list T) off,
   length (list_inserts l off vs) = length l.
 Proof.
@@ -1099,7 +1120,9 @@ Section refinement_triples.
       + (* XXX we need gen_heap_delete to drop txid from the heap... *)
         admit. (* rewrite lookup_list_insert_lt; try lia. auto. *)
       + admit.
-    - admit.
+    - rewrite lookup_delete_ne; try lia.
+      rewrite lookup_list_insert_oob; [| rewrite map_length; lia ].
+      apply Hcid_mid1. lia.
     - apply Hcid_post1.
       rewrite drop_length in H3.
       lia.
