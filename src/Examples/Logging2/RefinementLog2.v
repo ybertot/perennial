@@ -18,11 +18,181 @@ Canonical Structure pending_appendC :=
   leibnizO pending_append.
 
 
+(* TODO: move out and re-use this *)
+Section gen_heap.
+Context `{hG: gen_heapG L V Σ}.
+Lemma gen_heap_init_to_bigOp σ:
+  own (gen_heap_name hG) (◯ to_gen_heap σ)
+      -∗ [∗ map] i↦v ∈ σ, mapsto i 1 v .
+Proof.
+  induction σ using map_ind.
+  - iIntros. rewrite //=.
+  - iIntros "Hown".
+    rewrite big_opM_insert //.
+    iAssert (own (gen_heap_name hG) (◯ to_gen_heap m) ∗ (mapsto i 1 x))%I
+      with "[Hown]" as "[Hrest $]".
+    {
+      rewrite mapsto_eq /mapsto_def //.
+      rewrite to_gen_heap_insert.
+      rewrite (insert_singleton_op (to_gen_heap m) i (1%Qp, to_agree x));
+        last by apply lookup_to_gen_heap_None.
+      rewrite auth_frag_op. iDestruct "Hown" as "(?&?)". iFrame.
+    }
+    by iApply IHσ.
+Qed.
+
+Lemma gen_heap_bigOpM_dom (σ: gmap L V) (q: Qp):
+  ([∗ map] i↦v ∈ σ, mapsto i q v)
+    -∗ [∗ set] i ∈ dom (gset L) σ, ∃ v, ⌜ σ !! i = Some v ⌝ ∗ mapsto i q v .
+Proof.
+  iIntros "H". iApply big_sepM_dom.
+  iApply (big_sepM_mono with "H").
+  iIntros (k x Hlookup) "H".
+  iExists _. iFrame. eauto.
+Qed.
+
+Lemma gen_heap_bigOp_split (σ: gmap L V) (q: Qp):
+  ([∗ map] i↦v ∈ σ, mapsto i q v)
+    -∗ ([∗ map] i↦v ∈ σ, mapsto i (q/2) v) ∗ ([∗ map] i↦v ∈ σ, mapsto i (q/2) v).
+Proof.
+  rewrite -big_sepM_sep. apply big_sepM_mono.
+  iIntros (?? ?) "($&$)".
+Qed.
+
+Lemma mapsto_split (i : L) (q : Qp) (v : V):
+  mapsto i q v -∗ mapsto i (q/2) v ∗ mapsto i (q/2) v.
+Proof.
+  iIntros "($&$)".
+Qed.
+
+End gen_heap.
+
+
+Fixpoint list_inserts {T M} {Insert: Insert nat T M} (l : M) (off : nat) (vs : list T) :=
+  match vs with
+  | nil => l
+  | v :: vs' =>
+    list_inserts (<[off:=v]> l) (off+1) vs'
+  end.
+
+Lemma insert_list_insert_commute {T} : forall (p : list T) off v off' (l : list T),
+  off < off' ->
+  list_inserts (<[off:=v]> l) off' p = <[off:=v]> (list_inserts l off' p).
+Proof.
+  induction p; simpl; intros; auto.
+  rewrite <- IHp; try lia.
+  rewrite list_insert_commute; try lia.
+  reflexivity.
+Qed.
+
+Lemma insert_list_insert_commute_map
+  {T MM}
+  {_: FMap MM}
+  {_: ∀ A : Type, Lookup nat A (MM A)}
+  {_: ∀ A : Type, Empty (MM A)}
+  {PA: ∀ A : Type, PartialAlter nat A (MM A)}
+  {_: OMap MM}
+  {_: Merge MM}
+  {_: ∀ A : Type, FinMapToList nat A (MM A)}
+  {_: FinMap nat MM}
+  :
+    forall (p : list T) off (v : T) off' (m : MM T),
+      off < off' ->
+      list_inserts (<[off:=v]> m) off' p = <[off:=v]> (list_inserts m off' p).
+Proof.
+  induction p; simpl; intros; auto.
+  rewrite <- IHp; try lia.
+  rewrite insert_commute; try lia.
+  reflexivity.
+Qed.
+
+Lemma lookup_list_insert_lt
+  {T MM}
+  {_: FMap MM}
+  {_: ∀ A : Type, Lookup nat A (MM A)}
+  {_: ∀ A : Type, Empty (MM A)}
+  {PA: ∀ A : Type, PartialAlter nat A (MM A)}
+  {_: OMap MM}
+  {_: Merge MM}
+  {_: ∀ A : Type, FinMapToList nat A (MM A)}
+  {_: FinMap nat MM}
+  :
+    forall (p : list T) off off' (m : MM T),
+      off < off' ->
+      list_inserts m off' p !! off = m !! off.
+Proof.
+  induction p; simpl; intros; auto.
+  rewrite insert_list_insert_commute_map; try lia.
+  rewrite lookup_insert_ne; try lia.
+  apply IHp; try lia.
+Qed.
+
+Lemma list_inserts_length {T} : forall vs (l : list T) off,
+  length (list_inserts l off vs) = length l.
+Proof.
+  induction vs; simpl; intros; auto.
+  rewrite IHvs.
+  rewrite insert_length.
+  auto.
+Qed.
+
+Lemma take_list_inserts_le {T} : forall (p : list T) off off' l,
+  off <= off' ->
+  take off (list_inserts l off' p) = take off l.
+Proof.
+  induction p; simpl; intros; auto.
+  rewrite insert_list_insert_commute; try lia.
+  rewrite take_insert; auto.
+  rewrite IHp; auto.
+  lia.
+Qed.
+
+Lemma take_list_inserts {T} : forall (p : list T) off bs,
+  off + length p <= length bs ->
+  take (off + length p) (list_inserts bs off p) = take off (list_inserts bs off p) ++ p.
+Proof.
+  induction p; simpl; intros.
+  - rewrite app_nil_r. replace (off+0) with off by lia. auto.
+  - replace (off + S (length p)) with (S off + length p) by lia.
+    replace (off + 1) with (S off) by lia.
+    rewrite IHp; clear IHp.
+    2: {
+      rewrite insert_length. lia.
+    }
+    rewrite take_list_inserts_le; try lia.
+    rewrite take_list_inserts_le; try lia.
+    replace (a :: p) with ([a] ++ p) by reflexivity.
+    rewrite app_assoc.
+    f_equal.
+
+    assert (off < length bs) by lia.
+    pose proof (list_lookup_insert _ _ a H0).
+
+    apply take_drop_middle in H1.
+    rewrite <- H1 at 1.
+    replace (S off) with (off + 1) by lia.
+    rewrite take_plus_app.
+    2: {
+      rewrite firstn_length_le; auto.
+      rewrite insert_length. lia.
+    }
+    reflexivity.
+Qed.
+
+
 Section refinement_triples.
   Context `{!exmachG Σ, lockG Σ, !@cfgG (Log2.Op) (Log2.l) Σ,
             !inG Σ (authR (optionUR (exclR (listO natO)))),
-            !inG Σ (authR (optionUR (exclR (listO pending_appendC))))}.
+            !inG Σ (authR (optionUR (exclR (listO pending_appendC)))),
+            !inG Σ (authR mnatUR)}.
+
+  (* hDone maps transaction IDs to the thread ID that's waiting for completion *)
+  Context {hDone: gen_heapG nat nat Σ}.
   Import ExMach.
+
+  Notation "l s↦{ q } v " := (mapsto (hG := hDone) l q v)
+    (at level 20, q at level 50, format "l  s↦{ q }  v") : bi_scope.
+
 
   Definition ptr_map (len_val : nat) (blocks : list nat) :=
     ( log_commit d↦ len_val ∗
@@ -33,6 +203,11 @@ Section refinement_triples.
   Definition pending_blocks (pa : pending_append) : list nat :=
     match pa with
     | Pending blocks _ _ => blocks
+    end.
+
+  Definition pending_append_j (pa : pending_append) :=
+    match pa with
+    | Pending _ j _ => j
     end.
 
   Definition pending_call (pa : pending_append) :=
@@ -55,6 +230,11 @@ Section refinement_triples.
       end
     )%I.
 
+  Definition pending_j (pd : pending_done) :=
+    match pd with
+    | PendingDone j _ => j
+    end.
+
   Definition pending_append_to_done (pa : pending_append) :=
     match pa with
     | Pending _ j K => PendingDone j K
@@ -65,8 +245,18 @@ Section refinement_triples.
   Proof. destruct pd; apply _. Qed.
 
 
-  Definition ExecInner γmemblocks γdiskpending :=
-    (∃ (len_val : nat) (bs : list nat) (memblocks : list nat) (pending : list pending_append) (diskpending : list pending_append),
+  (**
+    Notes for later:
+    - Can we use a resource algebra like the cmra-based list.v to replace diskpending?
+   *)
+
+  Definition ExecInner γmemblocks γdiskpending γcommit_id γcommit_id_exact :=
+    (∃ (len_val : nat) (bs : list nat) (memblocks : list nat)
+       (pending : list pending_append) (diskpending : list pending_append)
+       (next_committed_id : nat)
+       (committed_pending : gmap nat pending_done)
+       (txid_map : gmap nat nat),
+
         source_state (firstn len_val bs) ∗
         ⌜ len_val <= length bs ⌝ ∗
         ⌜ length bs = log_size ⌝ ∗
@@ -74,7 +264,18 @@ Section refinement_triples.
         own γmemblocks (◯ (Excl' memblocks)) ∗
         ⌜ firstn len_val memblocks = firstn len_val bs ⌝ ∗
         ⌜ skipn len_val memblocks = concat (map pending_blocks pending) ⌝ ∗
-        ( [∗ list] p ∈ pending, pending_call p ) ∗
+        ( [∗ list] pending_off ↦ p ∈ pending, pending_call p ∗ (next_committed_id + pending_off) s↦{1/2} (pending_append_j p)) ∗
+
+        own γcommit_id (● (next_committed_id : mnat)) ∗
+        own γcommit_id_exact (◯ (Excl' next_committed_id)) ∗
+        ⌜ ∀ txid, txid < next_committed_id -> is_Some (txid_map !! txid) -> is_Some (committed_pending !! txid) ⌝ ∗
+        ⌜ ∀ txid, txid >= next_committed_id -> committed_pending !! txid = None ⌝ ∗
+        ⌜ ∀ txid, txid >= next_committed_id + length pending -> txid_map !! txid = None ⌝ ∗
+        ( [∗ map] txid ↦ done ∈ committed_pending, pending_ret done ∗ txid s↦{1/2} (pending_j done) ) ∗
+        gen_heap_ctx txid_map ∗
+
+        (* diskpending is a snapshot that [disk_append] took and is in
+           the process of writing to disk *)
         own γdiskpending (◯ (Excl' diskpending)) ∗
         ⌜ firstn (length diskpending) pending = diskpending ⌝
     )%I.
@@ -87,12 +288,13 @@ Section refinement_triples.
       [∗ list] pos ↦ b ∈ blocks, lease (log_data pos) b
     )%I.
 
-  Definition DiskLockInv γdiskpending :=
-    (∃ (len_val : nat) (bs : list nat) (diskpendingprefix : list pending_append),
+  Definition DiskLockInv γdiskpending γcommit_id_exact :=
+    (∃ (len_val : nat) (bs : list nat) (diskpendingprefix : list pending_append) (next_committed_id : nat),
         lease_map len_val bs ∗
         ⌜ len_val <= length bs ⌝ ∗
         ⌜ length bs = log_size ⌝ ∗
-        own γdiskpending (● (Excl' diskpendingprefix))
+        own γdiskpending (● (Excl' diskpendingprefix)) ∗
+        own γcommit_id_exact (● (Excl' next_committed_id))
     )%I.
 
   Definition mem_map (len_val : nat) (blocks : list nat) :=
@@ -126,12 +328,12 @@ Section refinement_triples.
   Definition mN : namespace := (nroot.@"memlock").
   Definition iN : namespace := (nroot.@"inner").
 
-  Definition ExecInv :=
+  Definition ExecInv γcommit_id :=
     ( source_ctx ∗
-      ∃ γmemblocks γdiskpending,
-      ∃ γdisklock, is_lock dN γdisklock log_lock (DiskLockInv γdiskpending) ∗
+      ∃ γmemblocks γdiskpending γcommit_id_exact,
+      ∃ γdisklock, is_lock dN γdisklock log_lock (DiskLockInv γdiskpending γcommit_id_exact) ∗
       ∃ γmemlock, is_lock mN γmemlock mem_lock (MemLockInv γmemblocks) ∗
-      inv iN (ExecInner γmemblocks γdiskpending))%I.
+      inv iN (ExecInner γmemblocks γdiskpending γcommit_id γcommit_id_exact))%I.
   Definition CrashInv := (source_ctx ∗ inv iN CrashInner)%I.
 
   Lemma big_sepM_insert {A: Type} {P: nat -> A -> iPropI Σ} m i x :
@@ -184,74 +386,52 @@ Section refinement_triples.
     }
   Qed.
 
-  Fixpoint list_inserts {T} (l : list T) (off : nat) (vs : list T) :=
-    match vs with
-    | nil => l
-    | v :: vs' =>
-      list_inserts (<[off:=v]> l) (off+1) vs'
-    end.
-
-  Lemma insert_list_insert_commute {T} : forall (p : list T) off v off' l,
-    off < off' ->
-    list_inserts (<[off:=v]> l) off' p = <[off:=v]> (list_inserts l off' p).
+  Lemma big_sepM_list_inserts {T}
+    {Φ : nat -> T -> iPropI Σ} : forall l (m : gmap nat T) off,
+      (forall i, i >= off -> m !! i = None) →
+      ([∗ map] k↦y ∈ (list_inserts m off l), Φ k y) ⊣⊢ ([∗ list] i↦y ∈ l, Φ (off+i) y) ∗ [∗ map] k↦y ∈ m, Φ k y.
   Proof.
-    induction p; simpl; intros; auto.
-    rewrite <- IHp; try lia.
-    rewrite list_insert_commute; try lia.
-    reflexivity.
+    induction l0; simpl; intros.
+    - iSplit.
+      + iIntros "Hm"; iFrame.
+      + iIntros "[Hemp Hm]". iFrame.
+    - iSplit.
+      + iIntros "Hm".
+        rewrite insert_list_insert_commute_map; try lia.
+        iDestruct (big_sepM_insert with "Hm") as "[Hoff Hm]".
+        {
+          rewrite lookup_list_insert_lt; try lia.
+          apply H1. lia.
+        }
+        replace (off+0) with off by lia.
+        iFrame.
+        iDestruct (IHl0 with "Hm") as "Hm".
+        {
+          intros. apply H1. lia.
+        }
+        rewrite <- plus_n_Sm.
+        rewrite <- plus_n_O.
+        setoid_rewrite <- plus_n_Sm.
+        simpl. iFrame.
+      + iIntros "[[Hoff Hl] Hm]".
+        replace (off+0) with (off) by lia.
+        rewrite insert_list_insert_commute_map; try lia.
+        iApply big_sepM_insert.
+        {
+          rewrite lookup_list_insert_lt; try lia.
+          apply H1. lia.
+        }
+        iFrame.
+        iApply IHl0.
+        {
+          intros. apply H1. lia.
+        }
+        iFrame.
+        replace (off+1) with (S off) by lia. simpl.
+        setoid_rewrite <- plus_n_Sm.
+        iFrame.
   Qed.
 
-  Lemma list_inserts_length {T} : forall vs (l : list T) off,
-    length (list_inserts l off vs) = length l.
-  Proof.
-    induction vs; simpl; intros; auto.
-    rewrite IHvs.
-    rewrite insert_length.
-    auto.
-  Qed.
-
-  Lemma take_list_inserts_le {T} : forall (p : list T) off off' l,
-    off <= off' ->
-    take off (list_inserts l off' p) = take off l.
-  Proof.
-    induction p; simpl; intros; auto.
-    rewrite insert_list_insert_commute; try lia.
-    rewrite take_insert; auto.
-    rewrite IHp; auto.
-    lia.
-  Qed.
-
-  Lemma take_list_inserts {T} : forall (p : list T) off bs,
-    off + length p <= length bs ->
-    take (off + length p) (list_inserts bs off p) = take off (list_inserts bs off p) ++ p.
-  Proof.
-    induction p; simpl; intros.
-    - rewrite app_nil_r. replace (off+0) with off by lia. auto.
-    - replace (off + S (length p)) with (S off + length p) by lia.
-      replace (off + 1) with (S off) by lia.
-      rewrite IHp; clear IHp.
-      2: {
-        rewrite insert_length. lia.
-      }
-      rewrite take_list_inserts_le; try lia.
-      rewrite take_list_inserts_le; try lia.
-      replace (a :: p) with ([a] ++ p) by reflexivity.
-      rewrite app_assoc.
-      f_equal.
-
-      assert (off < length bs) by lia.
-      pose proof (list_lookup_insert _ _ a H2).
-
-      apply take_drop_middle in H3.
-      rewrite <- H3 at 1.
-      replace (S off) with (off + 1) by lia.
-      rewrite take_plus_app.
-      2: {
-        rewrite firstn_length_le; auto.
-        rewrite insert_length. lia.
-      }
-      reflexivity.
-  Qed.
 
   Local Ltac destruct_einner H :=
     let disklen := fresh "disklen" in
@@ -259,12 +439,19 @@ Section refinement_triples.
     let memblocks := fresh "memblocks" in
     let pending := fresh "pending" in
     let diskpending := fresh "diskpending" in
+    let next_committed_id := fresh "next_committed_id" in
+    let committed_pending := fresh "committed_pending" in
+    let txid_map := fresh "txid_map" in
     let Hlen0 := fresh "Hlen0" in
     let Hlen1 := fresh "Hlen1" in
     let Hprefix := fresh "Hprefix" in
     let Hsuffix := fresh "Hsuffix" in
+    let Hcid_pre := fresh "Hcid_pre" in
+    let Hcid_mid := fresh "Hcid_mid" in
+    let Hcid_post := fresh "Hcid_post" in
     let Hpendingprefix := fresh "Hpendingprefix" in
-    iDestruct H as (disklen diskblocks memblocks pending diskpending) ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Hownpending & Hpendingprefix)";
+    iDestruct H as (disklen diskblocks memblocks pending diskpending next_committed_id committed_pending txid_map)
+      ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Howncommitid & Howncommitidexact & Hcid_pre & Hcid_mid & Hcid_post & Hcommitted_pending & Htxid_heap & Hownpending & Hpendingprefix)";
     iDestruct "Hmap" as "(Hptr&Hbs)";
     repeat unify_lease;
     repeat unify_ghost;
@@ -272,11 +459,14 @@ Section refinement_triples.
     iPure "Hlen1" as Hlen1;
     iPure "Hprefix" as Hprefix;
     iPure "Hsuffix" as Hsuffix;
+    iPure "Hcid_pre" as Hcid_pre;
+    iPure "Hcid_mid" as Hcid_mid;
+    iPure "Hcid_post" as Hcid_post;
     iPure "Hpendingprefix" as Hpendingprefix.
 
-  Lemma write_blocks_ok bs p off len_val:
+  Lemma write_blocks_ok bs p off len_val γcommit_id:
     (
-      ( ExecInv ∗
+      ( ExecInv γcommit_id ∗
         ⌜ off + length p <= log_size ⌝ ∗
         ⌜ length bs = log_size ⌝ ∗
         ⌜ off >= len_val ⌝ ∗
@@ -291,7 +481,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hinbound&Hbslen&Hoffpastlen&Hleaselen&Hlease)".
-    iDestruct "Hinv" as (γblocks γpending γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (p off bs).
     destruct p; simpl.
@@ -319,8 +509,8 @@ Section refinement_triples.
       wp_step.
 
       iModIntro.
-      iExists _, (<[off:=n]> diskblocks), _, _, _.
-      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Hpending Hownpending".
+      iExists _, (<[off:=n]> diskblocks), _, _, _, _, _, _.
+      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Hpending Howncommitid Howncommitidexact Hcommitted_pending Hownpending Htxid_heap".
       { iNext.
         iSplitL "Hsource".
         { rewrite take_insert; try lia.
@@ -377,9 +567,9 @@ Section refinement_triples.
       done.
   Qed.
 
-  Lemma write_mem_blocks_ok blocks p off:
+  Lemma write_mem_blocks_ok blocks p off γcommit_id:
     (
-      ( ExecInv ∗
+      ( ExecInv γcommit_id ∗
         ⌜ off + length p <= length blocks ⌝ ∗
         [∗ list] pos ↦ b ∈ blocks, mem_data pos m↦ b )
       -∗
@@ -390,7 +580,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hlen&Hdata)".
-    iDestruct "Hinv" as (γblocks γpending γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (p off blocks).
     destruct p; simpl.
@@ -413,9 +603,9 @@ Section refinement_triples.
       iFrame.
   Qed.
 
-  Lemma read_mem_blocks_ok nblocks off res blocks:
+  Lemma read_mem_blocks_ok nblocks off res blocks γcommit_id:
     (
-      ( ExecInv ∗
+      ( ExecInv γcommit_id ∗
         ⌜ off + nblocks <= length blocks ⌝ ∗
         [∗ list] pos↦b ∈ blocks, mem_data pos m↦ b )
       -∗
@@ -427,7 +617,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hlen&Hdata)".
-    iDestruct "Hinv" as (γblocks γpending γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending  γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (nblocks off res).
     destruct nblocks; simpl.
@@ -487,22 +677,21 @@ Section refinement_triples.
     done.
   Qed.
 
-  Lemma mem_append {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} blocks:
+  Lemma mem_append {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} blocks γcommit_id:
     (
-      ( j ⤇ K (Call (Log2.Append blocks)) ∗ Registered ∗ ExecInv )
+      ( j ⤇ K (Call (Log2.Append blocks)) ∗ Registered ∗ ExecInv γcommit_id )
       -∗
       WP mem_append blocks {{
         v,
         Registered ∗
-        ( ( ⌜v = false⌝ ∧ j ⤇ K (Ret false) ) ∨
-          ( ⌜v = true⌝ )
-          (* XXX need some token that will allow caller to eventually learn j=>K(Ret true) *)
+        ( ( ⌜v = false⌝ ∗ j ⤇ K (Ret false) ) ∨
+          ( ∃ txid, ⌜v = true⌝ ∗ txid s↦{1/2} j )
         )
       }}
     )%I.
   Proof.
     iIntros "(Hj&Hreg&(#Hsource_inv&Hinv))".
-    iDestruct "Hinv" as (γblocks γpending γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_bind.
@@ -538,7 +727,7 @@ Section refinement_triples.
       iExists _, _. iFrame. done.
 
       iIntros.
-      iModIntro; iExists _, _, _, _, _; iFrame.
+      iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
       iSplit.
       { done. }
 
@@ -554,7 +743,7 @@ Section refinement_triples.
         iFrame.
         iSplit.
         { iSplit. iApply "Hsource_inv".
-          iExists _, _, _. iSplit. iApply "Hdisklockinv".
+          iExists _, _, _, _. iSplit. iApply "Hdisklockinv".
           iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv". }
         iPureIntro. lia.
       }
@@ -576,13 +765,29 @@ Section refinement_triples.
       rewrite list_inserts_length. iPureIntro. lia.
 
       iIntros.
+
+      iMod (gen_heap_alloc with "Htxid_heap") as "(Htxid_heap & Htxid_j & Hmeta_token)".
+      {
+        specialize (Hcid_post (next_committed_id + length pending)).
+        apply Hcid_post.
+        lia.
+      }
+
       iModIntro.
       iExists _, _.
       iExists (take (memlen + strings.length blocks) (list_inserts mblocks memlen blocks)).
       iExists (pending ++ [Pending blocks j K]).
       iExists _.
+      iExists _.
+      iExists _.
+      iExists _.
+
       iFrame.
       simpl.
+      replace (length pending + 0) with (length pending) by lia.
+      iDestruct (mapsto_split with "Htxid_j") as "[Htxid_j1 Htxid_j2]".
+      iFrame.
+
       iSplitL "".
       { iPureIntro. intuition try lia.
         {
@@ -595,10 +800,25 @@ Section refinement_triples.
           simpl. rewrite app_nil_r.
           admit.
         }
+
+        {
+          apply Hcid_pre; try lia.
+          rewrite lookup_insert_ne in H3; try lia.
+          auto.
+        }
+        {
+          rewrite app_length in H2. simpl in H2.
+          rewrite lookup_insert_ne; try lia.
+          apply Hcid_post. lia.
+        }
+
+        admit.
       }
 
       wp_ret.
       iRight.
+      iExists _.
+      iFrame.
       done.
   Admitted.
 
@@ -608,9 +828,8 @@ Section refinement_triples.
     (
       ( [∗ list] p ∈ pending, pending_call p ) ∗
       source_state s ) ={E}=∗
-    (* XXX we are losing the Ret true j->K things *)
-    ( source_state (s ++ concat (map pending_blocks pending))
-     (* ∗ [∗ list] p ∈ pending, pending_ret (pending_append_to_done p) *) ).
+    ( source_state (s ++ concat (map pending_blocks pending)) ∗
+      ( [∗ list] p ∈ pending, pending_ret (pending_append_to_done p) ) ).
   Proof.
     intros E HE.
     induction pending.
@@ -636,30 +855,55 @@ Section refinement_triples.
 
       specialize (IHpending (s ++ blocks)).
       rewrite app_assoc.
+      iFrame.
       iApply IHpending.
       iApply "Hsource_inv".
       iFrame.
   Qed.
 
-  Lemma disk_append :
+  Lemma mnat_split :
+    forall γ (v v' : mnat),
+      v' <= v ->
+      own γ (● v) -∗
+      own γ (● v) ∗ own γ (◯ v').
+  Proof.
+    intros.
+    iIntros "H".
+  Admitted.
+
+  Lemma big_sepL_pending_append_to_done : forall off pending,
+    ([∗ list] k↦x ∈ pending, pending_ret (pending_append_to_done x) ∗ (off + k) s↦{1 / 2} pending_append_j x) -∗
+    ([∗ list] k↦x ∈ map pending_append_to_done pending, pending_ret x ∗ (off + k) s↦{1 / 2} pending_j x).
+  Proof.
+    intros.
+    iIntros "H".
+    iApply big_sepL_fmap.
+    iApply (big_sepL_impl with "H").
+    iModIntro. iIntros (k x) "%[Hp Hs]".
+    iFrame.
+    destruct x; simpl.
+    iFrame.
+  Qed.
+
+  Lemma disk_append γcommit_id txid j:
     (
-      ( Registered ∗ ExecInv )
+      ( Registered ∗ ExecInv γcommit_id ∗ txid s↦{1/2} j )
       -∗
       WP disk_append {{
         tt,
-        Registered
-        (* XXX need some token that will allow caller to eventually learn j=>K(Ret true) *)
+        Registered ∗
+        own γcommit_id (◯ (txid+1 : mnat))
       }}
     )%I.
   Proof.
-    iIntros "(Hreg&(#Hsource_inv&Hinv))".
-    iDestruct "Hinv" as (γblocks γpending γdisklock) "(#Hdisklockinv&#Hinv)".
+    iIntros "(Hreg&(#Hsource_inv&Hinv)&Hcaller_txid)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_bind.
     wp_lock "(Hlocked&HEL)".
-    iDestruct "HEL" as (len_val bs diskpending)
-                         "((Hlen_ghost&Hbs_ghost)&Hbs_bounds&Hbs_len&Hdiskpendingown)".
+    iDestruct "HEL" as (len_val bs diskpending next_committed_id_exact)
+                         "((Hlen_ghost&Hbs_ghost)&Hbs_bounds&Hbs_len&Hdiskpendingown&Hnext_committed_exact)".
     iPure "Hbs_bounds" as Hbs_bounds.
     iPure "Hbs_len" as Hbs_len.
 
@@ -669,7 +913,7 @@ Section refinement_triples.
     iDestruct (disk_lease_agree_log_data with "Hbs Hbs_ghost") as %Hagree. lia. subst.
 
     wp_step.
-    iModIntro; iExists _, _, _, _, _; iFrame.
+    iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
 
     iSplitR. iPureIntro. intuition lia.
 
@@ -687,9 +931,17 @@ Section refinement_triples.
 
     wp_step.
 
+    destruct (lt_dec txid (next_committed_id0 + length pending0)).
+    2: {
+      iDestruct (gen_heap_valid with "Htxid_heap Hcaller_txid") as %Hcaller_some.
+      exfalso.
+      rewrite Hcid_post0 in Hcaller_some. congruence.
+      lia.
+    }
+
     iMod (ghost_var_update_pending γpending pending0 with "Hdiskpendingown Hownpending") as "[Hdiskpendingown Hownpending]".
     clear Hpendingprefix0. clear Hpendingprefix. clear diskpending.
-    iModIntro; iExists _, _, _, _, _; iFrame.
+    iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
     iSplitR. iPureIntro. intuition try lia.
       rewrite firstn_all. auto.
 
@@ -699,7 +951,7 @@ Section refinement_triples.
     iFrame. iSplit.
     {
       iSplit. iApply "Hsource_inv".
-      iExists _, _, _. iSplit. iApply "Hdisklockinv".
+      iExists _, _, _, _. iSplit. iApply "Hdisklockinv".
       iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv". }
     iPureIntro. lia.
 
@@ -720,7 +972,7 @@ Section refinement_triples.
       iFrame.
       iSplitL.
       - iSplit. iApply "Hsource_inv".
-        iExists _, _, _. iSplit. iApply "Hdisklockinv".
+        iExists _, _, _, _. iSplit. iApply "Hdisklockinv".
         iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv".
       - iPureIntro. intuition.
         rewrite firstn_length.
@@ -741,11 +993,20 @@ Section refinement_triples.
     rewrite <- (firstn_skipn (length diskpending) pending1) at 1.
     rewrite Hpendingprefix.
     iDestruct (big_sepL_app with "Hpending") as "[Hpending0 Hpending1]".
-    iMod ("Hspec" with "[Hpending0 Hsource]") as "Hsource". iFrame.
+    iDestruct (big_sepL_sep with "Hpending0") as "[Hpending0a Hpending0b]".
+    iMod ("Hspec" with "[Hpending0a Hsource]") as "[Hsource Hdone]". iFrame.
 
     wp_step.
 
     iMod (ghost_var_update_pending γpending nil with "Hdiskpendingown Hownpending") as "[Hdiskpendingown Hownpending]".
+    iMod (own_update with "Howncommitid") as "Howncommitid".
+    {
+      eapply auth_update_auth.
+      eapply mnat_local_update.
+      assert (next_committed_id <= next_committed_id + length diskpending) as Hle by lia.
+      apply Hle.
+    }
+    iMod (ghost_var_update _ (next_committed_id + length diskpending) with "Hnext_committed_exact Howncommitidexact") as "[Hnext_committed_exact Howncommitidexact]".
 
     iModIntro.
     iExists memlen.
@@ -753,14 +1014,33 @@ Section refinement_triples.
     iExists memblocks0.
     iExists _.
     iExists _.
+    iExists _.
+    iExists (list_inserts committed_pending1 next_committed_id (map pending_append_to_done diskpending)).
+    iExists _.
+
+    iDestruct (mnat_split _ _ (txid+1) with "Howncommitid") as "[Howncommitid Htxid]".
+    lia.
+    setoid_rewrite plus_assoc.
+
+    iDestruct (big_sepL_sep with "[Hpending0b Hdone]") as "Hdone".
+    { iFrame. }
+    simpl.
+
+    iDestruct (big_sepL_pending_append_to_done with "Hdone") as "Hdone".
+
+    iDestruct (big_sepM_list_inserts with "[Hcommitted_pending Hdone]") as "Hcommitted_pending".
+    2: {
+      iFrame. iFrame.
+    }
+    { auto. }
 
     iFrame.
-    iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown".
+    iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact".
     2: {
       wp_bind.
-      wp_unlock "[Hleaseblocks Hleaselen Hdiskpendingown]".
+      wp_unlock "[Hleaseblocks Hleaselen Hdiskpendingown Hnext_committed_exact]".
       {
-        iExists _, _, _. iFrame. iPureIntro. lia.
+        iExists _, _, _, _. iFrame. iPureIntro. lia.
       }
       wp_ret.
       done.
@@ -774,21 +1054,50 @@ Section refinement_triples.
     }
 
     iPureIntro. intuition try lia.
-    admit.
-    admit.
+    - admit.
+    - admit.
+    - destruct (lt_dec txid0 next_committed_id).
+      + rewrite lookup_list_insert_lt; try lia. auto.
+      + admit.
+    - admit.
+    - apply Hcid_post1.
+      admit.
 
   Unshelve.
     solve_ndisj.
   Admitted.
 
-  Lemma append_refinement {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} p:
-    {{{ j ⤇ K (Call (Log2.Append p)) ∗ Registered ∗ ExecInv }}}
+  Lemma append_refinement {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} p γcommit_id:
+    {{{ j ⤇ K (Call (Log2.Append p)) ∗ Registered ∗ ExecInv γcommit_id }}}
       append p
     {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
   Proof.
-    iIntros (Φ) "(Hj&Hreg&#Hsource_inv&Hinv) HΦ".
-    iDestruct "Hinv" as (γlock) "(#Hlockinv&#Hinv)".
+    iIntros (Φ) "(Hj&Hreg&#Hinv) HΦ".
 
+    wp_bind.
+    iApply (wp_wand with "[Hj Hreg]").
+    {
+      iApply mem_append. iFrame. iApply "Hinv".
+    }
+
+    iIntros "% [Hreg H]".
+    destruct a.
+
+    - wp_bind.
+      iDestruct "H" as "[[%H]|H]". congruence.
+      iDestruct "H" as (?) "[%H]".
+
+      iApply (wp_wand with "[H Hreg]").
+      {
+        iApply disk_append. iFrame. iApply "Hinv".
+      }
+
+      iIntros "% [Hreg H]".
+
+
+
+
+    wp_wand 
     wp_lock "(Hlocked&HEL)".
     iDestruct "HEL" as (len_val bs)
                          "((Hlen_ghost&Hbs_ghost)&Hbs_bounds)".
