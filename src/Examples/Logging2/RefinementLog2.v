@@ -1107,18 +1107,19 @@ Section refinement_triples.
 
   Lemma append_refinement {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} p :
     {{{ j ⤇ K (Call (Log2.Append p)) ∗ Registered ∗ ExecInv }}}
-      append p
+      ImplLog2.append p
     {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
   Proof.
     iIntros (Φ) "(Hj&Hreg&#Hinv) HΦ".
 
-    wp_bind.
+    iApply wp_bind_proc_subst.
     iApply (wp_wand with "[Hj Hreg]").
     {
       iApply mem_append. iFrame. iApply "Hinv".
     }
 
     iIntros "% [Hreg H]".
+    iNext.
     destruct a.
 
     - wp_bind.
@@ -1132,12 +1133,8 @@ Section refinement_triples.
 
       iIntros "% [Hreg H]".
       wp_ret.
-      (* XXX why does iApply not work?  the triangle? *)
-      (*
       iApply "HΦ".
-      *)
-      admit.
-
+      iFrame.
     - wp_ret.
       iDestruct "H" as "[[%H]|H]".
       + admit.
