@@ -239,6 +239,7 @@ Section refinement_triples.
   Context `{!exmachG Σ, lockG Σ, !@cfgG (Log2.Op) (Log2.l) Σ,
             !inG Σ (authR (optionUR (exclR (listO natO)))),
             !inG Σ (authR (optionUR (exclR (listO pending_appendC)))),
+            !inG Σ (authR (optionUR (exclR natO))),
             !inG Σ (authR mnatUR)}.
 
   (* hDone maps transaction IDs to the thread ID and its K value that's waiting for completion.
@@ -1329,14 +1330,27 @@ Section refinement_triples.
   Qed.
 
   Lemma init_mem_split:
-    (([∗ map] i↦v ∈ init_zero, i m↦ v) -∗ log_lock m↦ 0)%I.
+    (([∗ map] i↦v ∈ init_zero, i m↦ v) -∗
+      ( log_lock m↦ 0 ∗ mem_lock m↦ 0 ∗ mem_count m↦ 0 ) ∗
+        [∗ list] pos↦b ∈ repeat 0 log_size, mem_data pos m↦ b
+      )%I.
   Proof.
     iIntros "Hmem".
     rewrite (big_opM_delete _ _ 0 0); last first.
     { rewrite /ExMach.mem_state. apply init_zero_lookup_lt_zero. rewrite /size. lia. }
-    iDestruct "Hmem" as "(?&_)".
+    rewrite (big_opM_delete _ _ 1 0); last first.
+    { rewrite /ExMach.mem_state.
+      rewrite lookup_delete_ne; last auto.
+      apply init_zero_lookup_lt_zero. rewrite /size. lia. }
+    rewrite (big_opM_delete _ _ 2 0); last first.
+    { rewrite /ExMach.mem_state.
+      rewrite lookup_delete_ne; last auto.
+      rewrite lookup_delete_ne; last auto.
+      apply init_zero_lookup_lt_zero. rewrite /size. lia. }
+    iDestruct "Hmem" as "(?&?&?&Hrest)".
     iFrame.
-  Qed.
+    admit.
+  Admitted.
 
   Lemma rep_delete_init_zero:
     forall off (P : nat -> nat -> iPropI Σ),
@@ -1397,14 +1411,20 @@ End refinement_triples.
 
 Module sRT <: exmach_refinement_type.
 
-  Definition helperΣ : gFunctors := #[GFunctor (authR (optionUR (exclR (natO))));
-                                      GFunctor (authR (optionUR (exclR (listO natO))))].
-  Instance subG_helperΣ : subG helperΣ Σ → inG Σ (authR (optionUR (exclR (natO)))).
+  Definition helperΣ : gFunctors := #[GFunctor (authR (optionUR (exclR (listO pending_appendC))));
+                                      GFunctor (authR (optionUR (exclR (listO natO))));
+                                      GFunctor (authR (optionUR (exclR natO)));
+                                      GFunctor (authR mnatUR)].
+  Instance subG_helperΣ0 : subG helperΣ Σ → inG Σ (authR (optionUR (exclR (listO pending_appendC)))).
   Proof. solve_inG. Qed.
-  Instance subG_helperΣ' : subG helperΣ Σ → inG Σ (authR (optionUR (exclR (listO natO)))).
+  Instance subG_helperΣ1 : subG helperΣ Σ → inG Σ (authR (optionUR (exclR (listO natO)))).
+  Proof. solve_inG. Qed.
+  Instance subG_helperΣ2 : subG helperΣ Σ → inG Σ (authR (optionUR (exclR natO))).
+  Proof. solve_inG. Qed.
+  Instance subG_helperΣ3 : subG helperΣ Σ → inG Σ (authR mnatUR).
   Proof. solve_inG. Qed.
 
-  Definition Σ : gFunctors := #[Adequacy.exmachΣ; @cfgΣ Log2.Op Log2.l; lockΣ; helperΣ].
+  Definition Σ : gFunctors := #[Adequacy.exmachΣ; @cfgΣ Log2.Op Log2.l; lockΣ; helperΣ; gen_heapΣ nat (option pending_done)].
 
   Definition init_absr σ1a σ1c :=
     ExMach.l.(initP) σ1c ∧ Log2.l.(initP) σ1a.
@@ -1423,16 +1443,29 @@ Module sRT <: exmach_refinement_type.
   Global Instance inG_inst1: inG Σ (authR (optionUR (exclR (listO natO)))).
   Proof. apply _. Qed.
 
-  Global Instance inG_inst2: inG Σ (authR (optionUR (exclR natO))).
+  Global Instance inG_inst2: inG Σ (authR (optionUR (exclR (listO pending_appendC)))).
   Proof. apply _. Qed.
 
-  Global Instance inG_inst3: lockG Σ.
+  Global Instance inG_inst3: inG Σ (authR (optionUR (exclR natO))).
   Proof. apply _. Qed.
 
-  Definition exec_inv := fun H1 H2 => (@ExecInv Σ H2 _ H1)%I.
+  Global Instance inG_inst4: inG Σ (authR mnatUR).
+  Proof. apply _. Qed.
+
+  Global Instance inG_inst5: lockG Σ.
+  Proof. apply _. Qed.
+
+  Definition exec_inv :=
+    fun H1 H2 =>
+      ( ∃ hG,
+        (@ExecInv Σ H2 _ H1 _ _ _ _ hG) )%I.
   Definition exec_inner :=
-    fun H1 H2 => (∃ v, log_lock m↦ v ∗
-          ((⌜ v = 0  ⌝ -∗ @ExecLockInv Σ H2) ∗ @ExecInner Σ H2 H1))%I.
+    fun H1 H2 =>
+      ( ∃ γmemblocks γdiskpending γcommit_id γcommit_id_exact hG vm vd,
+        log_lock m↦ vm ∗ mem_lock m↦ vd ∗
+        ( (⌜ vd = 0 ⌝ -∗ @DiskLockInv Σ H2 _ _ γdiskpending γcommit_id_exact) ∗
+          (⌜ vm = 0 ⌝ -∗ @MemLockInv Σ H2 _ γmemblocks) ∗
+            @ExecInner Σ H2 H1 _ _ _ _ hG γmemblocks γdiskpending γcommit_id γcommit_id_exact))%I.
 
   Definition crash_param := fun (_ : @cfgG OpT Λa Σ) (_ : exmachG Σ) => unit.
   Definition crash_inv := fun H1 H2 (_ : crash_param _ _) => @CrashInv Σ H2 H1.
@@ -1469,13 +1502,20 @@ Module sRO : exmach_refinement_obligations sRT.
 
   Lemma refinement_op_triples: refinement_op_triples_type.
   Proof.
-    red. intros. iIntros "(?&?&HDB)". destruct op.
+    red. intros. iIntros "(Hj&Hreg&#HDB)".
+    iDestruct "HDB" as (x) "Hinv".
+    destruct op.
     - iApply (append_refinement with "[$]"). iNext. iIntros (?) "H". iFrame.
     - iApply (read_refinement with "[$]"). iNext. iIntros (?) "H". iFrame.
   Qed.
 
   Lemma exec_inv_source_ctx: ∀ {H1 H2}, exec_inv H1 H2 ⊢ source_ctx.
-  Proof. iIntros (??) "(?&?)"; eauto. Qed.
+  Proof.
+    iIntros (??) "Hinv".
+    iDestruct "Hinv" as (hG) "Hinv".
+    iDestruct "Hinv" as "[Hsource H]".
+    eauto.
+  Qed.
 
   Lemma list_next {H: exmachG Σ} Hinv Hmem Hreg : forall bs off,
     ([∗ list] pos↦b ∈ bs, (off + pos) d↦ b) ==∗
@@ -1508,6 +1548,7 @@ Module sRO : exmach_refinement_obligations sRT.
   Lemma recv_triple: recv_triple_type.
   Proof.
     red. intros. iIntros "((#Hctx&#Hinv)&_)".
+    (*
     wp_ret. iInv "Hinv" as (len_val bs) ">(?&Hlen&Hcase&Hlease&?)" "_".
     iApply (fupd_mask_weaken _ _).
     { solve_ndisj. }
@@ -1523,7 +1564,9 @@ Module sRO : exmach_refinement_obligations sRT.
     iSplitL "Hl"; iModIntro; iIntros; iExists _, _; iFrame.
     iPureIntro; intuition.
     iPureIntro; intuition.
-  Qed.
+    *)
+    admit.
+  Admitted.
 
   Lemma init_wf: ∀ σ1a σ1c, init_absr σ1a σ1c → ExMach.state_wf σ1c.
   Proof.
@@ -1534,15 +1577,49 @@ Module sRO : exmach_refinement_obligations sRT.
   Proof.
     red. intros ?? (H&Hinit) ??. inversion H. inversion Hinit. subst.
     iIntros "(Hmem&Hdisk&#?&Hstate)".
-    iPoseProof (init_mem_split with "Hmem") as "?".
-    iPoseProof (init_disk_split with "Hdisk") as "(Hd&Hl)".
-    iModIntro. iExists _. iFrame.
-    iSplitL "Hl".
-    - iDestruct "Hl" as "(?&?)". iIntros "_". iExists 0, _. iFrame.
+    iPoseProof (init_mem_split with "Hmem") as "((Hm0&Hm1&Hm2)&Hm3)".
+    iPoseProof (init_disk_split with "Hdisk") as "((Hd1&Hd2)&(Hl1&Hl2))".
+
+    iMod (ghost_var_alloc (nil : list nat)) as (γmemblocks) "[Hmemblocks0 Hmemblocks1]".
+    iExists γmemblocks.
+
+    iMod (ghost_var_alloc (nil : list pending_append)) as (γdiskpending) "[Hdiskpending0 Hdiskpending1]".
+    iExists γdiskpending.
+
+    iMod (ghost_var_alloc (0 : mnat)) as (γcommit_id) "[Hcommit_id0 Hcommit_id1]".
+    iExists γcommit_id.
+
+    iMod (ghost_var_alloc (0 : nat)) as (γcommit_id_exact) "[Hcommit_id_exact0 Hcommit_id_exact1]".
+    iExists γcommit_id_exact.
+
+    iMod (gen_heap_init (∅: gmap nat (option pending_done))) as (hG) "Hg".
+    iExists hG.
+
+    iModIntro. iExists 0, 0. iFrame.
+    iSplitL "Hl1 Hl2 Hdiskpending0 Hcommit_id_exact0".
+    {
+      iIntros "_". iExists 0, _, nil, 0. iFrame.
       iPureIntro. intuition. lia. rewrite repeat_length. lia.
-    - iDestruct "Hd" as "(?&?)". iExists 0, _. iFrame.
-      iPureIntro. intuition. lia. rewrite repeat_length. lia.
-  Qed.
+    }
+
+    iSplitL "Hm2 Hm3 Hmemblocks0".
+    {
+      iIntros "_". iExists 0, (repeat 0 log_size). iFrame.
+      iPureIntro. intuition. rewrite repeat_length. lia. lia.
+    }
+
+    iExists 0.
+    iExists (repeat 0 log_size).
+    iExists nil.
+    iExists nil.
+    iExists nil.
+    iExists 0.
+    iExists ∅.
+    iExists ∅.
+    simpl.
+    rewrite firstn_O.
+    iFrame.
+  Admitted.
 
   Lemma exec_inv_preserve_crash: exec_inv_preserve_crash_type.
   Proof.
