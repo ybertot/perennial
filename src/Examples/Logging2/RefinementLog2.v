@@ -235,6 +235,72 @@ Proof.
 Qed.
 
 
+Lemma rep_delete_init_zero:
+  forall Σ off (P : nat -> nat -> iPropI Σ),
+    off < ExMach.size ->
+    ([∗ map] k↦x ∈ rep_delete off ExMach.init_zero, P k x) -∗
+      P off 0 ∗ [∗ map] k↦x ∈ rep_delete (S off) ExMach.init_zero, P k x.
+Proof.
+  intros.
+  simpl rep_delete.
+  iIntros "H".
+  iDestruct (big_sepM_delete with "H") as "H".
+  2: iFrame.
+  rewrite rep_delete_lookup; try lia.
+  apply ExMach.init_zero_lookup_lt_zero.
+  lia.
+Qed.
+
+Lemma rep_delete_init_zero_list:
+  forall Σ (P : nat -> nat -> iPropI Σ) n off,
+    (n + off) <= ExMach.size ->
+    ([∗ map] k↦x ∈ rep_delete off ExMach.init_zero, P k x) -∗
+      ([∗ list] pos↦b ∈ repeat 0 n, P (off+pos) b) ∗
+      [∗ map] k↦x ∈ rep_delete (n + off) ExMach.init_zero, P k x.
+Proof.
+  induction n.
+  - simpl. iIntros. iFrame.
+  - simpl. iIntros (off Hoff) "H".
+    iDestruct (rep_delete_init_zero with "H") as "[Hoff Hmore]". lia.
+    replace (off+0) with off by lia. iFrame.
+    iDestruct (IHn with "Hmore") as "[Hl Htail]". lia.
+    rewrite <- plus_n_Sm. simpl. iFrame.
+    setoid_rewrite <- plus_n_Sm. iFrame.
+Qed.
+
+
+Local Ltac destruct_einner H :=
+  let disklen := fresh "disklen" in
+  let diskblocks := fresh "diskblocks" in
+  let memblocks := fresh "memblocks" in
+  let pending := fresh "pending" in
+  let diskpending := fresh "diskpending" in
+  let next_committed_id := fresh "next_committed_id" in
+  let committed_pending := fresh "committed_pending" in
+  let txid_map := fresh "txid_map" in
+  let Hlen0 := fresh "Hlen0" in
+  let Hlen1 := fresh "Hlen1" in
+  let Hprefix := fresh "Hprefix" in
+  let Hsuffix := fresh "Hsuffix" in
+  let Hcid_pre := fresh "Hcid_pre" in
+  let Hcid_mid := fresh "Hcid_mid" in
+  let Hcid_post := fresh "Hcid_post" in
+  let Hpendingprefix := fresh "Hpendingprefix" in
+  iDestruct H as (disklen diskblocks memblocks pending diskpending next_committed_id committed_pending txid_map)
+    ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Howncommitidexact & Hcid_pre & Hcid_mid & Hcid_post & Hcommitted_pending & Htxid_heap & Hownpending & Hpendingprefix)";
+  iDestruct "Hmap" as "(Hptr&Hbs)";
+  repeat unify_lease;
+  repeat unify_ghost;
+  iPure "Hlen0" as Hlen0;
+  iPure "Hlen1" as Hlen1;
+  iPure "Hprefix" as Hprefix;
+  iPure "Hsuffix" as Hsuffix;
+  iPure "Hcid_pre" as Hcid_pre;
+  iPure "Hcid_mid" as Hcid_mid;
+  iPure "Hcid_post" as Hcid_post;
+  iPure "Hpendingprefix" as Hpendingprefix.
+
+
 Section refinement_triples.
   Context `{!exmachG Σ, lockG Σ, !@cfgG (Log2.Op) (Log2.l) Σ,
             !inG Σ (authR (optionUR (exclR (listO natO)))),
@@ -374,15 +440,14 @@ Section refinement_triples.
      abstract state, and the lock must have been reset 0 *)
 
   Definition CrashInner :=
-    (∃ (len_val : nat) (bs : list nat) (memblocks : list nat),
+    (∃ (len_val : nat) (bs : list nat),
         source_state (firstn len_val bs) ∗
         ⌜ len_val <= length bs /\ length bs = log_size ⌝ ∗
         ptr_map len_val bs ∗
         lease_map len_val bs ∗
         log_lock m↦ 0 ∗
         mem_lock m↦ 0 ∗
-        mem_map 0 memblocks ∗
-        ⌜ length memblocks = log_size ⌝
+        mem_map 0 (repeat 0 log_size)
         )%I.
 
   Definition dN : namespace := (nroot.@"disklock").
@@ -493,37 +558,6 @@ Section refinement_triples.
         iFrame.
   Qed.
 
-
-  Local Ltac destruct_einner H :=
-    let disklen := fresh "disklen" in
-    let diskblocks := fresh "diskblocks" in
-    let memblocks := fresh "memblocks" in
-    let pending := fresh "pending" in
-    let diskpending := fresh "diskpending" in
-    let next_committed_id := fresh "next_committed_id" in
-    let committed_pending := fresh "committed_pending" in
-    let txid_map := fresh "txid_map" in
-    let Hlen0 := fresh "Hlen0" in
-    let Hlen1 := fresh "Hlen1" in
-    let Hprefix := fresh "Hprefix" in
-    let Hsuffix := fresh "Hsuffix" in
-    let Hcid_pre := fresh "Hcid_pre" in
-    let Hcid_mid := fresh "Hcid_mid" in
-    let Hcid_post := fresh "Hcid_post" in
-    let Hpendingprefix := fresh "Hpendingprefix" in
-    iDestruct H as (disklen diskblocks memblocks pending diskpending next_committed_id committed_pending txid_map)
-      ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Howncommitidexact & Hcid_pre & Hcid_mid & Hcid_post & Hcommitted_pending & Htxid_heap & Hownpending & Hpendingprefix)";
-    iDestruct "Hmap" as "(Hptr&Hbs)";
-    repeat unify_lease;
-    repeat unify_ghost;
-    iPure "Hlen0" as Hlen0;
-    iPure "Hlen1" as Hlen1;
-    iPure "Hprefix" as Hprefix;
-    iPure "Hsuffix" as Hsuffix;
-    iPure "Hcid_pre" as Hcid_pre;
-    iPure "Hcid_mid" as Hcid_mid;
-    iPure "Hcid_post" as Hcid_post;
-    iPure "Hpendingprefix" as Hpendingprefix.
 
   Lemma write_blocks_ok bs p off len_val:
     (
@@ -1326,6 +1360,7 @@ Section refinement_triples.
         [∗ list] pos↦b ∈ repeat 0 log_size, mem_data pos m↦ b
       )%I.
   Proof.
+    clear hDone.
     iIntros "Hmem".
     rewrite (big_opM_delete _ _ 0 0); last first.
     { rewrite /ExMach.mem_state. apply init_zero_lookup_lt_zero. rewrite /size. lia. }
@@ -1340,40 +1375,10 @@ Section refinement_triples.
       apply init_zero_lookup_lt_zero. rewrite /size. lia. }
     iDestruct "Hmem" as "(?&?&?&Hrest)".
     iFrame.
-    admit.
-  Admitted.
-
-  Lemma rep_delete_init_zero:
-    forall off (P : nat -> nat -> iPropI Σ),
-      off < size ->
-      ([∗ map] k↦x ∈ rep_delete off init_zero, P k x) -∗
-        P off 0 ∗ [∗ map] k↦x ∈ rep_delete (S off) init_zero, P k x.
-  Proof.
-    intros.
-    simpl rep_delete.
-    iIntros "H".
-    iDestruct (big_sepM_delete with "H") as "H".
-    2: iFrame.
-    rewrite rep_delete_lookup; try lia.
-    apply init_zero_lookup_lt_zero.
-    lia.
-  Qed.
-
-  Lemma rep_delete_init_zero_list:
-    forall (P : nat -> nat -> iPropI Σ) n off,
-      (n + off) <= size ->
-      ([∗ map] k↦x ∈ rep_delete off init_zero, P k x) -∗
-        ([∗ list] pos↦b ∈ repeat 0 n, P (off+pos) b) ∗
-        [∗ map] k↦x ∈ rep_delete (n + off) init_zero, P k x.
-  Proof.
-    induction n.
-    - simpl. iIntros. iFrame.
-    - simpl. iIntros (off Hoff) "H".
-      iDestruct (rep_delete_init_zero with "H") as "[Hoff Hmore]". lia.
-      replace (off+0) with off by lia. iFrame.
-      iDestruct (IHn with "Hmore") as "[Hl Htail]". lia.
-      rewrite <- plus_n_Sm. simpl. iFrame.
-      setoid_rewrite <- plus_n_Sm. iFrame.
+    pose proof log_size_ok.
+    replace (delete 2 (delete 1 (delete 0 init_zero))) with (rep_delete 3 init_zero) by reflexivity.
+    iDestruct (rep_delete_init_zero_list with "Hrest") as "[Hdata Hrest]".
+    2: iFrame. lia.
   Qed.
 
   Lemma init_disk_split:
@@ -1447,16 +1452,20 @@ Module sRT <: exmach_refinement_type.
   Definition exec_inner :=
     fun H1 H2 =>
       ( ∃ γmemblocks γdiskpending γcommit_id_exact hG vm vd,
-        log_lock m↦ vm ∗ mem_lock m↦ vd ∗
+        log_lock m↦ vd ∗ mem_lock m↦ vm ∗
         ( (⌜ vd = 0 ⌝ -∗ @DiskLockInv Σ H2 _ _ γdiskpending γcommit_id_exact) ∗
           (⌜ vm = 0 ⌝ -∗ @MemLockInv Σ H2 _ γmemblocks) ∗
             @ExecInner Σ H2 H1 _ _ _ hG γmemblocks γdiskpending γcommit_id_exact))%I.
 
   Definition crash_param := fun (_ : @cfgG OpT Λa Σ) (_ : exmachG Σ) => unit.
-  Definition crash_inv := fun H1 H2 (_ : crash_param _ _) => @CrashInv Σ H2 H1.
+  Definition crash_inv := fun H1 H2 (_ : crash_param _ _) =>
+    ( ∃ (hG: @gen_heapG nat (option pending_done) Σ nat_eq_dec nat_countable),
+      @CrashInv Σ H2 H1 )%I.
   Definition crash_starter :=
     fun H1 H2 (_ : crash_param H1 H2) => (True%I : iProp Σ).
-  Definition crash_inner := fun H1 H2 => (@CrashInner Σ H2 H1)%I.
+  Definition crash_inner := fun H1 H2 =>
+    ( ∃ (hG: @gen_heapG nat (option pending_done) Σ nat_eq_dec nat_countable),
+      @CrashInner Σ H2 H1)%I.
   Definition E := nclose sourceN.
 
   Definition recv: proc ExMach.Op unit := Ret tt.
@@ -1532,9 +1541,10 @@ Module sRO : exmach_refinement_obligations sRT.
 
   Lemma recv_triple: recv_triple_type.
   Proof.
-    red. intros. iIntros "((#Hctx&#Hinv)&_)".
-    (*
-    wp_ret. iInv "Hinv" as (len_val bs) ">(?&Hlen&Hcase&Hlease&?)" "_".
+    red. intros. iIntros "(#Hinv&_)".
+    iDestruct "Hinv" as (hG) "[Hctx Hinv]".
+    wp_ret.
+    iInv "Hinv" as (len_val bs) ">(?&Hlen&Hcase&Hlease&?&?&?)" "_".
     iApply (fupd_mask_weaken _ _).
     { solve_ndisj. }
     iExists (firstn len_val bs). iFrame.
@@ -1544,9 +1554,10 @@ Module sRO : exmach_refinement_obligations sRT.
     iClear "Hctx Hinv".
     iIntros (???) "(#Hctx&Hstate)".
     iMod (ptr_map_next with "Hcase") as "(Hp&Hl)".
-    iExists 0. iFrame.
+    iExists _. iExists _. iExists _. iExists _. iExists 0, 0. iFrame.
     iPure "Hlen" as Hlen; intuition.
-    iSplitL "Hl"; iModIntro; iIntros; iExists _, _; iFrame.
+    iSplitL "Hl"; iModIntro; iIntros.
+    - (* iExists _, _; iFrame.
     iPureIntro; intuition.
     iPureIntro; intuition.
     *)
@@ -1562,6 +1573,9 @@ Module sRO : exmach_refinement_obligations sRT.
   Proof.
     red. intros ?? (H&Hinit) ??. inversion H. inversion Hinit. subst.
     iIntros "(Hmem&Hdisk&#?&Hstate)".
+
+    iMod (gen_heap_strong_init (∅: gmap nat (option pending_done))) as (hG <-) "[Hheapctx Hheapown]".
+
     iPoseProof (init_mem_split with "Hmem") as "((Hm0&Hm1&Hm2)&Hm3)".
     iPoseProof (init_disk_split with "Hdisk") as "((Hd1&Hd2)&(Hl1&Hl2))".
 
@@ -1574,7 +1588,6 @@ Module sRO : exmach_refinement_obligations sRT.
     iMod (ghost_var_alloc (0 : nat)) as (γcommit_id_exact) "[Hcommit_id_exact0 Hcommit_id_exact1]".
     iExists γcommit_id_exact.
 
-    iMod (gen_heap_init (∅: gmap nat (option pending_done))) as (hG) "Hg".
     iExists hG.
 
     iModIntro. iExists 0, 0. iFrame.
@@ -1608,27 +1621,33 @@ Module sRO : exmach_refinement_obligations sRT.
 
   Lemma exec_inv_preserve_crash: exec_inv_preserve_crash_type.
   Proof.
-    red. intros. iIntros "(#Hctx&#Hinv)".
-    iDestruct "Hinv" as (γlock) "(#Hlock&#Hinv)".
+    red. intros. iIntros "#Hinv".
+    iDestruct "Hinv" as (hG) "Hinv".
+    iDestruct "Hinv" as "[Hsource_ctx #Hinv]".
+    iDestruct "Hinv" as (γmemblocks γdiskpending γcommit_id_exact γdisklock) "[Hdisklock Hmemlock]".
+    iDestruct "Hmemlock" as (γmemlock) "[Hmemlock Hinv]".
+
     iInv "Hinv" as "Hopen" "_".
     destruct_einner "Hopen".
     iApply fupd_mask_weaken; first by solve_ndisj.
     iIntros (??) "Hmem".
-    iPoseProof (@init_mem_split with "Hmem") as "?".
+    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?)&?)".
     iMod (ptr_map_next with "[Hptr Hbs]") as "(?&?)"; first by iFrame.
-    iModIntro. iExists _, _. iFrame.
+    iModIntro. iExists _, _, _. iFrame.
+    iPureIntro. intuition.
   Qed.
 
   Lemma crash_inv_preserve_crash: crash_inv_preserve_crash_type.
   Proof.
-    red. intros. iIntros "(#Hctx&#Hinv)".
+    red. intros. iIntros "#Hinv".
+    iDestruct "Hinv" as (hG) "(#Hctx&#Hinv)".
     iInv "Hinv" as ">Hopen" "_".
-    iDestruct "Hopen" as (? ?) "(?&Hlen&Hptr&Hlease&Hlock)".
+    iDestruct "Hopen" as (? ?) "(?&Hlen&Hptr&Hlease&Hlock&Hmemlock&Hmemcount&Hmemdata)".
     iApply fupd_mask_weaken; first by solve_ndisj.
     iIntros (??) "Hmem".
     iMod (ptr_map_next with "Hptr") as "(?&?)".
-    iModIntro. iExists _, _. iFrame.
-    iPoseProof (@init_mem_split with "Hmem") as "?".
+    iModIntro. iExists _, _, _. iFrame.
+    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?)&?)".
     iFrame.
   Qed.
 
@@ -1636,47 +1655,59 @@ Module sRO : exmach_refinement_obligations sRT.
   Proof.
     red. intros. iIntros "(Hinv&#Hsrc)".
     iDestruct "Hinv" as (invG) "Hinv".
-    iDestruct "Hinv" as (??) "(?&?&?)".
+    iDestruct "Hinv" as (???) "(?&?&?&?&?&?&?)".
     iMod (@inv_alloc Σ (exm_invG) iN _ CrashInner with "[-]").
     { iNext. iExists _, _; iFrame. }
-    iModIntro. iFrame. iExists tt. iFrame "Hsrc".
+    iModIntro. iFrame. iExists tt. iFrame "Hsrc". done.
   Qed.
 
   Lemma exec_inner_inv : exec_inner_inv_type.
   Proof.
     red. intros. iIntros "(Hinv&#Hsrc)".
     iDestruct "Hinv" as (invG v) "Hinv".
-    iDestruct "Hinv" as "(?&Hinv)".
-    iDestruct "Hinv" as "(Hlock&Hinner)".
-    iMod (@lock_init Σ (ExMachG _ (exm_invG) (exm_mem_inG) (exm_disk_inG) _) _ lN
-                     log_lock _ (ExecLockInv) with "[$] [-Hinner]") as (γlock) "H".
+    iDestruct "Hinv" as (?????) "(Hdisklock&Hmemlock&Hinner1&Hinner2&Hinner3)".
+    iMod (@lock_init Σ (ExMachG _ (exm_invG) (exm_mem_inG) (exm_disk_inG) _) _ mN
+                     mem_lock _ (MemLockInv _) with "[$] [Hinner2]") as (γmemlock) "Hmemlock".
     { iFrame. }
-    iMod (@inv_alloc Σ (exm_invG) iN _ (ExecInner) with "[Hinner]").
+    iMod (@lock_init Σ (ExMachG _ (exm_invG) (exm_mem_inG) (exm_disk_inG) _) _ dN
+                     log_lock _ (DiskLockInv _ _) with "[$] [Hinner1]") as (γdisklock) "Hdisklock".
     { iFrame. }
-    iModIntro. iFrame "Hsrc". iExists _. iFrame.
+    iMod (@inv_alloc Σ (exm_invG) iN _ (ExecInner _ _ _) with "[Hinner3]").
+    { iFrame. }
+    iModIntro. iFrame "Hsrc". iExists _, _, _, _, _. iFrame.
+    iExists _. iFrame.
   Qed.
 
   Lemma exec_inv_preserve_finish : exec_inv_preserve_finish_type.
   Proof.
-    iIntros (??) "? (?&H)".
-    iDestruct "H" as (?) "(Hlock&Hinv)".
+    iIntros (??) "? H".
+    iDestruct "H" as (?) "(#Hctx & H)".
+    iDestruct "H" as (????) "(#Hdisklock&#Hinv)".
+    iDestruct "Hinv" as (?) "(#Hmemlock&Hinv)".
     iInv "Hinv" as "H" "_".
-    iDestruct "H" as (ptr bs) ">(Hsource&Hlen&Hmap)".
-    iMod (lock_crack with "Hlock") as ">H"; first by solve_ndisj.
-    iDestruct "H" as (v) "(?&?)".
+    iDestruct "H" as (ptr bs memblocks pending diskpending next_committed_id committed_pending txid_map) "H".
+    iDestruct "H" as ">(Hsource&H)".
+    iDestruct "H" as "(H1 & H2 & Hmap & Hmbown & Htake & Hdrop & Hpending & Hownnext & H3 & H4 & H5 & Hcpending & Hheap & Hdiskpending & H6 )".
+    iMod (lock_crack with "Hmemlock") as ">H"; first by solve_ndisj.
+    iDestruct "H" as (v) "(?&Hm)".
+    iMod (lock_crack with "Hdisklock") as ">H"; first by solve_ndisj.
+    iDestruct "H" as (v') "(?&Hd)".
     iApply fupd_mask_weaken; first by solve_ndisj.
     iExists _, _; iFrame.
     iSplitL "".
     { iPureIntro. econstructor. }
     iIntros (????) "(?&?&Hmem)".
     iMod (ptr_map_next with "Hmap") as "(Hp&Hl)".
-    iPoseProof (@init_mem_split with "Hmem") as "?".
-    iExists _. iFrame. rewrite /ExecLockInv.
-    iPure "Hlen" as Hlen. intuition.
-    iSplitL "Hl"; iModIntro; iIntros; iExists _, _; iFrame.
+    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?)&?)".
+    iExists _, _, _, _, _, _. iFrame.
+    iSplitL "Hl"; iModIntro; iIntros.
+    - admit.
+    - admit.
+    (* iExists _, _, _, _; iFrame.
     iPureIntro; intuition.
     iPureIntro; intuition.
-  Qed.
+    *)
+  Admitted.
 
 End sRO.
 

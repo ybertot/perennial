@@ -5,7 +5,7 @@ Require Import ExMach.ExMachAPI.
 Import RelationNotations.
 
 Axiom log_size : nat.
-Axiom log_size_ok : log_size + 1 ≤ ExMach.size.
+Axiom log_size_ok : log_size + 3 ≤ ExMach.size.
 
 Module Log2.
 
