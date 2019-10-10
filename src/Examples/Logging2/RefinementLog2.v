@@ -239,8 +239,7 @@ Section refinement_triples.
   Context `{!exmachG Σ, lockG Σ, !@cfgG (Log2.Op) (Log2.l) Σ,
             !inG Σ (authR (optionUR (exclR (listO natO)))),
             !inG Σ (authR (optionUR (exclR (listO pending_appendC)))),
-            !inG Σ (authR (optionUR (exclR natO))),
-            !inG Σ (authR mnatUR)}.
+            !inG Σ (authR (optionUR (exclR natO)))}.
 
   (* hDone maps transaction IDs to the thread ID and its K value that's waiting for completion.
    * Being absent from the heap means the transaction ID never existed.
@@ -313,7 +312,7 @@ Section refinement_triples.
   Definition is_SomeSome {T} (x : option (option T)) :=
     exists y, x = Some (Some y).
 
-  Definition ExecInner γmemblocks γdiskpending γcommit_id γcommit_id_exact :=
+  Definition ExecInner γmemblocks γdiskpending γcommit_id_exact :=
     (∃ (len_val : nat) (bs : list nat) (memblocks : list nat)
        (pending : list pending_append) (diskpending : list pending_append)
        (next_committed_id : nat)
@@ -329,7 +328,6 @@ Section refinement_triples.
         ⌜ skipn len_val memblocks = concat (map pending_blocks pending) ⌝ ∗
         ( [∗ list] pending_off ↦ p ∈ pending, pending_call p ∗ (next_committed_id + pending_off) s↦{1/2} Some (pending_append_to_done p)) ∗
 
-        own γcommit_id (● (next_committed_id : mnat)) ∗
         own γcommit_id_exact (◯ (Excl' next_committed_id)) ∗
         ⌜ ∀ txid, txid < next_committed_id -> is_SomeSome (txid_map !! txid) -> is_Some (committed_pending !! txid) ⌝ ∗
         ⌜ ∀ txid, txid >= next_committed_id -> committed_pending !! txid = None ⌝ ∗
@@ -393,10 +391,10 @@ Section refinement_triples.
 
   Definition ExecInv :=
     ( source_ctx ∗
-      ∃ γmemblocks γdiskpending γcommit_id γcommit_id_exact,
+      ∃ γmemblocks γdiskpending γcommit_id_exact,
       ∃ γdisklock, is_lock dN γdisklock log_lock (DiskLockInv γdiskpending γcommit_id_exact) ∗
       ∃ γmemlock, is_lock mN γmemlock mem_lock (MemLockInv γmemblocks) ∗
-      inv iN (ExecInner γmemblocks γdiskpending γcommit_id γcommit_id_exact))%I.
+      inv iN (ExecInner γmemblocks γdiskpending γcommit_id_exact))%I.
   Definition CrashInv := (source_ctx ∗ inv iN CrashInner)%I.
 
   Lemma big_sepM_insert {A: Type} {P: nat -> A -> iPropI Σ} m i x :
@@ -514,7 +512,7 @@ Section refinement_triples.
     let Hcid_post := fresh "Hcid_post" in
     let Hpendingprefix := fresh "Hpendingprefix" in
     iDestruct H as (disklen diskblocks memblocks pending diskpending next_committed_id committed_pending txid_map)
-      ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Howncommitid & Howncommitidexact & Hcid_pre & Hcid_mid & Hcid_post & Hcommitted_pending & Htxid_heap & Hownpending & Hpendingprefix)";
+      ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Howncommitidexact & Hcid_pre & Hcid_mid & Hcid_post & Hcommitted_pending & Htxid_heap & Hownpending & Hpendingprefix)";
     iDestruct "Hmap" as "(Hptr&Hbs)";
     repeat unify_lease;
     repeat unify_ghost;
@@ -544,7 +542,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hinbound&Hbslen&Hoffpastlen&Hleaselen&Hlease)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (p off bs).
     destruct p; simpl.
@@ -573,7 +571,7 @@ Section refinement_triples.
 
       iModIntro.
       iExists _, (<[off:=n]> diskblocks), _, _, _, _, _, _.
-      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Hpending Howncommitid Howncommitidexact Hcommitted_pending Hownpending Htxid_heap".
+      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Hpending Howncommitidexact Hcommitted_pending Hownpending Htxid_heap".
       { iNext.
         iSplitL "Hsource".
         { rewrite take_insert; try lia.
@@ -643,7 +641,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hlen&Hdata)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (p off blocks).
     destruct p; simpl.
@@ -680,7 +678,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hlen&Hdata)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (nblocks off res).
     destruct nblocks; simpl.
@@ -754,7 +752,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "(Hj&Hreg&(#Hsource_inv&Hinv))".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_bind.
@@ -806,7 +804,7 @@ Section refinement_triples.
         iFrame.
         iSplit.
         { iSplit. iApply "Hsource_inv".
-          iExists _, _, _, _, _. iSplit. iApply "Hdisklockinv".
+          iExists _, _, _, _. iSplit. iApply "Hdisklockinv".
           iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv". }
         iPureIntro. lia.
       }
@@ -950,7 +948,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "(Hreg&(#Hsource_inv&Hinv)&Hcaller_txid)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_bind.
@@ -1004,7 +1002,7 @@ Section refinement_triples.
     iFrame. iSplit.
     {
       iSplit. iApply "Hsource_inv".
-      iExists _, _, _, _, _. iSplit. iApply "Hdisklockinv".
+      iExists _, _, _, _. iSplit. iApply "Hdisklockinv".
       iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv". }
     iPureIntro. lia.
 
@@ -1025,7 +1023,7 @@ Section refinement_triples.
       iFrame.
       iSplitL.
       - iSplit. iApply "Hsource_inv".
-        iExists _, _, _, _, _. iSplit. iApply "Hdisklockinv".
+        iExists _, _, _, _. iSplit. iApply "Hdisklockinv".
         iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv".
       - iPureIntro. intuition.
         rewrite firstn_length.
@@ -1052,13 +1050,6 @@ Section refinement_triples.
     wp_step.
 
     iMod (ghost_var_update_pending γpending nil with "Hdiskpendingown Hownpending") as "[Hdiskpendingown Hownpending]".
-    iMod (own_update with "Howncommitid") as "Howncommitid".
-    {
-      eapply auth_update_auth.
-      eapply mnat_local_update.
-      assert (next_committed_id <= next_committed_id + length diskpending) as Hle by lia.
-      apply Hle.
-    }
     iMod (ghost_var_update _ (next_committed_id + length diskpending) with "Hnext_committed_exact Howncommitidexact") as "[Hnext_committed_exact Howncommitidexact]".
 
     iDestruct (big_sepL_sep with "[Hpending0b Hdone]") as "Hdone".
@@ -1213,7 +1204,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hinbound&Hlease)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (nblocks off res).
     destruct nblocks; simpl.
@@ -1274,7 +1265,7 @@ Section refinement_triples.
     {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
   Proof.
     iIntros (Φ) "(Hj&Hreg&#Hsource_inv&Hinv) HΦ".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_lock "(Hlocked&HEL)".
@@ -1309,7 +1300,7 @@ Section refinement_triples.
       iApply read_blocks_ok.
       iFrame.
       iSplit.
-      - unfold ExecInv. iSplitL. iApply "Hsource_inv". iExists _, _, _, _, _. iSplitL. iApply "Hdisklockinv". iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv".
+      - unfold ExecInv. iSplitL. iApply "Hsource_inv". iExists _, _, _, _. iSplitL. iApply "Hdisklockinv". iExists _. iSplit. iApply "Hmemlockinv". iApply "Hinv".
       - iPureIntro. intuition.
     }
 
@@ -1413,15 +1404,12 @@ Module sRT <: exmach_refinement_type.
 
   Definition helperΣ : gFunctors := #[GFunctor (authR (optionUR (exclR (listO pending_appendC))));
                                       GFunctor (authR (optionUR (exclR (listO natO))));
-                                      GFunctor (authR (optionUR (exclR natO)));
-                                      GFunctor (authR mnatUR)].
+                                      GFunctor (authR (optionUR (exclR natO)))].
   Instance subG_helperΣ0 : subG helperΣ Σ → inG Σ (authR (optionUR (exclR (listO pending_appendC)))).
   Proof. solve_inG. Qed.
   Instance subG_helperΣ1 : subG helperΣ Σ → inG Σ (authR (optionUR (exclR (listO natO)))).
   Proof. solve_inG. Qed.
   Instance subG_helperΣ2 : subG helperΣ Σ → inG Σ (authR (optionUR (exclR natO))).
-  Proof. solve_inG. Qed.
-  Instance subG_helperΣ3 : subG helperΣ Σ → inG Σ (authR mnatUR).
   Proof. solve_inG. Qed.
 
   Definition Σ : gFunctors := #[Adequacy.exmachΣ; @cfgΣ Log2.Op Log2.l; lockΣ; helperΣ; gen_heapΣ nat (option pending_done)].
@@ -1449,23 +1437,20 @@ Module sRT <: exmach_refinement_type.
   Global Instance inG_inst3: inG Σ (authR (optionUR (exclR natO))).
   Proof. apply _. Qed.
 
-  Global Instance inG_inst4: inG Σ (authR mnatUR).
-  Proof. apply _. Qed.
-
-  Global Instance inG_inst5: lockG Σ.
+  Global Instance inG_inst4: lockG Σ.
   Proof. apply _. Qed.
 
   Definition exec_inv :=
     fun H1 H2 =>
       ( ∃ hG,
-        (@ExecInv Σ H2 _ H1 _ _ _ _ hG) )%I.
+        (@ExecInv Σ H2 _ H1 _ _ _ hG) )%I.
   Definition exec_inner :=
     fun H1 H2 =>
-      ( ∃ γmemblocks γdiskpending γcommit_id γcommit_id_exact hG vm vd,
+      ( ∃ γmemblocks γdiskpending γcommit_id_exact hG vm vd,
         log_lock m↦ vm ∗ mem_lock m↦ vd ∗
         ( (⌜ vd = 0 ⌝ -∗ @DiskLockInv Σ H2 _ _ γdiskpending γcommit_id_exact) ∗
           (⌜ vm = 0 ⌝ -∗ @MemLockInv Σ H2 _ γmemblocks) ∗
-            @ExecInner Σ H2 H1 _ _ _ _ hG γmemblocks γdiskpending γcommit_id γcommit_id_exact))%I.
+            @ExecInner Σ H2 H1 _ _ _ hG γmemblocks γdiskpending γcommit_id_exact))%I.
 
   Definition crash_param := fun (_ : @cfgG OpT Λa Σ) (_ : exmachG Σ) => unit.
   Definition crash_inv := fun H1 H2 (_ : crash_param _ _) => @CrashInv Σ H2 H1.
@@ -1586,9 +1571,6 @@ Module sRO : exmach_refinement_obligations sRT.
     iMod (ghost_var_alloc (nil : list pending_append)) as (γdiskpending) "[Hdiskpending0 Hdiskpending1]".
     iExists γdiskpending.
 
-    iMod (ghost_var_alloc (0 : mnat)) as (γcommit_id) "[Hcommit_id0 Hcommit_id1]".
-    iExists γcommit_id.
-
     iMod (ghost_var_alloc (0 : nat)) as (γcommit_id_exact) "[Hcommit_id_exact0 Hcommit_id_exact1]".
     iExists γcommit_id_exact.
 
@@ -1619,7 +1601,10 @@ Module sRO : exmach_refinement_obligations sRT.
     simpl.
     rewrite firstn_O.
     iFrame.
-  Admitted.
+    rewrite big_sepM_empty.
+    iPureIntro. intuition. lia. rewrite repeat_length. lia.
+    rewrite lookup_empty in H1. destruct H1. congruence.
+  Qed.
 
   Lemma exec_inv_preserve_crash: exec_inv_preserve_crash_type.
   Proof.
