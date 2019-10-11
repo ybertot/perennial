@@ -883,31 +883,36 @@ Section refinement_triples.
       iDestruct (mapsto_split with "Htxid_j") as "[Htxid_j1 Htxid_j2]".
       iFrame.
 
+      assert(disklen <= memlen) as Hlen.
+      destruct(dec_le disklen memlen); try lia.
+      rewrite firstn_firstn in Hprefix.
+      rewrite min_r in Hprefix; try lia.
+      assert(length (take memlen mblocks) = memlen).
+      rewrite(firstn_length_le); try lia.
+      assert(length (take disklen diskblocks) = disklen).
+      rewrite(firstn_length_le); try lia.
+      rewrite Hprefix in H3.
+      exfalso. lia.
+
       iSplitL "".
       { iPureIntro. intuition try lia.
         {
           rewrite <- Hprefix.
           rewrite firstn_firstn.
-          destruct(dec_le disklen memlen).
-          - rewrite min_l.
-            rewrite take_list_inserts_le; try lia.
-            rewrite firstn_firstn. rewrite min_l; auto.
-            lia.
-          - destruct (dec_eq disklen memlen); try lia.
-            rewrite firstn_firstn in Hprefix.
-            rewrite min_r in Hprefix; try lia.
-            assert(length (take memlen mblocks) = memlen).
-            rewrite(firstn_length_le); try lia.
-            assert(length (take disklen diskblocks) = disklen).
-            rewrite(firstn_length_le); try lia.
-            rewrite Hprefix in H4.
-            exfalso. lia.
+          rewrite min_l; try lia.
+          rewrite take_list_inserts_le; try lia.
+          rewrite firstn_firstn. rewrite min_l; auto.
         }
         {
           rewrite map_app. rewrite concat_app.
           rewrite <- Hsuffix.
           simpl. rewrite app_nil_r.
-          admit.
+
+          rewrite take_list_inserts; try lia.
+          rewrite take_list_inserts_le; try lia.
+          rewrite drop_app_le; try lia.
+          auto.
+          rewrite take_length_le; try lia.
         }
 
         {
@@ -931,7 +936,7 @@ Section refinement_triples.
       iExists _.
       iFrame.
       done.
-  Admitted.
+   Qed.
 
   Lemma step_spec_pending : forall E, nclose sourceN ⊆ E ->
     forall pending (s : list nat),
