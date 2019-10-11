@@ -234,6 +234,23 @@ Proof.
     reflexivity.
 Qed.
 
+Lemma take_take_le {T}:  forall  (diskblocks: list T) disklen memlen memblocks,
+  disklen <= strings.length diskblocks ->
+  memlen <= strings.length memblocks ->
+  take disklen (take memlen memblocks) = take disklen diskblocks ->
+  disklen <= memlen.
+Proof.
+  intros.
+  destruct(dec_le disklen memlen); try lia.
+  rewrite firstn_firstn in H1.
+  rewrite min_r in H1; try lia.
+  assert(length (take memlen memblocks) = memlen).
+  rewrite(firstn_length_le); try lia.
+  assert(length (take disklen diskblocks) = disklen).
+  rewrite(firstn_length_le); try lia.
+  rewrite H1 in H3.
+  exfalso. lia.
+Qed.
 
 Lemma rep_delete_init_zero:
   forall Σ off (P : nat -> nat -> iPropI Σ),
@@ -267,7 +284,6 @@ Proof.
     rewrite <- plus_n_Sm. simpl. iFrame.
     setoid_rewrite <- plus_n_Sm. iFrame.
 Qed.
-
 
 Local Ltac destruct_einner H :=
   let disklen := fresh "disklen" in
@@ -883,17 +899,8 @@ Section refinement_triples.
       iDestruct (mapsto_split with "Htxid_j") as "[Htxid_j1 Htxid_j2]".
       iFrame.
 
-      assert(disklen <= memlen) as Hlen.
-      destruct(dec_le disklen memlen); try lia.
-      rewrite firstn_firstn in Hprefix.
-      rewrite min_r in Hprefix; try lia.
-      assert(length (take memlen mblocks) = memlen).
-      rewrite(firstn_length_le); try lia.
-      assert(length (take disklen diskblocks) = disklen).
-      rewrite(firstn_length_le); try lia.
-      rewrite Hprefix in H3.
-      exfalso. lia.
-
+      apply take_take_le in Hprefix as Hlen; try lia.
+      
       iSplitL "".
       { iPureIntro. intuition try lia.
         {
@@ -1168,6 +1175,8 @@ Section refinement_triples.
       done.
     }
 
+    apply take_take_le in Hprefix0 as Hdisklen; try lia.
+    
     iSplitL "Hsource".
     {
       iNext.
