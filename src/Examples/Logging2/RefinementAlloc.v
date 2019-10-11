@@ -16,58 +16,69 @@ Section refinement_triples.
 
   Import ExMach.
 
-  Context {hTxn: gen_heapG nat (option (gmap nat nat)) Σ}.
-  Notation "l t↦ v " := (mapsto (hG := hTxn) l 1 v)
-    (at level 20, format "l  t↦  v") : bi_scope.
+  Context {hTxn: gen_heapG nat (option (gen_heapG nat nat Σ)) Σ}.
+  Notation "l ↦[ t ] v " := (mapsto (hG := t) l 1 v)
+    (at level 20, t at level 50, format "l  ↦[ t ]  v") : bi_scope.
 
-
-  Definition txn_valid (txn : nat) (tmap : gmap nat nat) :=
+  Definition txn_valid (txn : nat) (hT : gen_heapG nat nat Σ) :=
     (
-      txn t↦ (Some tmap) ∗
-      [∗ map] a ↦ v ∈ tmap, ∃ v0, a m↦ v0
+      txn ↦[hTxn] (Some hT) ∗
+      ∀ a v, a ↦[hT] v -∗ ∃ v0, a m↦ v0
     )%I.
 
   Axiom begin_ok : forall s E,
     (
       WP ImplAlloc.begin @ s; E {{
         txn,
-        txn_valid txn ∅
+        ∃ hT, txn_valid txn hT
       }}
     )%I.
 
-  Axiom lift_ok : forall txn m liftm,
+  Axiom lift_ok : forall txn hT liftm,
     (
-      ( txn_valid txn m ∗
+      ( txn_valid txn hT ∗
         [∗ map] a ↦ v ∈ liftm, a m↦ v
       ) -∗
-      txn_valid txn (m ∪ liftm)
+      (
+        txn_valid txn hT ∗
+        [∗ map] a ↦ v ∈ liftm, a ↦[hT] v
+      )
     )%I.
 
-  Axiom write_ok : forall s E txn a v m,
+  Axiom write_ok : forall s E txn a v v0 hT,
     (
-      ( txn_valid txn m ∗
-        ⌜ is_Some (m !! a) ⌝ )
+      (
+        txn_valid txn hT ∗
+        a ↦[hT] v0
+      )
       -∗
       WP ImplAlloc.write txn a v @ s; E {{
         tt,
-        txn_valid txn (<[a:=v]> m)
+        txn_valid txn hT ∗
+        a ↦[hT] v
       }}
     )%I.
 
-  Axiom read_ok : forall s E txn a v m,
+  Axiom read_ok : forall s E txn a v hT,
     (
-      ( txn_valid txn m ∗
-        ⌜ m !! a = v ⌝ )
+      (
+        txn_valid txn hT ∗
+        a ↦[hT] v
+      )
       -∗
       WP ImplAlloc.read txn a @ s; E {{
         v,
-        txn_valid txn m
+        txn_valid txn hT ∗
+        a ↦[hT] v
       }}
     )%I.
 
-  Axiom commit_ok : forall s E txn m,
+  Axiom commit_ok : forall s E txn m hT,
     (
-      txn_valid txn m
+      (
+        txn_valid txn hT ∗
+        [∗ map] a ↦ v ∈ m, a ↦[hT] v
+      )
       -∗
       WP ImplAlloc.commit txn @ s; E {{
         r,
