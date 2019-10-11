@@ -887,7 +887,21 @@ Section refinement_triples.
       { iPureIntro. intuition try lia.
         {
           rewrite <- Hprefix.
-          admit.
+          rewrite firstn_firstn.
+          destruct(dec_le disklen memlen).
+          - rewrite min_l.
+            rewrite take_list_inserts_le; try lia.
+            rewrite firstn_firstn. rewrite min_l; auto.
+            lia.
+          - destruct (dec_eq disklen memlen); try lia.
+            rewrite firstn_firstn in Hprefix.
+            rewrite min_r in Hprefix; try lia.
+            assert(length (take memlen mblocks) = memlen).
+            rewrite(firstn_length_le); try lia.
+            assert(length (take disklen diskblocks) = disklen).
+            rewrite(firstn_length_le); try lia.
+            rewrite Hprefix in H4.
+            exfalso. lia.
         }
         {
           rewrite map_app. rewrite concat_app.
@@ -932,7 +946,6 @@ Section refinement_triples.
     induction pending.
     - simpl. iIntros (s) "#Hsource_inv (Hpending & Hsource)". rewrite app_nil_r. iFrame. done.
     - simpl. iIntros (s) "#Hsource_inv ([Hpending Hpendingother] & Hsource)".
-
       destruct a. simpl.
 
       iMod (ghost_step_lifting with "Hpending Hsource_inv Hsource") as "(Hj&Hsource&_)".
