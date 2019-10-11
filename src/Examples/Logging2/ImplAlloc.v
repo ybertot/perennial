@@ -15,7 +15,7 @@ Fixpoint alloc_below (t : txn) (off : nat) (n : nat) :=
     | O => Ret None
     | S n' =>
       v <- read t (off+n');
-      if (eq_nat_dec v 0) then
+      if decide (v = 0) then
         _ <- write t (off+n') 1;
         Ret (Some n')
       else
