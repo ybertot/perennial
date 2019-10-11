@@ -269,6 +269,25 @@ Section refinement_triples.
       Ret r
     )%proc.
 
+  Fixpoint insert_allocs (m : gmap nat nat) (l : list nat) (off : nat) :=
+    match l with
+    | nil => m
+    | v :: l' =>
+      <[off:=v]> (insert_allocs m l' (off+1))
+    end.
+
+  Theorem insert_allocs_none : forall l off off',
+    off' < off ->
+    insert_allocs ∅ l off !! off' = None.
+  Proof.
+    induction l0; simpl; intros.
+    - reflexivity.
+    - rewrite lookup_insert_ne; try lia.
+      apply IHl0. lia.
+  Qed.
+
+  Hint Resolve insert_allocs_none.
+
   Theorem AllocInv_liftable : forall s,
     liftable (AllocInv s).
   Proof.
@@ -276,6 +295,57 @@ Section refinement_triples.
     intros.
     iIntros (?) "H".
     iDestruct "H" as (sz) "[Hsz Has]".
+    iDestruct "Has" as (l) "[%[%Has]]".
+    iExists (<[allocator:=sz]> (insert_allocs ∅ l (allocator+1))).
+    iSplitL.
+    {
+      iApply big_sepM_insert.
+      eapply insert_allocs_none; lia.
+      iFrame.
+
+      clear H1 H2.
+      generalize allocator as n. intro n.
+      iInduction l as [|l] "IH" forall (n).
+      - simpl. rewrite big_sepM_empty. iFrame.
+      - simpl.
+        iApply big_sepM_insert.
+        eapply insert_allocs_none; lia.
+        replace (n+1+0) with (n+1) by lia.
+        iDestruct "Has" as "[Hn1 Has]".
+        iFrame.
+        iApply "IH".
+        repeat setoid_rewrite <- plus_n_Sm.
+        repeat rewrite <- plus_n_O.
+        simpl.
+        iFrame.
+    }
+
+    iIntros (?) "Hm".
+    iDestruct (big_sepM_insert with "Hm") as "[Hsz Hm]".
+    eapply insert_allocs_none; lia.
+
+    iExists sz. iFrame.
+    iExists l.
+    iSplitR.
+    { iPureIntro. auto. }
+    iSplitR.
+    { iPureIntro. auto. }
+
+    clear H1 H2.
+    generalize allocator as n. intro n.
+    iInduction l as [|l] "IH" forall (n).
+    - simpl. rewrite big_sepM_empty. iFrame.
+    - simpl.
+      iDestruct (big_sepM_insert with "Hm") as "[Hn1 Hm]".
+      eapply insert_allocs_none; lia.
+      replace (n+1+0) with (n+1) by lia.
+      iFrame.
+      iDestruct ("IH" with "Hm") as "Hm".
+      iClear "IH".
+      repeat setoid_rewrite <- plus_n_Sm.
+      repeat rewrite <- plus_n_O.
+      simpl.
+      iFrame.
   Admitted.
 
   Theorem alloc_and_commit_ok :
