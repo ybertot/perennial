@@ -11,9 +11,14 @@ From Tactical Require Import UnfoldLemma.
 
 
 Section refinement_triples.
-  Context `{!exmachG Σ, lockG Σ, !@cfgG (Alloc.Op) (Alloc.l) Σ,
+  Context `{!exmachG Σ, lockG Σ, !@cfgG (Inode.Op) (Inode.l) Σ,
             !inG Σ (authR (optionUR (exclR (listO natO)))),
+            !inG Σ (authR (optionUR (exclR (listO pending_appendC)))),
+            !inG Σ (authR (optionUR (exclR (prodO natO natO)))),
             !inG Σ (authR (optionUR (exclR natO)))}.
+
+  (* because we use lemmas from RefinementLog2.v which accidentally got dependent on this kind of heap.. *)
+  Context {hDone: gen_heapG nat (option pending_done) Σ}.
 
   Import ExMach.
 
@@ -403,3 +408,199 @@ Section refinement_triples.
       wp_ret.
       iExists _. iApply "Hinv".
   Qed.
+
+
+  Definition i0_lock := 0.
+  Definition i1_lock := 1.
+  Definition i0_data := 2.
+  Definition i1_data := 4.
+
+  Definition lN : namespace := (nroot.@"inode_lock").
+
+  Definition inode_state (a : nat) (s : nat*nat) (h : heapT) :=
+    (
+      a ↦[h] fst s ∗
+      (a+1) ↦[h] snd s
+    )%I.
+
+  Definition inode_inv (a : nat) (γs : gname) :=
+    (
+      ∃ data,
+      own γs (● (Excl' data)) ∗
+      inode_state a data memHeap
+    )%I.
+
+  Definition ExecInner γ0s γ1s :=
+    (
+      ∃ data0 data1,
+      source_state (data0, data1) ∗
+      own γ0s (◯ (Excl' data0)) ∗
+      own γ1s (◯ (Excl' data1))
+    )%I.
+
+  Definition InodeInv :=
+    (
+      ∃ γ0lock γ1lock γ0s γ1s,
+      source_ctx ∗
+      is_lock lN γ0lock i0_lock (inode_inv i0_data γ0s) ∗
+      is_lock lN γ1lock i1_lock (inode_inv i1_data γ1s) ∗
+      inv iN (ExecInner γ0s γ1s)
+    )%I.
+
+  Import ExMachAPI.
+
+  Definition read (i : nat) :=
+    (
+      match i with
+      | 0 =>
+        _ <- lock i0_lock;
+        d0 <- read_mem i0_data;
+        d1 <- read_mem (i0_data+1);
+        _ <- unlock i0_lock;
+        Ret (d0, d1)
+      | 1 =>
+        _ <- lock i1_lock;
+        d0 <- read_mem i1_data;
+        d1 <- read_mem (i1_data+1);
+        _ <- unlock i1_lock;
+        Ret (d0, d1)
+      | _ => Ret (0, 0)
+      end
+    )%proc.
+
+  Definition write2 (i : nat) (d0 d1 : nat) :=
+    (
+      txn <- begin;
+      match i with
+      | 0 =>
+        _ <- lock i0_lock;
+        _ <- write txn i0_data d0;
+        _ <- write txn (i0_data+1) d1;
+        _ <- commit txn;
+        _ <- unlock i0_lock;
+        Ret tt
+      | 1 =>
+        _ <- lock i1_lock;
+        _ <- write txn i1_data d0;
+        _ <- write txn (i1_data+1) d1;
+        _ <- commit txn;
+        _ <- unlock i1_lock;
+        Ret tt
+      | _ => Ret tt
+      end
+    )%proc.
+
+  Lemma read_refinement {T} j K `{LanguageCtx Inode.Op _ T Inode.l K} i :
+    {{{ j ⤇ K (Call (Inode.Read i)) ∗ Registered ∗ InodeInv }}}
+      read i
+    {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
+  Proof.
+    iIntros (Φ) "(Hj&Hreg&#Hinv) HΦ".
+    iDestruct "Hinv" as (g0l g1l g0s g1s) "(Hsource_inv & Hinv0 & Hinv1 & Hinv)".
+    destruct i.
+    - wp_bind.
+      wp_lock "[Hlocked0 Hi0]".
+      iDestruct "Hi0" as (i0) "[Hi0own [Hi00 Hi01]]".
+      unfold memHeap.
+
+      wp_bind.
+      iInv "Hinv" as "H".
+      iDestruct "H" as (d0 d1) ">H".
+      iDestruct "H" as "(Hsource & Hshare0 & Hshare1)".
+
+      iMod (ghost_step_lifting with "Hj Hsource_inv Hsource") as "(Hj&Hsource&_)".
+      { simpl.
+        intros. eexists. do 2 eexists; split; last by eauto. econstructor; eauto.
+        econstructor.
+      }
+      { solve_ndisj. }
+      unify_ghost.
+
+      wp_step.
+
+      iModIntro. iExists _, _. iFrame.
+
+      wp_step.
+      wp_unlock "[Hi0own Hi00 Hi01]".
+      {
+        iExists _. iFrame.
+      }
+      wp_ret. simpl. destruct d0.
+      iApply "HΦ". iFrame.
+    - admit.
+  Admitted.
+
+  Theorem inode_inv_liftable : forall d i,
+    liftable (inode_state d i).
+  Proof.
+  Admitted.
+
+  Lemma write2_refinement {T} j K `{LanguageCtx Inode.Op _ T Inode.l K} i d0 d1 :
+    {{{ j ⤇ K (Call (Inode.Write2 i d0 d1)) ∗ Registered ∗ InodeInv }}}
+      write2 i d0 d1
+    {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
+  Proof.
+    iIntros (Φ) "(Hj&Hreg&#Hinv) HΦ".
+    iDestruct "Hinv" as (g0l g1l g0s g1s) "(Hsource_inv & Hinv0 & Hinv1 & Hinv)".
+    destruct i.
+    -
+      iDestruct (begin_ok) as "Hwp_begin".
+      wp_bind.
+      iApply (wp_wand with "Hwp_begin").
+      iIntros (?) "Htxn".
+      iDestruct "Htxn" as (txn) "Htxn".
+
+      wp_lock "[Hlocked0 Hi0]".
+      iDestruct "Hi0" as (i0) "[Hi0own Hi0]".
+
+      iPoseProof inode_inv_liftable as "Hliftable".
+      iDestruct (lift_pred_ok with "[$Htxn Hi0 $Hliftable]") as "[Htxn Hi0]". iFrame.
+      iDestruct "Hi0" as "[Hi00 Hi01]".
+
+      iDestruct (write_ok with "[$Htxn $Hi00]") as "Hwp_write".
+      wp_bind.
+      iApply (wp_wand with "Hwp_write").
+      iIntros (?) "[Htxn Hi00]".
+
+      iDestruct (write_ok with "[$Htxn $Hi01]") as "Hwp_write".
+      wp_bind.
+      iApply (wp_wand with "Hwp_write").
+      iIntros (?) "[Htxn Hi01]".
+
+      iPoseProof (inode_inv_liftable _ (d0,d1)) as "Hliftable2".
+      iDestruct (commit_pred_ok with "[$Htxn $Hliftable2 Hi00 Hi01]") as "Hwp_commit".
+      iFrame.
+      wp_bind.
+      iApply (wp_wand with "Hwp_commit").
+      iIntros (?) "Hi0".
+
+      wp_bind.
+
+      iInv "Hinv" as "H".
+      iDestruct "H" as (dd0 dd1) ">H".
+      iDestruct "H" as "(Hsource & Hshare0 & Hshare1)".
+
+      iMod (ghost_step_lifting with "Hj Hsource_inv Hsource") as "(Hj&Hsource&_)".
+      { simpl.
+        intros. eexists. do 2 eexists; split; last by eauto. econstructor; eauto.
+        econstructor.
+      }
+      { solve_ndisj. }
+      unify_ghost.
+
+      iMod (ghost_var_update _ (d0, d1) with "Hi0own Hshare0") as "[Hi0own Hshare0]".
+
+      iDestruct (wp_unlock_open with "Hinv0 Hlocked0") as "Hunlock".
+      2: iApply (wp_wand with "[Hi0own Hi0 Hunlock]").
+      2: iApply "Hunlock".
+      solve_ndisj.
+
+      iExists _. iFrame.
+
+      iIntros.
+      iModIntro. iExists _, _. iFrame.
+
+      wp_ret.
+      iApply "HΦ". iFrame.
+    - admit.
+  Admitted.
