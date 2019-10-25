@@ -296,12 +296,9 @@ Local Ltac destruct_einner H :=
   let Hlen1 := fresh "Hlen1" in
   let Hprefix := fresh "Hprefix" in
   let Hsuffix := fresh "Hsuffix" in
-  let Hcid_pre := fresh "Hcid_pre" in
-  let Hcid_mid := fresh "Hcid_mid" in
-  let Hcid_post := fresh "Hcid_post" in
   let Hpendingprefix := fresh "Hpendingprefix" in
   iDestruct H as (disklen diskblocks memblocks pending diskpending next_committed_id)
-    ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Hpending & Howncommitidexact & Htxid_map_status & Hownpending & Hpendingprefix)";
+    ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Howncommitidexact & Htxid_map_status & Hownpending & Hpendingprefix)";
   iDestruct "Hmap" as "(Hptr&Hbs)";
   repeat unify_lease;
   repeat unify_ghost;
@@ -391,17 +388,20 @@ Section refinement_triples.
 
   Definition txid_status (txid : nat) (pd : pending_done) :=
     (
-      pending_ret pd ∗ txid s↦{1/2} Some pd
+      pending_ret pd
     )%I.
 
-  Definition txid_map_status (next_committed_id : nat) (len_pending : nat) :=
+  Definition txid_map_status (next_committed_id : nat) (pending : list pending_append) :=
     (
       ∃ (committed_pending : gmap nat pending_done)
         (txid_map : gmap nat (option pending_done)),
-        ⌜ ∀ txid, txid < next_committed_id -> is_SomeSome (txid_map !! txid) -> is_Some (committed_pending !! txid) ⌝ ∗
+        ⌜ ∀ txid pd, txid < next_committed_id -> txid_map !! txid = Some (Some pd) -> committed_pending !! txid = Some pd ⌝ ∗
         ⌜ ∀ txid, txid >= next_committed_id -> committed_pending !! txid = None ⌝ ∗
-        ⌜ ∀ txid, txid >= next_committed_id + len_pending -> txid_map !! txid = None ⌝ ∗
+        ⌜ ∀ txid, txid >= next_committed_id + length pending -> txid_map !! txid = None ⌝ ∗
+        ⌜ ∀ off p, pending !! off = Some p ->
+          txid_map !! (next_committed_id + off)%nat = Some (Some (pending_append_to_done p)) ⌝ ∗
         ( [∗ map] txid ↦ done ∈ committed_pending, txid_status txid done ) ∗
+        ( [∗ list] pending_off ↦ p ∈ pending, pending_call p ) ∗
         gen_heap_ctx txid_map
     )%I.
 
@@ -417,10 +417,9 @@ Section refinement_triples.
         own γmemblocks (◯ (Excl' memblocks)) ∗
         ⌜ firstn len_val memblocks = firstn len_val bs ⌝ ∗
         ⌜ skipn len_val memblocks = concat (map pending_blocks pending) ⌝ ∗
-        ( [∗ list] pending_off ↦ p ∈ pending, pending_call p ∗ (next_committed_id + pending_off) s↦{1/2} Some (pending_append_to_done p)) ∗
 
         own γcommit_id_exact (◯ (Excl' next_committed_id)) ∗
-        txid_map_status next_committed_id (length pending) ∗
+        txid_map_status next_committed_id pending ∗
 
         (* diskpending is a snapshot that [disk_append] took and is in
            the process of writing to disk *)
@@ -626,7 +625,7 @@ Section refinement_triples.
 
       iModIntro.
       iExists _, (<[off:=n]> diskblocks), _, _, _, _.
-      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Hpending Howncommitidexact Hownpending Htxid_map_status".
+      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Howncommitidexact Hownpending Htxid_map_status".
       { iNext.
         iSplitL "Hsource".
         { rewrite take_insert; try lia.
@@ -793,24 +792,23 @@ Section refinement_triples.
     done.
   Qed.
 
-  Lemma ghost_var_new_txid next_committed_id len_pending pd :
-    txid_map_status next_committed_id len_pending ==∗
-      txid_map_status next_committed_id (len_pending + 1) ∗
-      (next_committed_id + len_pending) s↦{1 / 2} pd ∗
-      (next_committed_id + len_pending) s↦{1 / 2} pd.
+  Lemma ghost_var_new_txid next_committed_id pending pa :
+    pending_call pa -∗
+    txid_map_status next_committed_id pending ==∗
+      txid_map_status next_committed_id (pending ++ [pa]) ∗
+      (next_committed_id + length pending) s↦{1} (Some (pending_append_to_done pa)).
   Proof.
-    iIntros "Htxid_map_status".
-    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post) "[Hcommitted_pending Htxid_heap]".
+    iIntros "Hpc Htxid_map_status".
+    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post Hpending_txid_map) "[Hcommitted_pending [Hpending Htxid_heap]]".
     iMod (gen_heap_alloc with "Htxid_heap") as "(Htxid_heap & Htxid_j & Hmeta_token)".
     {
-      specialize (Hcid_post (next_committed_id + len_pending)).
+      specialize (Hcid_post (next_committed_id + length pending)).
       apply Hcid_post.
       lia.
     }
-    iDestruct (mapsto_split with "Htxid_j") as "[Htxid_j1 Htxid_j2]".
-    iFrame.
     iExists _, _.
     iFrame.
+    simpl.
     iPureIntro.
     intuition.
     {
@@ -818,11 +816,25 @@ Section refinement_triples.
       auto.
     }
     {
+      rewrite app_length in H1; simpl in *.
       rewrite lookup_insert_ne; try lia.
       apply Hcid_post.
       lia.
     }
-  Qed.
+    {
+      destruct (decide (off = length pending)).
+      {
+        subst.
+        rewrite lookup_insert.
+        admit.
+      }
+      {
+        rewrite lookup_insert_ne; try lia.
+        apply Hpending_txid_map.
+        admit.
+      }
+    }
+  Admitted.
 
   Lemma mem_append {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} blocks :
     (
@@ -832,7 +844,7 @@ Section refinement_triples.
         v,
         Registered ∗
         ( ( ⌜v = false⌝ ∗ j ⤇ K (Ret false) ) ∨
-          ( ∃ txid, ⌜v = true⌝ ∗ txid s↦{1/2} Some (PendingDone j K) )
+          ( ∃ txid, ⌜v = true⌝ ∗ txid s↦{1} Some (PendingDone j K) )
         )
       }}
     )%I.
@@ -914,20 +926,17 @@ Section refinement_triples.
 
       iIntros.
 
-      iMod (ghost_var_new_txid with "Htxid_map_status") as "(Htxid_map_status & Htxid_j1 & Htxid_j2)".
+      iMod ((ghost_var_new_txid _ _ (Pending blocks j K)) with "Hj Htxid_map_status") as "(Htxid_map_status & Htxid_j)".
 
       iModIntro.
       iExists _, _.
       iExists (take (memlen + strings.length blocks) (list_inserts mblocks memlen blocks)).
-      iExists (pending ++ [Pending blocks j K]).
+      iExists _.
       iExists _.
       iExists _.
 
-      rewrite app_length; simpl.
       iFrame.
       simpl.
-      replace (length pending + 0) with (length pending) by lia.
-      iFrame.
 
       apply take_take_le in Hprefix as Hlen; try lia.
 
@@ -1002,27 +1011,27 @@ Section refinement_triples.
       iFrame.
   Qed.
 
-  Lemma big_sepL_pending_append_to_done : forall off pending,
-    ([∗ list] k↦x ∈ pending, pending_ret (pending_append_to_done x) ∗ (off + k) s↦{1 / 2} Some (pending_append_to_done x)) -∗
-    ([∗ list] k↦x ∈ map pending_append_to_done pending, pending_ret x ∗ (off + k) s↦{1 / 2} Some x).
+  Lemma big_sepL_pending_append_to_done : forall pending,
+    ([∗ list] k↦x ∈ pending, pending_ret (pending_append_to_done x)) -∗
+    ([∗ list] k↦x ∈ map pending_append_to_done pending, pending_ret x).
   Proof.
     intros.
     iIntros "H".
     iApply big_sepL_fmap.
     iApply (big_sepL_impl with "H").
-    iModIntro. iIntros (k x) "%[Hp Hs]".
+    iModIntro. iIntros (k x) "%Hp".
     iFrame.
   Qed.
 
-  Lemma txid_map_status_inbound : forall next_committed_id len_pending pd txid,
-    txid_map_status next_committed_id len_pending -∗
-      txid s↦{1 / 2} pd -∗
-      ⌜ txid < next_committed_id + len_pending ⌝.
+  Lemma txid_map_status_inbound : forall next_committed_id pending pd txid,
+    txid_map_status next_committed_id pending -∗
+      txid s↦{1} pd -∗
+      ⌜ txid < next_committed_id + length pending ⌝.
   Proof.
     intros.
-    destruct (lt_dec txid (next_committed_id + len_pending)); auto.
+    destruct (lt_dec txid (next_committed_id + length pending)); auto.
     iIntros "Htxid_map_status Hcaller_txid".
-    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post) "[Hcommitted_pending Htxid_heap]".
+    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post Hpending_txid_map) "[Hcommitted_pending [Hpending Htxid_heap]]".
     iDestruct (gen_heap_valid with "Htxid_heap Hcaller_txid") as %Hcaller_some.
     exfalso.
     rewrite Hcid_post in Hcaller_some.
@@ -1030,19 +1039,36 @@ Section refinement_triples.
     lia.
   Qed.
 
-  Lemma txid_map_status_commit : forall next_committed_id len_pending diskpending,
-    txid_map_status next_committed_id len_pending -∗
-      ( [∗ list] k↦x ∈ map pending_append_to_done diskpending, pending_ret x ∗ (next_committed_id + k) s↦{1 / 2} Some x ) -∗
-      txid_map_status (next_committed_id + length diskpending) (len_pending - length diskpending).
+  Lemma txid_map_status_commit : forall E (s : list _) next_committed_id pending diskpending,
+    nclose sourceN ⊆ E ->
+    firstn (length diskpending) pending = diskpending ->
+    source_ctx -∗
+    ( source_state s ∗
+      txid_map_status next_committed_id pending ) ={E}=∗
+    ( source_state (s ++ concat (map pending_blocks diskpending)) ∗
+      txid_map_status (next_committed_id + length diskpending) (skipn (length diskpending) pending) ).
   Proof.
     intros.
-    iIntros "Htxid_map_status Hdone".
-    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post) "[Hcommitted_pending Htxid_heap]".
+    iIntros "#Hsource_inv".
+    iIntros "(Hsource & Htxid_map_status)".
+    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post Hpending_txid_map) "[Hcommitted_pending [Hpending Htxid_heap]]".
+
+    iDestruct (step_spec_pending _ _ diskpending with "Hsource_inv") as "Hspec".
+
+    rewrite <- (firstn_skipn (length diskpending) pending) at 1.
+    rewrite H2.
+    iDestruct (big_sepL_app with "Hpending") as "[Hpending0 Hpending1]".
+    iMod ("Hspec" with "[Hpending0 Hsource]") as "[Hsource Hdone]". iFrame.
+
+    iDestruct (big_sepL_pending_append_to_done with "Hdone") as "Hdone".
+
     iDestruct (big_sepM_list_inserts with "[Hcommitted_pending Hdone]") as "Hcommitted_pending".
     2: {
       iFrame. iFrame.
     }
-    { auto. }
+    { apply Hcid_mid. }
+
+    iFrame.
     iExists _, _.
     iFrame.
     iPureIntro.
@@ -1051,41 +1077,36 @@ Section refinement_triples.
       + rewrite lookup_list_insert_lt; try lia. auto.
       + replace (txid) with (next_committed_id + (txid - next_committed_id)) by lia.
         rewrite lookup_list_insert_plus; [| rewrite map_length; lia ].
-        apply lookup_lt_is_Some_2. rewrite map_length. lia.
+        admit.
     - rewrite lookup_list_insert_oob; [| rewrite map_length; lia ].
       apply Hcid_mid. lia.
     - apply Hcid_post.
-      lia.
-  Qed.
+      rewrite skipn_length in H3. lia.
+    - erewrite <- Hpending_txid_map.
+      f_equal. rewrite <- plus_assoc. reflexivity.
+      admit.
 
-  Lemma txid_map_status_extract {T} next_committed_id len_pending txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
+  Unshelve.
+    auto.
+  Admitted.
+
+  Lemma txid_map_status_extract {T} next_committed_id pending txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
     txid < next_committed_id ->
-    txid_map_status next_committed_id len_pending -∗
-      txid s↦{1 / 2} Some (PendingDone j K) ==∗
-      txid_map_status next_committed_id len_pending ∗ j ⤇ K (Ret true).
+    txid_map_status next_committed_id pending -∗
+      txid s↦{1} Some (PendingDone j K) ==∗
+      txid_map_status next_committed_id pending ∗ j ⤇ K (Ret true).
   Proof.
     intros.
     iIntros "Htxid_map_status Hcaller_txid".
-    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post) "[Hcommitted_pending Htxid_heap]".
+    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post Hpending_txid_map) "[Hcommitted_pending [Hpending Htxid_heap]]".
     iDestruct (gen_heap_valid with "Htxid_heap Hcaller_txid") as %Hcaller_some.
 
-    assert (is_Some (committed_pending !! txid)) as Hretsome.
-    {
-      apply Hcid_pre; auto.
-      eexists. eassumption.
-    }
+    eapply Hcid_pre in Hcaller_some as Hretsome; try lia.
 
-    destruct Hretsome as [pd Hretsome].
-    destruct pd; simpl in *.
-    iDestruct (big_sepM_delete _ _ txid with "Hcommitted_pending") as "[[Hret Hretj] Hcommitted_pending]".
+    iDestruct (big_sepM_delete _ _ txid with "Hcommitted_pending") as "[Hret Hcommitted_pending]".
     eassumption.
 
-    iDestruct (gen_heap_valid with "Htxid_heap Hretj") as %Hretj.
-    simpl in *.
-    rewrite Hcaller_some in Hretj. inversion Hretj. subst. simpl_existT. subst.
-
-    iDestruct (mapsto_unify with "Hcaller_txid Hretj") as "Htxid".
-    iMod (gen_heap_update _ _ _ None with "Htxid_heap Htxid") as "[Htxid_heap Htxid]".
+    iMod (gen_heap_update _ _ _ None with "Htxid_heap Hcaller_txid") as "[Htxid_heap Hcaller_txid]".
 
     iExists _, _.
     iFrame.
@@ -1093,21 +1114,24 @@ Section refinement_triples.
     intuition.
     - destruct (eq_nat_dec txid txid0).
       {
-        subst. rewrite lookup_insert in H5. destruct H5. inversion H5.
+        subst. rewrite lookup_insert in H4. congruence.
       }
       rewrite lookup_delete_ne; try congruence.
-      rewrite lookup_insert_ne in H5; try congruence.
+      rewrite lookup_insert_ne in H4; try congruence.
       apply Hcid_pre; auto.
     - rewrite lookup_delete_ne; try lia.
       apply Hcid_mid. lia.
     - rewrite lookup_insert_ne; [| lia ].
       apply Hcid_post.
       lia.
+    - erewrite <- Hpending_txid_map; eauto.
+      rewrite lookup_insert_ne; auto.
+      lia.
   Qed.
 
   Lemma disk_append {T} txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
     (
-      ( Registered ∗ ExecInv ∗ txid s↦{1/2} Some (PendingDone j K) )
+      ( Registered ∗ ExecInv ∗ txid s↦{1} Some (PendingDone j K) )
       -∗
       WP disk_append {{
         tt,
@@ -1201,25 +1225,16 @@ Section refinement_triples.
     iDestruct (disk_lease_agree_log_data with "Hbs Hleaseblocks") as %Hagree.
     rewrite list_inserts_length. lia. subst.
 
-    iDestruct (step_spec_pending _ _ diskpending with "Hsource_inv") as "Hspec".
-
-    rewrite <- (firstn_skipn (length diskpending) pending1) at 1.
-    rewrite Hpendingprefix.
-    iDestruct (big_sepL_app with "Hpending") as "[Hpending0 Hpending1]".
-    iDestruct (big_sepL_sep with "Hpending0") as "[Hpending0a Hpending0b]".
-    iMod ("Hspec" with "[Hpending0a Hsource]") as "[Hsource Hdone]". iFrame.
+    iDestruct (txid_map_status_commit with "Hsource_inv [Hsource Htxid_map_status]") as "Hcommit".
+    3: { iFrame. }
+    shelve.
+    eassumption.
 
     wp_step.
 
     iMod (ghost_var_update_pending γpending nil with "Hdiskpendingown Hownpending") as "[Hdiskpendingown Hownpending]".
     iMod (ghost_var_update _ (next_committed_id + length diskpending) with "Hnext_committed_exact Howncommitidexact") as "[Hnext_committed_exact Howncommitidexact]".
-
-    iDestruct (big_sepL_sep with "[Hpending0b Hdone]") as "Hdone".
-    { iFrame. }
-    simpl.
-
-    iDestruct (big_sepL_pending_append_to_done with "Hdone") as "Hdone".
-    iDestruct (txid_map_status_commit with "Htxid_map_status Hdone") as "Htxid_map_status".
+    iMod "Hcommit" as "[Hsource Htxid_map_status]".
     iMod (txid_map_status_extract with "Htxid_map_status Hcaller_txid") as "[Htxid_map_status Hret]". lia.
 
     iModIntro.
@@ -1231,7 +1246,6 @@ Section refinement_triples.
     iExists _.
 
     iFrame.
-    rewrite skipn_length. iFrame.
     iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact".
     2: {
       wp_bind.
@@ -1252,8 +1266,6 @@ Section refinement_triples.
       admit.
     }
 
-    setoid_rewrite <- plus_assoc.
-    iFrame.
     iPureIntro. intuition; try lia.
     - admit.
     - admit.
