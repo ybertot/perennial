@@ -826,15 +826,27 @@ Section refinement_triples.
       {
         subst.
         rewrite lookup_insert.
-        admit.
+        rewrite lookup_app_r in H1; try lia.
+        replace (length pending - length pending) with 0 in H1 by lia.
+        simpl in H1; inversion H1; subst.
+        reflexivity.
       }
       {
         rewrite lookup_insert_ne; try lia.
         apply Hpending_txid_map.
-        admit.
+        destruct (lt_dec off (length pending)).
+        {
+          rewrite lookup_app_l in H1; try lia. auto.
+        }
+        {
+          apply lookup_lt_Some in H1.
+          rewrite app_length in H1.
+          simpl in H1.
+          lia.
+        }
       }
     }
-  Admitted.
+  Qed.
 
   Lemma mem_append {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} blocks :
     (
@@ -1039,6 +1051,18 @@ Section refinement_triples.
     lia.
   Qed.
 
+  Lemma map_lookup {T R} (f : T -> R):
+    forall l x i,
+      l !! i = Some x ->
+      map f l !! i = Some (f x).
+  Proof.
+    induction l0; simpl; intros.
+    - rewrite lookup_nil in H1. congruence.
+    - destruct i; simpl in *.
+      + inversion H1. subst. reflexivity.
+      + eauto.
+  Qed.
+
   Lemma txid_map_status_commit : forall E (s : list _) next_committed_id pending diskpending,
     nclose sourceN ⊆ E ->
     firstn (length diskpending) pending = diskpending ->
@@ -1077,18 +1101,24 @@ Section refinement_triples.
       + rewrite lookup_list_insert_lt; try lia. auto.
       + replace (txid) with (next_committed_id + (txid - next_committed_id)) by lia.
         rewrite lookup_list_insert_plus; [| rewrite map_length; lia ].
-        admit.
+        edestruct (lookup_lt_is_Some_2 diskpending (txid - next_committed_id)); try lia.
+        erewrite map_lookup; eauto.
+        rewrite <- H2 in H5.
+        rewrite lookup_take in H5; try lia.
+        apply Hpending_txid_map in H5.
+        replace (next_committed_id + (txid - next_committed_id)) with txid in H5; try lia.
+        rewrite H4 in H5. inversion H5. reflexivity.
     - rewrite lookup_list_insert_oob; [| rewrite map_length; lia ].
       apply Hcid_mid. lia.
     - apply Hcid_post.
       rewrite skipn_length in H3. lia.
     - erewrite <- Hpending_txid_map.
       f_equal. rewrite <- plus_assoc. reflexivity.
-      admit.
+      rewrite lookup_drop in H3; auto.
 
   Unshelve.
     auto.
-  Admitted.
+  Qed.
 
   Lemma txid_map_status_extract {T} next_committed_id pending txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
     txid < next_committed_id ->
