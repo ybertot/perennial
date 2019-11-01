@@ -292,13 +292,17 @@ Local Ltac destruct_einner H :=
   let pending := fresh "pending" in
   let diskpending := fresh "diskpending" in
   let next_committed_id := fresh "next_committed_id" in
+  let log_txns_val := fresh "log_txns_val" in
   let Hlen0 := fresh "Hlen0" in
   let Hlen1 := fresh "Hlen1" in
   let Hprefix := fresh "Hprefix" in
   let Hsuffix := fresh "Hsuffix" in
   let Hpendingprefix := fresh "Hpendingprefix" in
-  iDestruct H as (disklen diskblocks memblocks pending diskpending next_committed_id)
-    ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Howncommitidexact & Htxid_map_status & Hownpending & Hpendingprefix)";
+  let Hlog_txns_le := fresh "Hlog_txns_le" in
+  let Hmem_txns_eq := fresh "Hmem_txns_eq" in
+  iDestruct H as (disklen diskblocks memblocks pending
+                  diskpending next_committed_id log_txns_val mem_txns_val)
+    ">(Hsource & Hlen0 & Hlen1 & Hmap & Hown & Hprefix & Hsuffix & Howncommitidexact & Htxid_map_status & Hlog_txns_le & Hmem_txns_eq & Hmem_txns_part & Hlog_txns & Hownpending & Hpendingprefix)";
   iDestruct "Hmap" as "(Hptr&Hbs)";
   repeat unify_lease;
   repeat unify_ghost;
@@ -306,7 +310,9 @@ Local Ltac destruct_einner H :=
   iPure "Hlen1" as Hlen1;
   iPure "Hprefix" as Hprefix;
   iPure "Hsuffix" as Hsuffix;
-  iPure "Hpendingprefix" as Hpendingprefix.
+  iPure "Hpendingprefix" as Hpendingprefix;
+  iPure "Hlog_txns_le" as Hlog_txns_le;
+  iPure "Hmem_txns_eq" as Hmem_txns_eq.
 
 
 Section refinement_triples.
@@ -378,11 +384,6 @@ Section refinement_triples.
   Proof. destruct pd; apply _. Qed.
 
 
-  (**
-    Notes for later:
-    - Can we use a resource algebra like the cmra-based list.v to replace diskpending?
-   *)
-
   Definition is_SomeSome {T} (x : option (option T)) :=
     exists y, x = Some (Some y).
 
@@ -405,10 +406,10 @@ Section refinement_triples.
         gen_heap_ctx txid_map
     )%I.
 
-  Definition ExecInner γmemblocks γdiskpending γcommit_id_exact :=
+  Definition ExecInner γmemblocks γdiskpending γcommit_id_exact γmem_txn_next :=
     (∃ (len_val : nat) (bs : list nat) (memblocks : list nat)
        (pending : list pending_append) (diskpending : list pending_append)
-       (next_committed_id : nat),
+       (next_committed_id : nat) (log_txns_val : nat) (mem_txns_val : nat),
 
         source_state (firstn len_val bs) ∗
         ⌜ len_val <= length bs ⌝ ∗
@@ -420,6 +421,11 @@ Section refinement_triples.
 
         own γcommit_id_exact (◯ (Excl' next_committed_id)) ∗
         txid_map_status next_committed_id pending ∗
+
+        ⌜ log_txns_val <= next_committed_id ⌝ ∗
+        ⌜ mem_txns_val = (next_committed_id + length pending)%nat ⌝ ∗
+        own γmem_txn_next (◯ (Excl' mem_txns_val)) ∗
+        log_txn_next m↦ log_txns_val ∗
 
         (* diskpending is a snapshot that [disk_append] took and is in
            the process of writing to disk *)
@@ -448,12 +454,14 @@ Section refinement_triples.
     ( mem_count m↦ len_val ∗
       [∗ list] pos ↦ b ∈ blocks, mem_data pos m↦ b )%I.
 
-  Definition MemLockInv γmemblocks :=
-    (∃ (len_val : nat) (memblocks : list nat),
+  Definition MemLockInv γmemblocks γmem_txn_next :=
+    (∃ (len_val : nat) (memblocks : list nat) (mem_txns_val : nat),
       mem_map len_val memblocks ∗
       ⌜ length memblocks = log_size ⌝ ∗
       ⌜ len_val <= length memblocks ⌝ ∗
-      own γmemblocks (● (Excl' (firstn len_val memblocks)))
+      own γmemblocks (● (Excl' (firstn len_val memblocks))) ∗
+      mem_txn_next m↦ mem_txns_val ∗
+      own γmem_txn_next (● (Excl' mem_txns_val))
     )%I.
 
   (* Post-crash, pre recovery we know the ptr mapping is in a good state w.r.t the
@@ -476,10 +484,10 @@ Section refinement_triples.
 
   Definition ExecInv :=
     ( source_ctx ∗
-      ∃ γmemblocks γdiskpending γcommit_id_exact,
+      ∃ γmemblocks γdiskpending γcommit_id_exact γmem_txn_next,
       ∃ γdisklock, is_lock dN γdisklock log_lock (DiskLockInv γdiskpending γcommit_id_exact) ∗
-      ∃ γmemlock, is_lock mN γmemlock mem_lock (MemLockInv γmemblocks) ∗
-      inv iN (ExecInner γmemblocks γdiskpending γcommit_id_exact))%I.
+      ∃ γmemlock, is_lock mN γmemlock mem_lock (MemLockInv γmemblocks γmem_txn_next) ∗
+      inv iN (ExecInner γmemblocks γdiskpending γcommit_id_exact γmem_txn_next))%I.
   Definition CrashInv := (source_ctx ∗ inv iN CrashInner)%I.
 
   Lemma big_sepM_insert {A: Type} {P: nat -> A -> iPropI Σ} m i x :
@@ -596,7 +604,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hinbound&Hbslen&Hoffpastlen&Hleaselen&Hlease)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (p off bs).
     destruct p; simpl.
@@ -624,8 +632,8 @@ Section refinement_triples.
       wp_step.
 
       iModIntro.
-      iExists _, (<[off:=n]> diskblocks), _, _, _, _.
-      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Howncommitidexact Hownpending Htxid_map_status".
+      iExists _, (<[off:=n]> diskblocks), _, _, _, _, _, _.
+      iSplitL "Hsource Hbsoff Hbsother Hptr Hown Howncommitidexact Hownpending Htxid_map_status Hlog_txns Hmem_txns_part".
       { iNext.
         iSplitL "Hsource".
         { rewrite take_insert; try lia.
@@ -695,7 +703,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hlen&Hdata)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (p off blocks).
     destruct p; simpl.
@@ -732,7 +740,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hlen&Hdata)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (nblocks off res).
     destruct nblocks; simpl.
@@ -792,20 +800,26 @@ Section refinement_triples.
     done.
   Qed.
 
+  Ltac destruct_txid_map_status H :=
+    iDestruct H as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post Hpending_txid_map) "(Hcommitted_pending & Hpending & Htxid_heap)".
+
   Lemma ghost_var_new_txid next_committed_id pending pa :
     pending_call pa -∗
     txid_map_status next_committed_id pending ==∗
-      txid_map_status next_committed_id (pending ++ [pa]) ∗
-      (next_committed_id + length pending) s↦{1} (Some (pending_append_to_done pa)).
+      (
+        txid_map_status next_committed_id (pending ++ [pa]) ∗
+        (next_committed_id + length pending) s↦{1} (Some (pending_append_to_done pa))
+      ).
   Proof.
     iIntros "Hpc Htxid_map_status".
-    iDestruct "Htxid_map_status" as (committed_pending txid_map Hcid_pre Hcid_mid Hcid_post Hpending_txid_map) "[Hcommitted_pending [Hpending Htxid_heap]]".
+    destruct_txid_map_status "Htxid_map_status".
     iMod (gen_heap_alloc with "Htxid_heap") as "(Htxid_heap & Htxid_j & Hmeta_token)".
     {
       specialize (Hcid_post (next_committed_id + length pending)).
       apply Hcid_post.
       lia.
     }
+
     iExists _, _.
     iFrame.
     simpl.
@@ -855,19 +869,19 @@ Section refinement_triples.
       WP mem_append blocks {{
         v,
         Registered ∗
-        ( ( ⌜v = false⌝ ∗ j ⤇ K (Ret false) ) ∨
-          ( ∃ txid, ⌜v = true⌝ ∗ txid s↦{1} Some (PendingDone j K) )
+        ( ( ⌜v = None⌝ ∗ j ⤇ K (Ret false) ) ∨
+          ( ∃ txid, ⌜v = Some txid⌝ ∗ txid s↦{1} Some (PendingDone j K) )
         )
       }}
     )%I.
   Proof.
     iIntros "(Hj&Hreg&(#Hsource_inv&Hinv))".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_bind.
     wp_lock "(Hlocked&HML)".
-    iDestruct "HML" as (memlen mblocks) "(Hmemmap & Hmemlen1 & Hmemlen2 & Hmemghost)".
+    iDestruct "HML" as (memlen mblocks mem_txn_next) "(Hmemmap & Hmemlen1 & Hmemlen2 & Hmemghost & Hmem_txn_next & Hmem_txn_own)".
     iPure "Hmemlen1" as Hmemlen1; iPure "Hmemlen2" as Hmemlen2.
     iDestruct "Hmemmap" as "[Hmemlen Hmemdata]".
     wp_step.
@@ -892,13 +906,13 @@ Section refinement_triples.
         unlock as well, which opens the [mN] invariant.  so we need to
         use the special version of [wp_unlock]. *)
       iDestruct (wp_unlock_open with "Hmemlockinv Hlocked") as "Hunlock".
-      2: iApply (wp_wand with "[Hmemdata Hmemghost Hmemlen Hunlock]").
+      2: iApply (wp_wand with "[Hmemdata Hmemghost Hmemlen Hmem_txn_own Hmem_txn_next Hunlock]").
       2: iApply "Hunlock".
       solve_ndisj.
-      iExists _, _. iFrame. done.
+      iExists _, _, _. iFrame. done.
 
       iIntros.
-      iModIntro; iExists _, _, _, _, _, _; iFrame.
+      iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
       iSplit.
       { done. }
 
@@ -908,13 +922,16 @@ Section refinement_triples.
       done.
 
     - wp_bind.
+      wp_step.
+      wp_bind.
+
       iApply (wp_wand with "[Hmemdata]").
       {
         iApply write_mem_blocks_ok.
         iFrame.
         iSplit.
         { iFrame "#".
-          iExists _, _, _, _. iFrame "#".
+          iExists _, _, _, _, _. iFrame "#".
           iExists _. iFrame "#".
         }
         iPureIntro. lia.
@@ -924,16 +941,20 @@ Section refinement_triples.
       wp_step.
       wp_bind.
 
+      wp_step.
+      wp_bind.
+
       iInv "Hinv" as "H".
       destruct_einner "H".
 
       iMod (ghost_var_update_nat γblocks (take (memlen + length blocks) (list_inserts mblocks memlen blocks)) with "Hmemghost Hown") as "[Hmemghost Hown]".
+      iMod (ghost_var_update γmem_txn_next (mem_txns_val + 1) with "Hmem_txn_own Hmem_txns_part") as "[Hmem_txn_own Hmem_txns_part]".
       iDestruct (wp_unlock_open with "Hmemlockinv Hlocked") as "Hunlock".
 
-      2: iApply (wp_wand with "[Hmemdata Hmemghost Hmemlen Hunlock]").
+      2: iApply (wp_wand with "[Hmemdata Hmemghost Hmemlen Hmem_txn_own Hmem_txn_next Hunlock]").
       2: iApply "Hunlock".
       solve_ndisj.
-      iExists _, _. iFrame.
+      iExists _, _, _. iFrame.
       rewrite list_inserts_length. iPureIntro. lia.
 
       iIntros.
@@ -946,6 +967,7 @@ Section refinement_triples.
       iExists _.
       iExists _.
       iExists _.
+      iExists _, _.
 
       iFrame.
       simpl.
@@ -972,6 +994,9 @@ Section refinement_triples.
           auto.
           rewrite take_length_le; try lia.
         }
+        {
+          rewrite app_length; simpl; lia.
+        }
 
         rewrite take_app_le. auto.
         rewrite <- Hpendingprefix.
@@ -982,6 +1007,7 @@ Section refinement_triples.
       iRight.
       iExists _.
       iFrame.
+      subst.
       done.
   Qed.
 
@@ -1159,19 +1185,56 @@ Section refinement_triples.
       lia.
   Qed.
 
-  Lemma disk_append {T} txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
+  Lemma disk_append_wait {T} txid j K `{LanguageCtx Log2.Op _ T Log2.l K}:
     (
       ( Registered ∗ ExecInv ∗ txid s↦{1} Some (PendingDone j K) )
       -∗
-      WP disk_append {{
+      WP disk_append_wait txid {{
         tt,
         Registered ∗
         j ⤇ K (Ret true)
       }}
     )%I.
   Proof.
-    iIntros "(Hreg&(#Hsource_inv&Hinv)&Hcaller_txid)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iIntros "(Hreg&#Hi&Hcaller_txid)".
+    iLöb as "IH".
+    wp_loop.
+    wp_bind.
+    iDestruct "Hi" as "(Hsource_inv & Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
+
+    iInv "Hinv" as "H".
+    destruct_einner "H".
+    wp_step.
+    destruct (decide (txid < log_txns_val)).
+
+    - iMod (txid_map_status_extract with "Htxid_map_status Hcaller_txid") as "[Htxid_map_status Hret]". lia.
+      iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
+      iSplitR. iPureIntro. intuition lia.
+      wp_step.
+      wp_ret.
+      done.
+
+    - iDestruct ("IH" with "Hreg Hcaller_txid") as "IHreg".
+      iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
+      iSplitR. iPureIntro. intuition lia.
+      wp_step.
+      iApply "IHreg".
+  Qed.
+
+  Lemma disk_append :
+    (
+      ( Registered ∗ ExecInv )
+      -∗
+      WP disk_append {{
+        tt,
+        Registered
+      }}
+    )%I.
+  Proof.
+    iIntros "(Hreg&(#Hsource_inv&Hinv))".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_bind.
@@ -1187,13 +1250,13 @@ Section refinement_triples.
     iDestruct (disk_lease_agree_log_data with "Hbs Hbs_ghost") as %Hagree. lia. subst.
 
     wp_step.
-    iModIntro; iExists _, _, _, _, _, _; iFrame.
+    iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
 
     iSplitR. iPureIntro. intuition lia.
 
     wp_bind.
     wp_lock "(Hmlocked&HML)".
-    iDestruct "HML" as (memlen mblocks) "(Hmemmap & Hmemlen1 & Hmemlen2 & Hmemghost)".
+    iDestruct "HML" as (memlen mblocks mem_txn_next) "(Hmemmap & Hmemlen1 & Hmemlen2 & Hmemghost & Hmem_txn_next & Hmem_txn_own)".
     iPure "Hmemlen1" as Hmemlen1; iPure "Hmemlen2" as Hmemlen2.
     iDestruct "Hmemmap" as "[Hmemlen Hmemdata]".
 
@@ -1205,29 +1268,30 @@ Section refinement_triples.
 
     wp_step.
 
-    iDestruct (txid_map_status_inbound with "Htxid_map_status Hcaller_txid") as "%".
-
     iMod (ghost_var_update_pending γpending pending0 with "Hdiskpendingown Hownpending") as "[Hdiskpendingown Hownpending]".
     clear Hpendingprefix0. clear Hpendingprefix. clear diskpending.
-    iModIntro; iExists _, _, _, _, _, _; iFrame.
+    iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
     iSplitR. iPureIntro. intuition try lia.
       rewrite firstn_all. auto.
+
+    wp_bind.
+    wp_step.
 
     wp_bind.
     iApply (wp_wand with "[Hmemdata]").
     iApply read_mem_blocks_ok.
     iFrame. iSplit.
     { iFrame "#".
-      iExists _, _, _, _. iFrame "#".
+      iExists _, _, _, _, _. iFrame "#".
       iExists _. iFrame "#". }
     iPureIntro. lia.
 
     iIntros (?) "[Hlen Hmemdata]".
     iPure "Hlen" as Hlen. subst. simpl.
 
-    wp_unlock "[Hmemlen Hmemdata Hmemghost]".
+    wp_unlock "[Hmemlen Hmemdata Hmemghost Hmem_txn_next Hmem_txn_own]".
     {
-      iExists _, _.
+      iExists _, _, _.
       iFrame.
       iPureIntro. lia.
     }
@@ -1239,7 +1303,7 @@ Section refinement_triples.
       iFrame.
       iSplitL.
       - iFrame "#".
-        iExists _, _, _, _. iFrame "#".
+        iExists _, _, _, _, _. iFrame "#".
         iExists _. iFrame "#".
       - iPureIntro. intuition.
         rewrite firstn_length.
@@ -1265,7 +1329,6 @@ Section refinement_triples.
     iMod (ghost_var_update_pending γpending nil with "Hdiskpendingown Hownpending") as "[Hdiskpendingown Hownpending]".
     iMod (ghost_var_update _ (next_committed_id + length diskpending) with "Hnext_committed_exact Howncommitidexact") as "[Hnext_committed_exact Howncommitidexact]".
     iMod "Hcommit" as "[Hsource Htxid_map_status]".
-    iMod (txid_map_status_extract with "Htxid_map_status Hcaller_txid") as "[Htxid_map_status Hret]". lia.
 
     iModIntro.
     iExists memlen.
@@ -1274,15 +1337,29 @@ Section refinement_triples.
     iExists (skipn (length diskpending) pending1).
     iExists _.
     iExists _.
+    iExists _, _.
 
     iFrame.
     iSplitR "Hleaseblocks Hleaselen Hlocked Hdiskpendingown Hnext_committed_exact".
     2: {
       wp_bind.
+
+      iInv "Hinv" as "H".
+      destruct_einner "H".
+      wp_step.
+      iModIntro.
+      iExists _, _, _, _, _, _, _, _.
+      iFrame.
+      iSplitR.
+      {
+        iPureIntro. intuition lia.
+      }
+
       wp_unlock "[Hleaseblocks Hleaselen Hdiskpendingown Hnext_committed_exact]".
       {
         iExists _, _, _, _. iFrame. iPureIntro. lia.
       }
+
       wp_ret.
       done.
     }
@@ -1299,6 +1376,11 @@ Section refinement_triples.
     iPureIntro. intuition; try lia.
     - admit.
     - admit.
+    - rewrite drop_length.
+      rewrite <- plus_assoc.
+      replace (length diskpending + (length pending1 - length diskpending)) with (length pending1).
+      reflexivity.
+      admit.
 
   Unshelve.
     solve_ndisj.
@@ -1327,7 +1409,8 @@ Section refinement_triples.
 
       iApply (wp_wand with "[H Hreg]").
       {
-        iApply disk_append. iFrame. iApply "Hinv".
+        inversion H3.
+        iApply disk_append_wait. iFrame. iFrame "#".
       }
 
       iIntros "% [Hreg H]".
@@ -1359,7 +1442,7 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros "((#Hsource_inv&Hinv)&Hinbound&Hlease)".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
     iLöb as "IH" forall (nblocks off res).
     destruct nblocks; simpl.
@@ -1382,7 +1465,7 @@ Section refinement_triples.
       iDestruct ("Hbsother" with "Hbsoff") as "Hbs".
 
       iModIntro.
-      iExists _, _, _, _, _, _.
+      iExists _, _, _, _, _, _, _, _.
       iFrame.
       iSplitR.
       {
@@ -1420,7 +1503,7 @@ Section refinement_triples.
     {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
   Proof.
     iIntros (Φ) "(Hj&Hreg&#Hsource_inv&Hinv) HΦ".
-    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γdisklock) "(#Hdisklockinv&#Hinv)".
+    iDestruct "Hinv" as (γblocks γpending γcommit_id_exact γmem_txn_next γdisklock) "(#Hdisklockinv&#Hinv)".
     iDestruct "Hinv" as (γmemlock) "(#Hmemlockinv&#Hinv)".
 
     wp_lock "(Hlocked&HEL)".
@@ -1442,7 +1525,7 @@ Section refinement_triples.
       econstructor.
     }
     { solve_ndisj. }
-    iModIntro; iExists _, _, _, _, _, _; iFrame.
+    iModIntro; iExists _, _, _, _, _, _, _, _; iFrame.
 
     iSplit.
     {
@@ -1455,7 +1538,7 @@ Section refinement_triples.
       iApply read_blocks_ok.
       iFrame.
       iSplit.
-      - iFrame "#". iExists _, _, _, _. iFrame "#". iExists _. iFrame "#".
+      - iFrame "#". iExists _, _, _, _, _. iFrame "#". iExists _. iFrame "#".
       - iPureIntro. intuition.
     }
 
@@ -1473,6 +1556,30 @@ Section refinement_triples.
 
     wp_ret.
     iApply "HΦ"; iFrame.
+  Qed.
+
+  Lemma commit_worker_refinement {T} j K `{LanguageCtx Log2.Op _ T Log2.l K} :
+    {{{ j ⤇ K (Call (Log2.CommitWorker)) ∗ Registered ∗ ExecInv }}}
+      ImplLog2.disk_append_loop
+    {{{ v, RET v; j ⤇ K (Ret v) ∗ Registered }}}.
+  Proof.
+    iIntros (Φ) "(Hj&Hreg&#Hi) HΦ".
+    iLöb as "IH".
+    wp_loop.
+
+    wp_bind.
+    iApply (wp_wand with "[Hreg]").
+    {
+      iApply disk_append.
+      iFrame. iFrame "#".
+    }
+
+    iIntros "% Hreg".
+    wp_ret.
+    iNext.
+    iDestruct ("IH" with "Hj Hreg") as "IH2".
+    iApply "IH2".
+    iFrame.
   Qed.
 
   Lemma init_mem_split:

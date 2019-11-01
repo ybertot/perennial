@@ -11,7 +11,8 @@ Module Log2.
 
   Inductive Op : Type -> Type :=
   | Append (l: list nat) : Op bool
-  | Read : Op (list nat).
+  | Read : Op (list nat)
+  | CommitWorker : Op unit.
 
   Definition State : Set := list nat.
 
@@ -23,6 +24,7 @@ Module Log2.
             ( pure false ) + 
             ( _ <- puts (fun l => l ++ l'); pure true )
          | Read => reads (fun l => l)
+         | CommitWorker => pure tt
          end;
        crash_step := pure tt;
        finish_step := pure tt;

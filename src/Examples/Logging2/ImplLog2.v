@@ -7,9 +7,11 @@ Definition log_start := 1.
 
 (* Memory addresses *)
 Definition log_lock := 0.
-Definition mem_lock := 1.
-Definition mem_count := 2.
-Definition mem_start := 3.
+Definition log_txn_next := 1.
+Definition mem_lock := 2.
+Definition mem_count := 3.
+Definition mem_txn_next := 4.
+Definition mem_start := 5.
 
 Definition log_data (pos : nat) :=
   log_start + pos.
@@ -50,20 +52,33 @@ Fixpoint read_mem_blocks (count : nat) (pos : nat) (res : list nat) :=
   )%proc.
 
 Definition disk_append :=
-  ( _ <- lock log_lock;
+  (
+    _ <- lock log_lock;
 
     disklen <- read_disk log_commit;
 
     _ <- lock mem_lock;
     memlen <- read_mem mem_count;
+    memtxns <- read_mem mem_txn_next;
     l <- read_mem_blocks (memlen-disklen) disklen nil;
     _ <- unlock mem_lock;
 
     _ <- write_blocks l disklen;
     _ <- write_disk log_commit memlen;
 
+    _ <- write_mem log_txn_next memtxns;
+
     _ <- unlock log_lock;
+
     Ret tt
+  )%proc.
+
+Definition disk_append_loop :=
+  (
+    Loop (R := unit) (fun _ =>
+      _ <- disk_append;
+      Ret (ContinueOutcome tt)
+    ) tt
   )%proc.
 
 Definition mem_append (l : list nat) :=
@@ -71,22 +86,36 @@ Definition mem_append (l : list nat) :=
     memlen <- read_mem mem_count;
     if gt_dec (memlen + length l) log_size then
       _ <- unlock mem_lock;
-      Ret false
+      Ret None
     else
+      memtxns <- read_mem mem_txn_next;
       _ <- write_mem_blocks l memlen;
       _ <- write_mem mem_count (memlen + length l);
+      _ <- write_mem mem_txn_next (memtxns+1);
       _ <- unlock mem_lock;
-      Ret true
+      Ret (Some memtxns)
+  )%proc.
+
+Definition disk_append_wait (memtxns : nat) :=
+  (
+    Loop (fun _ =>
+      logtxns <- read_mem log_txn_next;
+      if decide (memtxns < logtxns) then
+        Ret (DoneWithOutcome tt)
+      else
+        Ret (ContinueOutcome tt)
+    ) tt
   )%proc.
 
 Definition append (l : list nat) :=
   (
     ok <- mem_append l;
-    if ok then
-      _ <- disk_append;
+    match ok with
+    | None => Ret false
+    | Some memtxns =>
+      _ <- disk_append_wait memtxns;
       Ret true
-    else
-      Ret false
+    end
   )%proc.
 
 Fixpoint read_blocks (count : nat) (pos : nat) (res : list nat) :=
@@ -114,6 +143,7 @@ Definition impl : LayerImpl ExMach.Op Log2.Op :=
        match op with
        | Log2.Append l => append l
        | Log2.Read => read
+       | Log2.CommitWorker => disk_append_loop
        end;
      recover := Seq_Cons (recv) (Seq_Nil);
      (* init := Ret Initialized; *) |}.
