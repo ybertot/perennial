@@ -55,7 +55,7 @@ Section refinement_triples.
   Definition heapT := Liftable.heapT (L := nat) (V := nat) (Σ := Σ).
   Definition memHeap := exmachG0.(@exm_mem_inG Σ).
 
-  Theorem lift_pred_ok : forall txn hT `{!Liftable P},
+  Theorem lift_pred_ok `{!Liftable P} : forall txn hT,
     (
       ( txn_valid txn hT ∗
         P memHeap
@@ -66,9 +66,9 @@ Section refinement_triples.
       )
     )%I.
   Proof.
-    iIntros (??? Hliftable) "(Htxn & Hp)".
-    unfold Liftable in Hliftable.
-    iDestruct (Hliftable with "Hp") as (m) "[Hm Hp]".
+    iIntros (??) "(Htxn & Hp)".
+    unfold Liftable in Liftable0.
+    iDestruct (Liftable0 with "Hp") as (m) "[Hm Hp]".
     iDestruct (lift_ok with "[$Htxn $Hm]") as "[Htxn Hm]".
     iFrame.
     iApply "Hp".
@@ -117,7 +117,7 @@ Section refinement_triples.
       }}
     )%I.
 
-  Theorem commit_pred_ok : forall s E txn hT `{!Liftable P},
+  Theorem commit_pred_ok `{!Liftable P} : forall s E txn hT,
     (
       (
         txn_valid txn hT ∗
@@ -130,9 +130,9 @@ Section refinement_triples.
       }}
     )%I.
   Proof.
-    iIntros (????? Hliftable) "(Htxn & Hp)".
-    unfold Liftable in Hliftable.
-    iDestruct (Hliftable with "Hp") as (m) "[Hm Hp]".
+    iIntros (????) "(Htxn & Hp)".
+    unfold Liftable in Liftable0.
+    iDestruct (Liftable0 with "Hp") as (m) "[Hm Hp]".
     iDestruct (commit_ok with "[$Htxn $Hm]") as "Hcom".
     iApply (wp_wand with "Hcom").
     iIntros (?) "Hm".
@@ -310,8 +310,7 @@ Section refinement_triples.
     iDestruct "Hopen" as (AS) "Hopen".
 
     iDestruct (lift_pred_ok with "[$Htxn Hopen]") as "[Htxn Hopen]".
-    2: iApply "Hopen".
-    typeclasses eauto.
+    iApply "Hopen".
 
     iDestruct (alloc_ok with "[$Htxn $Hopen]") as "Hwp_alloc".
     wp_bind.
@@ -320,8 +319,7 @@ Section refinement_triples.
 
     destruct a0.
     - iDestruct (commit_pred_ok with "[$Htxn Hres]") as "Hwp_commit".
-      2: iApply "Hres".
-      typeclasses eauto.
+      iApply "Hres".
 
       wp_bind.
       iApply (wp_wand with "Hwp_commit").
@@ -332,8 +330,7 @@ Section refinement_triples.
       iExists _. iApply "Hinv".
 
     - iDestruct (commit_pred_ok with "[$Htxn Hres]") as "Hwp_commit".
-      2: iApply "Hres".
-      typeclasses eauto.
+      iApply "Hres".
 
       wp_bind.
       iApply (wp_wand with "Hwp_commit").
@@ -342,6 +339,9 @@ Section refinement_triples.
       wp_unlock "[Hopen]". iExists _. iFrame.
       wp_ret.
       iExists _. iApply "Hinv".
+
+  Unshelve.
+    all: typeclasses eauto.
   Qed.
 
 
@@ -484,8 +484,7 @@ Section refinement_triples.
       iDestruct "Hi0" as (i0) "[Hi0own Hi0]".
 
       iDestruct (lift_pred_ok with "[$Htxn Hi0]") as "[Htxn Hi0]".
-      2: iApply "Hi0".
-      typeclasses eauto.
+      iApply "Hi0".
 
       iDestruct "Hi0" as "[Hi00 Hi01]".
 
@@ -499,7 +498,7 @@ Section refinement_triples.
       iApply (wp_wand with "Hwp_write").
       iIntros (?) "[Htxn Hi01]".
 
-      iDestruct ((commit_pred_ok _ _ _ _ (P := fun h => inode_state _ (d0,d1) h)) with "[$Htxn Hi00 Hi01]") as "Hwp_commit".
+      iDestruct ((commit_pred_ok (P := fun h => inode_state _ (d0,d1) h)) with "[$Htxn Hi00 Hi01]") as "Hwp_commit".
       iFrame.
 
       wp_bind.
@@ -535,6 +534,9 @@ Section refinement_triples.
       wp_ret.
       iApply "HΦ". iFrame.
     - admit.
+
+  Unshelve.
+    all: typeclasses eauto.
   Admitted.
 
 End refinement_triples.
