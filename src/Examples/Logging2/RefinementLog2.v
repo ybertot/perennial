@@ -1584,27 +1584,18 @@ Section refinement_triples.
 
   Lemma init_mem_split:
     (([∗ map] i↦v ∈ init_zero, i m↦ v) -∗
-      ( log_lock m↦ 0 ∗ mem_lock m↦ 0 ∗ mem_count m↦ 0 ) ∗
+      ( log_lock m↦ 0 ∗ log_txn_next m↦ 0 ∗ mem_lock m↦ 0 ∗ mem_count m↦ 0 ∗ mem_txn_next m↦ 0 ) ∗
         [∗ list] pos↦b ∈ repeat 0 log_size, mem_data pos m↦ b
       )%I.
   Proof.
     clear hDone.
     iIntros "Hmem".
-    rewrite (big_opM_delete _ _ 0 0); last first.
-    { rewrite /ExMach.mem_state. apply init_zero_lookup_lt_zero. rewrite /size. lia. }
-    rewrite (big_opM_delete _ _ 1 0); last first.
-    { rewrite /ExMach.mem_state.
-      rewrite lookup_delete_ne; last auto.
-      apply init_zero_lookup_lt_zero. rewrite /size. lia. }
-    rewrite (big_opM_delete _ _ 2 0); last first.
-    { rewrite /ExMach.mem_state.
-      rewrite lookup_delete_ne; last auto.
-      rewrite lookup_delete_ne; last auto.
-      apply init_zero_lookup_lt_zero. rewrite /size. lia. }
-    iDestruct "Hmem" as "(?&?&?&Hrest)".
+    iPoseProof (mem_ptr_iter_split_aux 0 4 with "Hmem") as "(H&Hrest)".
+    rewrite /size; lia.
+    cbn [ptr_iter plus minus].
+    do 4 iDestruct "H" as "[? H]".
     iFrame.
     pose proof log_size_ok.
-    replace (delete 2 (delete 1 (delete 0 init_zero))) with (rep_delete 3 init_zero) by reflexivity.
     iDestruct (rep_delete_init_zero_list with "Hrest") as "[Hdata Hrest]".
     2: iFrame. lia.
   Qed.
@@ -1679,11 +1670,11 @@ Module sRT <: exmach_refinement_type.
         (@ExecInv Σ H2 _ H1 _ _ _ hG) )%I.
   Definition exec_inner :=
     fun H1 H2 =>
-      ( ∃ γmemblocks γdiskpending γcommit_id_exact hG vm vd,
+      ( ∃ γmemblocks γdiskpending γcommit_id_exact γmem_txn_next hG vm vd,
         log_lock m↦ vd ∗ mem_lock m↦ vm ∗
         ( (⌜ vd = 0 ⌝ -∗ @DiskLockInv Σ H2 _ _ γdiskpending γcommit_id_exact) ∗
-          (⌜ vm = 0 ⌝ -∗ @MemLockInv Σ H2 _ γmemblocks) ∗
-            @ExecInner Σ H2 H1 _ _ _ hG γmemblocks γdiskpending γcommit_id_exact))%I.
+          (⌜ vm = 0 ⌝ -∗ @MemLockInv Σ H2 _ _ γmemblocks γmem_txn_next) ∗
+            @ExecInner Σ H2 H1 _ _ _ hG γmemblocks γdiskpending γcommit_id_exact γmem_txn_next))%I.
 
   Definition crash_param := fun (_ : @cfgG OpT Λa Σ) (_ : exmachG Σ) => unit.
   Definition crash_inv := fun H1 H2 (_ : crash_param _ _) =>
@@ -1729,6 +1720,7 @@ Module sRO : exmach_refinement_obligations sRT.
     destruct op.
     - iApply (append_refinement with "[$]"). iNext. iIntros (?) "H". iFrame.
     - iApply (read_refinement with "[$]"). iNext. iIntros (?) "H". iFrame.
+    - iApply (commit_worker_refinement with "[$]"). iNext. iIntros (?) "H". iFrame.
   Qed.
 
   Lemma exec_inv_source_ctx: ∀ {H1 H2}, exec_inv H1 H2 ⊢ source_ctx.
@@ -1782,7 +1774,7 @@ Module sRO : exmach_refinement_obligations sRT.
     iClear "Hctx Hinv".
     iIntros (???) "(#Hctx&Hstate)".
     iMod (ptr_map_next with "Hcase") as "(Hp&Hl)".
-    iExists _. iExists _. iExists _. iExists _. iExists 0, 0. iFrame.
+    iExists _. iExists _. iExists _. iExists _. iExists _, 0, 0. iFrame.
     iPure "Hlen" as Hlen; intuition.
     iSplitL "Hl"; iModIntro; iIntros.
     - (* iExists _, _; iFrame.
@@ -1804,7 +1796,7 @@ Module sRO : exmach_refinement_obligations sRT.
 
     iMod (gen_heap_strong_init (∅: gmap nat (option pending_done))) as (hG <-) "[Hheapctx Hheapown]".
 
-    iPoseProof (init_mem_split with "Hmem") as "((Hm0&Hm1&Hm2)&Hm3)".
+    iPoseProof (init_mem_split with "Hmem") as "((Hm0&Hm1&Hm2&Hm3&Hm4)&Hmrest)".
     iPoseProof (init_disk_split with "Hdisk") as "((Hd1&Hd2)&(Hl1&Hl2))".
 
     iMod (ghost_var_alloc (nil : list nat)) as (γmemblocks) "[Hmemblocks0 Hmemblocks1]".
@@ -1816,6 +1808,9 @@ Module sRO : exmach_refinement_obligations sRT.
     iMod (ghost_var_alloc (0 : nat)) as (γcommit_id_exact) "[Hcommit_id_exact0 Hcommit_id_exact1]".
     iExists γcommit_id_exact.
 
+    iMod (ghost_var_alloc (0 : nat)) as (γmem_txn_next) "[Hmem_txn_next0 Hmem_txn_next1]".
+    iExists γmem_txn_next.
+
     iExists hG.
 
     iModIntro. iExists 0, 0. iFrame.
@@ -1825,9 +1820,9 @@ Module sRO : exmach_refinement_obligations sRT.
       iPureIntro. intuition. lia. rewrite repeat_length. lia.
     }
 
-    iSplitL "Hm2 Hm3 Hmemblocks0".
+    iSplitL "Hm3 Hm4 Hmrest Hmemblocks0 Hmem_txn_next0".
     {
-      iIntros "_". iExists 0, (repeat 0 log_size). iFrame.
+      iIntros "_". iExists 0, (repeat 0 log_size), 0. iFrame.
       iPureIntro. intuition. rewrite repeat_length. lia. lia.
     }
 
@@ -1837,30 +1832,34 @@ Module sRO : exmach_refinement_obligations sRT.
     iExists nil.
     iExists nil.
     iExists 0.
+    iExists 0.
+    iExists 0.
     simpl.
     rewrite firstn_O.
     iFrame.
-(*
+    unfold txid_map_status.
+    repeat ( iSplitR; [ iPureIntro; try rewrite repeat_length; auto; lia | ] ).
+    iExists ∅, ∅.
+    simpl.
     rewrite big_sepM_empty.
-    iPureIntro. intuition. lia. rewrite repeat_length. lia.
-    rewrite lookup_empty in H1. destruct H1. congruence.
+    iFrame.
+    iPureIntro. intuition. lia.
+    rewrite lookup_nil in H0; congruence.
   Qed.
-*)
-  Admitted.
 
   Lemma exec_inv_preserve_crash: exec_inv_preserve_crash_type.
   Proof.
     red. intros. iIntros "#Hinv".
     iDestruct "Hinv" as (hG) "Hinv".
     iDestruct "Hinv" as "[Hsource_ctx #Hinv]".
-    iDestruct "Hinv" as (γmemblocks γdiskpending γcommit_id_exact γdisklock) "[Hdisklock Hmemlock]".
+    iDestruct "Hinv" as (γmemblocks γdiskpending γcommit_id_exact γmem_txn_next γdisklock) "[Hdisklock Hmemlock]".
     iDestruct "Hmemlock" as (γmemlock) "[Hmemlock Hinv]".
 
     iInv "Hinv" as "Hopen" "_".
     destruct_einner "Hopen".
     iApply fupd_mask_weaken; first by solve_ndisj.
     iIntros (??) "Hmem".
-    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?)&?)".
+    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?&?&?)&?)".
     iMod (ptr_map_next with "[Hptr Hbs]") as "(?&?)"; first by iFrame.
     iModIntro. iExists _, _, _. iFrame.
     iPureIntro. intuition.
@@ -1876,7 +1875,7 @@ Module sRO : exmach_refinement_obligations sRT.
     iIntros (??) "Hmem".
     iMod (ptr_map_next with "Hptr") as "(?&?)".
     iModIntro. iExists _, _, _. iFrame.
-    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?)&?)".
+    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?&?&?)&?)".
     iFrame.
   Qed.
 
@@ -1894,16 +1893,16 @@ Module sRO : exmach_refinement_obligations sRT.
   Proof.
     red. intros. iIntros "(Hinv&#Hsrc)".
     iDestruct "Hinv" as (invG v) "Hinv".
-    iDestruct "Hinv" as (?????) "(Hdisklock&Hmemlock&Hinner1&Hinner2&Hinner3)".
+    iDestruct "Hinv" as (??????) "(Hdisklock&Hmemlock&Hinner1&Hinner2&Hinner3)".
     iMod (@lock_init Σ (ExMachG _ (exm_invG) (exm_mem_inG) (exm_disk_inG) _) _ mN
-                     mem_lock _ (MemLockInv _) with "[$] [Hinner2]") as (γmemlock) "Hmemlock".
+                     mem_lock _ (MemLockInv _ _) with "[$] [Hinner2]") as (γmemlock) "Hmemlock".
     { iFrame. }
     iMod (@lock_init Σ (ExMachG _ (exm_invG) (exm_mem_inG) (exm_disk_inG) _) _ dN
                      log_lock _ (DiskLockInv _ _) with "[$] [Hinner1]") as (γdisklock) "Hdisklock".
     { iFrame. }
-    iMod (@inv_alloc Σ (exm_invG) iN _ (ExecInner _ _ _) with "[Hinner3]").
+    iMod (@inv_alloc Σ (exm_invG) iN _ (ExecInner _ _ _ _) with "[Hinner3]").
     { iFrame. }
-    iModIntro. iFrame "Hsrc". iExists _, _, _, _, _. iFrame.
+    iModIntro. iFrame "Hsrc". iExists _, _, _, _, _, _. iFrame.
     iExists _. iFrame.
   Qed.
 
@@ -1911,12 +1910,12 @@ Module sRO : exmach_refinement_obligations sRT.
   Proof.
     iIntros (??) "? H".
     iDestruct "H" as (?) "(#Hctx & H)".
-    iDestruct "H" as (????) "(#Hdisklock&#Hinv)".
+    iDestruct "H" as (?????) "(#Hdisklock&#Hinv)".
     iDestruct "Hinv" as (?) "(#Hmemlock&Hinv)".
     iInv "Hinv" as "H" "_".
-    iDestruct "H" as (ptr bs memblocks pending diskpending next_committed_id) "H".
+    iDestruct "H" as (ptr bs memblocks pending diskpending next_committed_id log_txns_val mem_txns_val) "H".
     iDestruct "H" as ">(Hsource&H)".
-    iDestruct "H" as "(H1 & H2 & Hmap & Hmbown & Htake & Hdrop & Hpending & Hownnext & Htxid_map_status & Hdiskpending & H6 )".
+    iDestruct "H" as "(H1 & H2 & Hmap & Hmbown & Htake & Hdrop & Hownnext & Htxid_map_status & H3 & H4 & Hmem_txns_val & Hlog_txn_next & Hdiskpending & H6 )".
     iMod (lock_crack with "Hmemlock") as ">H"; first by solve_ndisj.
     iDestruct "H" as (v) "(?&Hm)".
     iMod (lock_crack with "Hdisklock") as ">H"; first by solve_ndisj.
@@ -1927,15 +1926,21 @@ Module sRO : exmach_refinement_obligations sRT.
     { iPureIntro. econstructor. }
     iIntros (????) "(?&?&Hmem)".
     iMod (ptr_map_next with "Hmap") as "(Hp&Hl)".
-    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?)&?)".
-    iExists _, _, _, _, _, _. iFrame.
+    iPoseProof (@init_mem_split with "Hmem") as "((?&?&?&?&?)&?)".
+    iExists _, _, _, _, _, _, _. iFrame.
+    iPure "Htake" as ?.
+    iPure "Hdrop" as ?.
+    iPure "H1" as ?.
+    iPure "H2" as ?.
+    iPure "H3" as ?.
+    iPure "H4" as ?.
+    iPure "H6" as ?.
     iSplitL "Hl"; iModIntro; iIntros.
-    - admit.
-    - admit.
-    (* iExists _, _, _, _; iFrame.
-    iPureIntro; intuition.
-    iPureIntro; intuition.
-    *)
+    { iExists _, _, _, _. iFrame. shelve. }
+    iSplitL ""; iIntros.
+    { iExists _, _, _. shelve. }
+    iExists _, _, memblocks, pending, diskpending, next_committed_id, _, mem_txns_val.
+    iFrame.
   Admitted.
 
 End sRO.
