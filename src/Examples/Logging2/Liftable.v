@@ -25,18 +25,12 @@ Section liftable.
       ⌜ a0 ≠ a1 ⌝ )%I.
   Proof.
     iIntros "Ha0 Ha1".
-    unfold mapsto.
-    rewrite seal_eq.
-    unfold mapsto_def.
-    iDestruct (own_valid_2 with "Ha0 Ha1") as "Ha".
-    generalize (@to_agree (leibnizO V) v0); intros.
-    generalize (@to_agree (leibnizO V) v1); intros.
-    iPure "Ha" as Ha.
-    iPureIntro.
     destruct (decide (a0 = a1)); auto; subst.
+    iDestruct (mapsto_valid_2 with "Ha0 Ha1") as %Ha.
     exfalso.
-    (* ??? *)
-  Admitted.
+    apply Ha; simpl.
+    auto.
+  Qed.
 
   Lemma big_sepM_disjoint h (m0 m1 : gmap L V) :
     ( ( [∗ map] a↦v ∈ m0, mapsto (Σ := Σ) (hG := h) a 1 v ) -∗
