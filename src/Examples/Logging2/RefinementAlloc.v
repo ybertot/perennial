@@ -4,6 +4,7 @@ Require Import AllocAPI ImplAlloc ExMach.WeakestPre ExMach.RefinementAdequacy.
 Require Import Logging2.Helpers.
 Require Import Equality.
 Require Import RefinementLog2.
+Require Import Liftable.
 Set Default Proof Using "All".
 Unset Implicit Arguments.
 
@@ -51,24 +52,14 @@ Section refinement_triples.
       )
     )%I.
 
-  Definition heapT := @gen_heapG nat nat Σ nat_eq_dec nat_countable.
+  Definition heapT := Liftable.heapT (L := nat) (V := nat) (Σ := Σ).
   Definition memHeap := exmachG0.(@exm_mem_inG Σ).
-  Definition liftable (P : heapT -> iProp Σ) :=
-    (
-      ∀ (h1 : @gen_heapG nat nat Σ nat_eq_dec nat_countable),
-      P h1 -∗
-      ∃ m,
-      ([∗ map] a ↦ v ∈ m, a ↦[h1] v) ∗
-      ∀ (h2 : @gen_heapG nat nat Σ nat_eq_dec nat_countable),
-      ([∗ map] a ↦ v ∈ m, a ↦[h2] v) -∗
-      P h2
-    )%I.
 
-  Theorem lift_pred_ok : forall txn hT P,
+  Theorem lift_pred_ok : forall txn hT (P : heapT -> iProp Σ),
     (
       ( txn_valid txn hT ∗
         P memHeap ∗
-        liftable P
+        ⌜ Liftable P ⌝
       ) -∗
       (
         txn_valid txn hT ∗
@@ -77,8 +68,9 @@ Section refinement_triples.
     )%I.
   Proof.
     iIntros (???) "(Htxn & Hp & Hliftable)".
-    unfold liftable.
-    iDestruct ("Hliftable" with "Hp") as (m) "[Hm Hp]".
+    iPure "Hliftable" as Hliftable.
+    unfold Liftable in Hliftable.
+    iDestruct (Hliftable with "Hp") as (m) "[Hm Hp]".
     iDestruct (lift_ok with "[$Htxn $Hm]") as "[Htxn Hm]".
     iFrame.
     iApply "Hp".
@@ -131,8 +123,8 @@ Section refinement_triples.
     (
       (
         txn_valid txn hT ∗
-        liftable P ∗
-        P hT
+        P hT ∗
+        ⌜ Liftable P ⌝
       )
       -∗
       WP ImplAlloc.commit txn @ s; E {{
@@ -141,8 +133,10 @@ Section refinement_triples.
       }}
     )%I.
   Proof.
-    iIntros (?????) "(Htxn & Hliftable & Hp)".
-    iDestruct ("Hliftable" with "Hp") as (m) "[Hm Hp]".
+    iIntros (?????) "(Htxn & Hp & Hliftable)".
+    iPure "Hliftable" as Hliftable.
+    unfold Liftable in Hliftable.
+    iDestruct (Hliftable with "Hp") as (m) "[Hm Hp]".
     iDestruct (commit_ok with "[$Htxn $Hm]") as "Hcom".
     iApply (wp_wand with "Hcom").
     iIntros (?) "Hm".
@@ -293,66 +287,6 @@ Section refinement_triples.
 
   Hint Resolve insert_allocs_none.
 
-  Theorem AllocInv_liftable : forall s,
-    liftable (AllocInv s).
-  Proof.
-    unfold liftable.
-    intros.
-    iIntros (?) "H".
-    iDestruct "H" as (sz) "[Hsz Has]".
-    iDestruct "Has" as (l) "[%[%Has]]".
-    iExists (<[allocator:=sz]> (insert_allocs ∅ l (allocator+1))).
-    iSplitL.
-    {
-      iApply big_sepM_insert.
-      eapply insert_allocs_none; lia.
-      iFrame.
-
-      clear H1 H2.
-      generalize allocator as n. intro n.
-      iInduction l as [|l] "IH" forall (n).
-      - simpl. rewrite big_sepM_empty. iFrame.
-      - simpl.
-        iApply big_sepM_insert.
-        eapply insert_allocs_none; lia.
-        replace (n+1+0) with (n+1) by lia.
-        iDestruct "Has" as "[Hn1 Has]".
-        iFrame.
-        iApply "IH".
-        repeat setoid_rewrite <- plus_n_Sm.
-        repeat rewrite <- plus_n_O.
-        simpl.
-        iFrame.
-    }
-
-    iIntros (?) "Hm".
-    iDestruct (big_sepM_insert with "Hm") as "[Hsz Hm]".
-    eapply insert_allocs_none; lia.
-
-    iExists sz. iFrame.
-    iExists l.
-    iSplitR.
-    { iPureIntro. auto. }
-    iSplitR.
-    { iPureIntro. auto. }
-
-    clear H1 H2.
-    generalize allocator as n. intro n.
-    iInduction l as [|l] "IH" forall (n).
-    - simpl. rewrite big_sepM_empty. iFrame.
-    - simpl.
-      iDestruct (big_sepM_insert with "Hm") as "[Hn1 Hm]".
-      eapply insert_allocs_none; lia.
-      replace (n+1+0) with (n+1) by lia.
-      iFrame.
-      iDestruct ("IH" with "Hm") as "Hm".
-      iClear "IH".
-      repeat setoid_rewrite <- plus_n_Sm.
-      repeat rewrite <- plus_n_O.
-      simpl.
-      iFrame.
-  Admitted.
-
   Theorem alloc_and_commit_ok :
     (
       (
@@ -379,9 +313,9 @@ Section refinement_triples.
     wp_lock "[Hlocked Hopen]".
     iDestruct "Hopen" as (AS) "Hopen".
 
-    iPoseProof AllocInv_liftable as "Hliftable".
-    iDestruct (lift_pred_ok with "[$Htxn Hopen $Hliftable]") as "[Htxn Hopen]".
-    iFrame.
+    iDestruct (lift_pred_ok with "[$Htxn Hopen]") as "[Htxn Hopen]".
+    iSplitL. iApply "Hopen".
+    iPureIntro. typeclasses eauto.
 
     iDestruct (alloc_ok with "[$Htxn $Hopen]") as "Hwp_alloc".
     wp_bind.
@@ -389,8 +323,10 @@ Section refinement_triples.
     iIntros (?) "[Htxn Hres]".
 
     destruct a0.
-    - iPoseProof AllocInv_liftable as "Hliftable2".
-      iDestruct (commit_pred_ok with "[$Htxn $Hliftable2 $Hres]") as "Hwp_commit".
+    - iDestruct (commit_pred_ok with "[$Htxn Hres]") as "Hwp_commit".
+      iSplitL. iApply "Hres".
+      iPureIntro. typeclasses eauto.
+
       wp_bind.
       iApply (wp_wand with "Hwp_commit").
       iIntros (?) "Hopen".
@@ -399,7 +335,10 @@ Section refinement_triples.
       wp_ret.
       iExists _. iApply "Hinv".
 
-    - iDestruct (commit_pred_ok with "[$Htxn $Hliftable $Hres]") as "Hwp_commit".
+    - iDestruct (commit_pred_ok with "[$Htxn Hres]") as "Hwp_commit".
+      iSplitL. iApply "Hres".
+      iPureIntro. typeclasses eauto.
+
       wp_bind.
       iApply (wp_wand with "Hwp_commit").
       iIntros (?) "Hopen".
@@ -530,11 +469,6 @@ Section refinement_triples.
     - admit.
   Admitted.
 
-  Theorem inode_inv_liftable : forall d i,
-    liftable (inode_state d i).
-  Proof.
-  Admitted.
-
   Lemma write2_refinement {T} j K `{LanguageCtx Inode.Op _ T Inode.l K} i d0 d1 :
     {{{ j ⤇ K (Call (Inode.Write2 i d0 d1)) ∗ Registered ∗ InodeInv }}}
       write2 i d0 d1
@@ -553,8 +487,10 @@ Section refinement_triples.
       wp_lock "[Hlocked0 Hi0]".
       iDestruct "Hi0" as (i0) "[Hi0own Hi0]".
 
-      iPoseProof inode_inv_liftable as "Hliftable".
-      iDestruct (lift_pred_ok with "[$Htxn Hi0 $Hliftable]") as "[Htxn Hi0]". iFrame.
+      iDestruct (lift_pred_ok with "[$Htxn Hi0]") as "[Htxn Hi0]".
+      iSplitL. iApply "Hi0".
+      iPureIntro. typeclasses eauto.
+
       iDestruct "Hi0" as "[Hi00 Hi01]".
 
       iDestruct (write_ok with "[$Htxn $Hi00]") as "Hwp_write".
@@ -567,9 +503,10 @@ Section refinement_triples.
       iApply (wp_wand with "Hwp_write").
       iIntros (?) "[Htxn Hi01]".
 
-      iPoseProof (inode_inv_liftable _ (d0,d1)) as "Hliftable2".
-      iDestruct (commit_pred_ok with "[$Htxn $Hliftable2 Hi00 Hi01]") as "Hwp_commit".
-      iFrame.
+      iDestruct ((commit_pred_ok _ _ _ (fun h => inode_state _ (d0,d1) h)) with "[$Htxn Hi00 Hi01]") as "Hwp_commit".
+      iSplitL. unfold inode_state. iFrame.
+      iPureIntro. typeclasses eauto.
+
       wp_bind.
       iApply (wp_wand with "Hwp_commit").
       iIntros (?) "Hi0".
@@ -604,3 +541,5 @@ Section refinement_triples.
       iApply "HΦ". iFrame.
     - admit.
   Admitted.
+
+End refinement_triples.
