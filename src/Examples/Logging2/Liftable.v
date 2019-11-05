@@ -196,3 +196,5 @@ Section liftable.
   Qed.
 
 End liftable.
+
+Hint Mode Liftable ! ! ! ! ! ! : typeclass_instances.
