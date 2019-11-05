@@ -29,8 +29,10 @@ Section refinement_triples.
 
   Definition txn_valid (txn : nat) (hT : gen_heapG nat nat Σ) :=
     (
+      ∃ mT,
       txn ↦[hTxn] (Some hT) ∗
-      ∀ a v, a ↦[hT] v -∗ ∃ v0, a m↦ v0
+      gen_heap_ctx (hG := hT) mT ∗
+      [∗ map] a ↦ v ∈ mT, ∃ v0, a m↦ v0
     )%I.
 
   Axiom begin_ok : forall s E,
@@ -41,16 +43,38 @@ Section refinement_triples.
       }}
     )%I.
 
-  Axiom lift_ok : forall txn hT liftm,
+  Theorem lift_ok : forall txn hT liftm,
     (
       ( txn_valid txn hT ∗
         [∗ map] a ↦ v ∈ liftm, a m↦ v
-      ) -∗
+      ) ==∗
       (
         txn_valid txn hT ∗
         [∗ map] a ↦ v ∈ liftm, a ↦[hT] v
       )
     )%I.
+  Proof.
+    iIntros (???) "[Ht Hm]".
+    iDestruct "Ht" as (mT) "(Ht & Htg & Htm)".
+    iDestruct (big_sepM_disjoint_pred with "Hm Htm") as %Hd.
+    {
+      unfold Conflicting; intros.
+      iIntros "Hm1 Hm2".
+      iDestruct "Hm2" as (?) "Hm2".
+      iDestruct (mapsto_disjoint with "Hm1 Hm2") as %Hd.
+      iPureIntro; auto.
+    }
+    iMod ((gen_heap_alloc_gen _ liftm) with "Htg") as "(Htg & Hl & Hmt)"; auto.
+    iModIntro.
+    iExists _.
+    iFrame.
+    rewrite big_sepM_union; eauto.
+    iDestruct (big_sepM_mono with "Hm") as "Hm".
+    2: iFrame.
+    iIntros (???) "H".
+    iExists _.
+    iFrame.
+  Qed.
 
   Definition heapT := Liftable.heapT (L := nat) (V := nat) (Σ := Σ).
   Definition memHeap := exmachG0.(@exm_mem_inG Σ).
@@ -59,7 +83,7 @@ Section refinement_triples.
     (
       ( txn_valid txn hT ∗
         P memHeap
-      ) -∗
+      ) ==∗
       (
         txn_valid txn hT ∗
         P hT
@@ -69,10 +93,11 @@ Section refinement_triples.
     iIntros (??) "(Htxn & Hp)".
     unfold Liftable in Liftable0.
     iDestruct (Liftable0 with "Hp") as (m) "[Hm Hp]".
-    iDestruct (lift_ok with "[$Htxn $Hm]") as "[Htxn Hm]".
+    iMod (lift_ok with "[$Htxn $Hm]") as "[Htxn Hm]".
     iFrame.
     iApply "Hp".
     iFrame.
+    done.
   Qed.
 
   Axiom write_ok : forall s E txn a v v0 hT,
@@ -309,7 +334,7 @@ Section refinement_triples.
     wp_lock "[Hlocked Hopen]".
     iDestruct "Hopen" as (AS) "Hopen".
 
-    iDestruct (lift_pred_ok with "[$Htxn Hopen]") as "[Htxn Hopen]".
+    iMod (lift_pred_ok with "[$Htxn Hopen]") as "[Htxn Hopen]".
     iApply "Hopen".
 
     iDestruct (alloc_ok with "[$Htxn $Hopen]") as "Hwp_alloc".
@@ -483,7 +508,7 @@ Section refinement_triples.
       wp_lock "[Hlocked0 Hi0]".
       iDestruct "Hi0" as (i0) "[Hi0own Hi0]".
 
-      iDestruct (lift_pred_ok with "[$Htxn Hi0]") as "[Htxn Hi0]".
+      iMod (lift_pred_ok with "[$Htxn Hi0]") as "[Htxn Hi0]".
       iApply "Hi0".
 
       iDestruct "Hi0" as "[Hi00 Hi01]".
