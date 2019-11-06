@@ -66,3 +66,65 @@ Ltac unify_ghost :=
       (iDestruct (ghost_var_agree with pat) as %Hp; subst; try inversion_clear Hp; [])
     end
   end.
+
+Section sep_list.
+  Context {PROP : bi}.
+  Implicit Types P Q : PROP.
+
+  Context {A : Type}.
+  Implicit Types l : list A.
+  Implicit Types Φ Ψ : nat → A → PROP.
+
+  Lemma big_sepM_insert Φ m i x :
+    m !! i = None →
+    ([∗ map] k↦y ∈ <[i:=x]> m, Φ k y) ⊣⊢ Φ i x ∗ [∗ map] k↦y ∈ m, Φ k y.
+  Proof. apply big_opM_insert. Qed.
+
+  Lemma big_sepL_insert_acc Φ m i x :
+    m !! i = Some x →
+    ([∗ list] k↦y ∈ m, Φ k y) ⊢
+      Φ i x ∗ (∀ x', Φ i x' -∗ ([∗ list] k↦y ∈ <[i:=x']> m, Φ k y)).
+  Proof.
+    intros.
+    rewrite big_sepL_delete //.
+    iIntros "H".
+    iDestruct "H" as "[HP Hlist]".
+    iFrame.
+    iIntros "% HP".
+    assert (i < length m)%nat as HLength by (apply lookup_lt_is_Some_1; eauto).
+    assert (i = (length (take i m) + 0)%nat) as HCidLen.
+    { rewrite take_length_le. by rewrite -plus_n_O. lia. }
+    replace (insert i) with (@insert _ _ _ (@list_insert A) (length (take i m) + 0)%nat) by auto.
+    remember (length _ + 0)%nat as K.
+    replace m with (take i m ++ [x] ++ drop (S i) m) by (rewrite take_drop_middle; auto).
+    subst K.
+    rewrite big_opL_app.
+    rewrite big_opL_app. simpl.
+    rewrite insert_app_r.
+    rewrite big_opL_app.
+    replace (x :: drop (S i) m) with ([x] ++ drop (S i) m) by reflexivity.
+    rewrite insert_app_l; [| simpl; lia ].
+    rewrite big_opL_app. simpl.
+    rewrite -HCidLen.
+    iDestruct "Hlist" as "[HListPre [HListMid HListSuf]]".
+    iFrame.
+    iSplitL "HListPre".
+    {
+      iApply big_sepL_proper; iFrame.
+      iIntros.
+      apply lookup_lt_Some in x2.
+      pose proof (firstn_le_length i m).
+      destruct (decide (x0 = i)); try lia.
+      iSplit; iIntros; iFrame.
+    }
+    {
+      iApply big_sepL_proper; iFrame.
+      iIntros.
+      destruct (decide (strings.length (take i m) + S x0 = i)); try lia.
+      iSplit; iIntros; iFrame.
+      destruct (decide (i = i)); try congruence.
+      done.
+    }
+  Qed.
+
+End sep_list.

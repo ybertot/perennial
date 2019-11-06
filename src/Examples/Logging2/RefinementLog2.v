@@ -490,56 +490,6 @@ Section refinement_triples.
       inv iN (ExecInner γmemblocks γdiskpending γcommit_id_exact γmem_txn_next))%I.
   Definition CrashInv := (source_ctx ∗ inv iN CrashInner)%I.
 
-  Lemma big_sepM_insert {A: Type} {P: nat -> A -> iPropI Σ} m i x :
-    m !! i = None →
-    ([∗ map] k↦y ∈ <[i:=x]> m, P k y) ⊣⊢ P i x ∗ [∗ map] k↦y ∈ m, P k y.
-  Proof. apply big_opM_insert. Qed.
-
-  Lemma big_sepL_insert_acc {A: Type} {P: nat -> A -> iPropI Σ} m i x :
-    m !! i = Some x →
-    ([∗ list] k↦y ∈ m, P k y) ⊢
-      P i x ∗ (∀ x', P i x' -∗ ([∗ list] k↦y ∈ <[i:=x']> m, P k y)).
-  Proof.
-    intros.
-    rewrite big_sepL_delete //.
-    iIntros "H".
-    iDestruct "H" as "[HP Hlist]".
-    iFrame.
-    iIntros "% HP".
-    assert (i < length m)%nat as HLength by (apply lookup_lt_is_Some_1; eauto).
-    assert (i = (length (take i m) + 0)%nat) as HCidLen.
-    { rewrite take_length_le. by rewrite -plus_n_O. lia. }
-    replace (insert i) with (@insert _ _ _ (@list_insert A) (length (take i m) + 0)%nat) by auto.
-    remember (length _ + 0)%nat as K.
-    replace m with (take i m ++ [x] ++ drop (S i) m) by (rewrite take_drop_middle; auto).
-    subst K.
-    rewrite big_opL_app.
-    rewrite big_opL_app. simpl.
-    rewrite insert_app_r.
-    rewrite big_opL_app.
-    replace (x :: drop (S i) m) with ([x] ++ drop (S i) m) by reflexivity.
-    rewrite insert_app_l; [| simpl; lia ].
-    rewrite big_opL_app. simpl.
-    rewrite -HCidLen.
-    iDestruct "Hlist" as "[HListPre [HListMid HListSuf]]".
-    iFrame.
-    iSplitL "HListPre".
-    {
-      iApply big_sepL_proper; iFrame.
-      iIntros.
-      apply lookup_lt_Some in x2.
-      pose proof (firstn_le_length i m).
-      destruct (decide (x0 = i)); try lia.
-      iSplit; iIntros; iFrame.
-    }
-    {
-      iApply big_sepL_proper; iFrame.
-      iIntros.
-      destruct (decide (strings.length (take i m) + S x0 = i)); try lia.
-      iSplit; iIntros; iFrame.
-    }
-  Qed.
-
   Lemma big_sepM_list_inserts {T}
     {Φ : nat -> T -> iPropI Σ} : forall l (m : gmap nat T) off,
       (forall i, i >= off -> m !! i = None) →
