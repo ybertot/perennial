@@ -12,7 +12,9 @@ From Tactical Require Import UnfoldLemma.
 
 
 Section refinement_triples.
-  Context `{!exmachG Σ, lockG Σ, !@cfgG (Inode.Op) (Inode.l) Σ,
+  Context `{!exmachG Σ, lockG Σ,
+            !@cfgG (Inode.Op) (Inode.l) Σ,
+            !@cfgG (Log2API.Log2.Op) (Log2API.Log2.l) Σ,
             !inG Σ (authR (optionUR (exclR (listO natO)))),
             !inG Σ (authR (optionUR (exclR (listO pending_appendC)))),
             !inG Σ (authR (optionUR (exclR (prodO natO natO)))),
@@ -220,12 +222,22 @@ Section refinement_triples.
         iDestruct ("Hother" with "Hn") as "Hfv".
         iExists _. iFrame.
         iPureIntro. intuition. rewrite insert_length. auto.
+        * apply elem_of_difference in H5. intuition.
+          destruct (decide (i = n)); subst.
+          { exfalso. apply H7. apply elem_of_singleton. auto.
+          }
+          { rewrite list_lookup_insert_ne; try lia.
+            apply H3; try lia. auto.
+          }
         * destruct (decide (i = n)); subst.
-          { admit. }
-          { admit. }
-        * destruct (decide (i = n)); subst.
-          { admit. }
-          { admit. }
+          { rewrite list_lookup_insert in H5; try lia.
+            congruence.
+          }
+          { rewrite list_lookup_insert_ne in H5; try lia.
+            apply H3 in H5; try lia.
+            apply elem_of_difference; intuition.
+            apply elem_of_singleton in H6; congruence.
+          }
       + iDestruct (big_sepL_lookup_acc with "Has") as "[Hn Hother]". eauto.
         wp_bind.
         iDestruct (read_ok with "[$Htxn $Hn]") as "Hwp_read".
@@ -235,7 +247,7 @@ Section refinement_triples.
         iDestruct ("Hother" with "Hn") as "Hfv".
         iApply ("IH" with "[$Htxn] [$Hfv]").
         iPureIntro. lia.
-  Admitted.
+  Qed.
 
   Theorem alloc_ok : forall s E txn hT fs,
     (
