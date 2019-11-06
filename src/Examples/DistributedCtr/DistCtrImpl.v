@@ -1,59 +1,74 @@
 From iris.algebra Require Import auth frac_auth excl.
 From iris.base_logic.lib Require Import invariants.
-From iris.heap_lang Require Import proofmode notation lib.par.
+From iris.heap_lang Require Import proofmode notation lib.par lib.spin_lock.
 
-(* Remove the lock for now, just want to reason about two different counters *)
-Definition parallel_add_mul : expr :=
+Definition alloc : expr :=
   let: "r1" := ref #0 in
   let: "r2" := ref #0 in
+  let: "lk1" := newlock #() in
+  let: "lk2" := newlock  #() in
+  Pair (Pair "r1" "r2") (Pair "lk1" "lk2").
+
+(* precondition: r1 r2 are an alloced pair *)
+Definition inc (rpair : expr) (lkpair: expr) : expr :=
+  let: "r1" := Fst rpair in
+  let: "r2" := Snd rpair in
+  let: "lk1" := Fst lkpair in
+  let: "lk2" := Snd lkpair in
   (
-    ("r1" <- !"r2" + #1;;)
+    (acquire "lk1";; "r1" <- !"r1" + #1;; release "lk1")
   |||
-    ("r2" <- !"r1" + #1;;)
-  );;
-  !"r1" + !"r2".
+    (acquire "lk2";; "r2" <- !"r2" + #2;; release "lk2")
+  ).
 
-(** In this proof we will make use of Boolean ghost variables. *)
+Definition sum (rpair : expr) (lkpair: expr) : expr :=
+  let: "r1" := Fst rpair in
+  let: "r2" := Snd rpair in
+  let: "lk1" := Fst lkpair in
+  let: "lk2" := Snd lkpair in
+  acquire "lk1";; acquire "lk2";;
+  "r" <-!"r1" + !"r2";;
+  release "lk2";; release "lk1";;
+  "r".
+
 Section proof.
-  Context `{!heapG Σ, !spawnG Σ, !inG Σ (authR (optionUR (exclR boolO)))}.
+  (** Come up with a suitable invariant and prove the spec **)
+  Context `{!heapG Σ, !spawnG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
 
-  (** The same helping lemmas for ghost variables that we have already seen in
-  the previous exercise. *)
-  Lemma ghost_var_alloc b :
-    (|==> ∃ γ, own γ (● (Excl' b)) ∗ own γ (◯ (Excl' b)))%I.
+  Definition parallel_add_inv (rpair : loc * loc) : iProp Σ := (*(γ1 γ2 : gname) : iProp Σ :=*)
+    (∃ n1 n2:Z, (⌜#n1 = #n2⌝
+                  ∗ (fst rpair) ↦ #(n1))
+                  ∗ ((snd rpair) ↦ #(n2))%I).
+                  (*∗ own γ1 (● (Excl' n1)) ∗ own γ2 (● (Excl' n2)))%I.*)
+
+  (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
+  Definition pair_eq (n: Z) (rpair : loc * loc) : iProp Σ := ∃ n, (fst rpair) ↦ #n ∗ (snd rpair) ↦ #n.
+
+  Print val . 
+  Locate "#".
+  Print base_lit. 
+
+  Implicit Types (l: loc).
+  Lemma alloc_spec : 
+    {{{ True%I }}}
+      alloc
+    {{{ '(l1,l2,lk1,lk2), RET Pair ((Pair #l1 #l2) (Pair lk1 lk2)); l1 ↦ #0 ∗ l2 ↦ #0 }}}.
   Proof.
-    iMod (own_alloc (● (Excl' b) ⋅ ◯ (Excl' b))) as (γ) "[??]".
-    - by apply auth_both_valid.
-    - by eauto with iFrame.
-  Qed.
+    (* exercise *)
+  Admitted.
 
-  Lemma ghost_var_agree γ b c :
-    own γ (● (Excl' b)) -∗ own γ (◯ (Excl' c)) -∗ ⌜ b = c ⌝.
+  Lemma inc_spec : ∀ n rpair lpair,
+    {{{ pair_eq n rpair }}}
+      inc (#(fst rpair), #(snd rpair)) lpair
+    {{{ z, RET #z; pair_eq (n+1) rpair }}}.
   Proof.
-    iIntros "Hγ● Hγ◯".
-    by iDestruct (own_valid_2 with "Hγ● Hγ◯")
-      as %[<-%Excl_included%leibniz_equiv _]%auth_both_valid.
-  Qed.
+    (* exercise *)
+  Admitted.
 
-  Lemma ghost_var_update γ b' b c :
-    own γ (● (Excl' b)) -∗ own γ (◯ (Excl' c)) ==∗
-      own γ (● (Excl' b')) ∗ own γ (◯ (Excl' b')).
-  Proof.
-    iIntros "Hγ● Hγ◯".
-    iMod (own_update_2 _ _ _ (● Excl' b' ⋅ ◯ Excl' b') with "Hγ● Hγ◯") as "[$$]".
-    { by apply auth_update, option_local_update, exclusive_local_update. }
-    done.
-  Qed.
-
-  (** *Difficult exercise*: come up with a suitable invariant and prove the spec
-  of [parallel_add_mul]. In this proof, you should use Boolean ghost variables,
-  and the rules for those as given above. You are allowed to use any number of
-  Boolean ghost variables. *)
-  Definition parallel_add_mul_inv (r : loc) (γ1 γ2 : gname) : iProp Σ :=
-    True%I. (* exercise: replace [True] with something meaningful. *)
-
-  Lemma parallel_add_mul_spec :
-    {{{ True }}} parallel_add_mul {{{ z, RET #z; ⌜ z = 2 ∨ z = 4 ⌝ }}}.
+  Lemma sum_spec : ∀ n rpair lpair,
+    {{{ pair_eq n rpair }}}
+      sum (#(fst rpair), #(snd rpair)) lpair
+    {{{ z, RET #z; ⌜ z = (n + n)%Z ⌝ }}}.
   Proof.
     (* exercise *)
   Admitted.

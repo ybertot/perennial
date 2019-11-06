@@ -6,6 +6,7 @@ From Perennial Require Import Examples.AtomicPair.RefinementLog.
 (* From Perennial Require Import Examples.Logging.LogRefinement. *)
 (* From Perennial Require Import Examples.Logging2.RefinementLog2. *)
 From Perennial Require Import Examples.ReplicatedDisk.ReplicatedDiskRefinement.
+From Perennial Require Import Examples.DistributedCtr.DistCtrImpl.
 
 (* mailboat proof *)
 From Perennial Require Import Examples.MailServer.MailRefinement.
