@@ -52,6 +52,13 @@ Module NFS3.
     | _, _ => False
     end.
 
+  Definition inode_finish (s : inode_state) : inode_state :=
+    match s with
+    | Dir d => s
+    | File (mkFileState latest pending) =>
+      File (mkFileState latest ∅)
+    end.
+
   Definition dynamics : Dynamics Op State :=
     {| step T (op: Op T) :=
           match op with
@@ -112,26 +119,17 @@ Module NFS3.
           s' <- such_that (fun (s s' : State) => forall fh, inode_crash (s !! fh) (s' !! fh));
           _ <- puts (fun _ => s');
           pure tt;
-       (* XXX what is [finish_step] for? *)
        finish_step :=
-          s' <- such_that (fun (s s' : State) => forall fh, inode_crash (s !! fh) (s' !! fh));
-          _ <- puts (fun _ => s');
+          _ <- puts (fun s => fmap inode_finish s);
           pure tt;
     |}.
-
-  Definition inode_crash_example (s : inode_state) : inode_state :=
-    match s with
-    | Dir d => s
-    | File (mkFileState latest pending) =>
-      File (mkFileState latest ∅)
-    end.
 
   Lemma crash_total_ok (s: State):
     exists s', dynamics.(crash_step) s (Val s' tt).
   Proof.
     repeat (eexists; econstructor).
     econstructor. intros.
-    instantiate (1 := fmap inode_crash_example s).
+    instantiate (1 := fmap inode_finish s).
     rewrite lookup_fmap.
     destruct (s !! fh) eqn:He; rewrite He; simpl; auto.
     destruct i; simpl; auto.
@@ -160,15 +158,35 @@ Module NFS3.
     inversion H5; clear H5.
   Qed.
 
+  Lemma finish_total_ok (s: State):
+    exists s', dynamics.(finish_step) s (Val s' tt).
+  Proof.
+    repeat (eexists; econstructor).
+  Qed.
+
+  Lemma finish_non_err_ok (s: State) ret:
+    dynamics.(finish_step) s ret -> ret ≠ Err.
+  Proof.
+    intros.
+    destruct ret; try congruence.
+    inversion H; clear H.
+    inversion H0; clear H0.
+    inversion H0; clear H0.
+    inversion H; clear H.
+    inversion H0; clear H0.
+    inversion H; clear H.
+    inversion H1; clear H1.
+  Qed.
+
   Definition l : Layer Op :=
     {| Layer.OpState := State;
        sem := dynamics;
        trace_proj := fun _ => nil;
        crash_preserves_trace := fun _ _ _ => eq_refl;
        crash_total := crash_total_ok;
-       finish_total := crash_total_ok;
+       finish_total := finish_total_ok;
        crash_non_err := crash_non_err_ok;
-       finish_non_err := crash_non_err_ok;
+       finish_non_err := finish_non_err_ok;
        initP := fun s => s = ∅ |}.
 
 End NFS3.
