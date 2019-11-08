@@ -2,6 +2,7 @@ From Coq Require Import List.
 From RecordUpdate Require Import RecordSet.
 From Perennial Require Export Lib.
 Import RelationNotations.
+Import RecordSetNotations.
 
 Module NFS3.
 
@@ -66,6 +67,16 @@ Module NFS3.
     time_nsec : uint32;
   }.
 
+  Global Instance EqDec_time : EqDecision time.
+    intro; intros.
+    destruct x, y.
+    destruct (eq_nat_dec time_sec0 time_sec1).
+    destruct (eq_nat_dec time_nsec0 time_nsec1).
+    - left; subst; auto.
+    - right; subst; congruence.
+    - right; subst; congruence.
+  Defined.
+
   Record major_minor := {
     major : uint32;
     minor : uint32;
@@ -97,6 +108,8 @@ Module NFS3.
     wcc_before : option wcc_attr;
     wcc_after : option wcc_attr;
   }.
+
+  Definition wcc_data_none := Build_wcc_data None None.
 
   Inductive set_time :=
   | SET_TO_CLIENT_TIME (t : time)
@@ -143,7 +156,7 @@ Module NFS3.
   Parameter write_buf : buf -> nat -> buf -> buf.
   Parameter len_buf : buf -> nat.
   Parameter empty_buf : buf.
-  Parameter truncate_buf : buf -> nat -> buf.
+  Parameter resize_buf : nat -> buf -> buf. (* fill with zero if growing *)
 
   Record async `{Countable T} := {
     latest : T;
@@ -158,6 +171,9 @@ Module NFS3.
   Definition sync `{Countable T} (v : T) : async T :=
     Build_async v ∅.
 
+  Definition async_put `{Countable T} (v : T) (a : async T) :=
+    Build_async v (possible a).
+
   (** Return type wrappers that include an error code *)
 
   Inductive res A T :=
@@ -165,8 +181,10 @@ Module NFS3.
   | Err (always : A) (e : err)
   .
 
+  Arguments Err {A T}.
+
   Definition res2 A T1 T2 := res A (T1 * T2).
-  Definition OK2 `{always : A} `{v1 : T1} `{v2 : T2} := OK always (v1, v2).
+  Definition OK2 `(always : A) `(v1 : T1) `(v2 : T2) := OK always (v1, v2).
 
   (** Result types of different operations, when the operation
       returns more than one thing *)
@@ -282,12 +300,8 @@ Module NFS3.
       Op (res wcc_data writeverf)
   .
 
-  (* XXX inode needs to have an async wtime because it gets updated
-     in memory without flushing to disk.  not so clear what's the
-     cleanest representation of that... *)
-
   Inductive inode_type_state :=
-  | Ifile (_ : async_buf) (_ : createverf)
+  | Ifile (_ : buf) (_ : createverf)
   | Idir (_ : gmap filename fh)
   | Iblk (_ : major_minor)
   | Ichr (_ : major_minor)
@@ -306,11 +320,6 @@ Module NFS3.
     inode_meta_ctime : time;
   }.
 
-  Record inode_state := {
-    inode_state_meta : inode_meta;
-    inode_state_type : inode_type_state;
-  }.
-
   Global Instance eta_inode_meta : Settable _ :=
     settable! Build_inode_meta
       < inode_meta_mode;
@@ -321,11 +330,33 @@ Module NFS3.
         inode_meta_mtime;
         inode_meta_ctime >.
 
+  Record inode_state := {
+    inode_state_meta : inode_meta;
+    inode_state_type : inode_type_state;
+  }.
+
+  Global Instance eta_inode_state : Settable _ :=
+    settable! Build_inode_state
+      < inode_state_meta; inode_state_type >.
+
+  Global Instance eq_dec_inode_meta : EqDecision inode_meta.
+  Admitted.
+
+  Global Instance eq_dec_inode_state : EqDecision inode_state.
+  Admitted.
+
+  Global Instance countable_inode_state : Countable inode_state.
+  Admitted.
+
   Record State := {
-    fhs : gmap fh inode_state;
+    fhs : gmap fh (async inode_state);
     verf : writeverf;
     clock : time;
   }.
+
+  Global Instance eta_State : Settable _ :=
+    settable! Build_State
+      < fhs; verf; clock >.
 
   Definition inode_attrs (i : inode_state) (nlink : uint32) : fattr :=
     let m := inode_state_meta i in
@@ -344,7 +375,7 @@ Module NFS3.
       (inode_meta_uid m)
       (inode_meta_gid m)
       ( match (inode_state_type i) with
-        | Ifile ab _ => len_buf (latest ab)
+        | Ifile b _ => len_buf b
         | _ => 0
         end )
       0
@@ -360,33 +391,374 @@ Module NFS3.
       (inode_meta_ctime m)
     .
 
-  Definition inode_crash (i : inode_state) (i' : inode_state) : Prop :=
-    inode_state_meta i = inode_state_meta i' /\
-    inode_type_crash (inode_state_type i) (inode_state_type i').
+  Definition inode_wcc (i : inode_state) : wcc_attr :=
+    let m := inode_state_meta i in
+    Build_wcc_attr
+      ( match (inode_state_type i) with
+        | Ifile b _ => len_buf b
+        | _ => 0
+        end )
+      (inode_meta_mtime m)
+      (inode_meta_ctime m).
 
-    | Some (File (mkFileState latest pending)), Some (File (mkFileState latest' pending')) =>
-      latest' ∈ pending ∪ {[latest]} /\ pending' = ∅
+  Definition inode_crash (i i' : async inode_state) : Prop :=
+    latest i' ∈ possible i /\ pending i' = ∅.
 
-  Definition inode_crash_opt (s : option inode_state) (s' : option inode_state) : Prop :=
+  Definition inode_crash_opt (s s' : option (async inode_state)) : Prop :=
     match s, s' with
     | None, None => True
     | Some i, Some i' => inode_crash i i'
     | _, _ => False
     end.
 
-  Definition inode_finish (s : inode_state) : inode_state :=
-    match s with
-    | Dir d => s
-    | File (mkFileState latest pending) =>
-      File (mkFileState latest ∅)
+  Definition inode_finish (s : async inode_state) : async inode_state :=
+    Build_async (latest s) ∅.
+
+  (** Step definitions for each RPC opcode *)
+
+  Definition null_step : relation State State unit :=
+    pure tt.
+
+  Definition count_links_dir (count_fh : fh) (dir_fh : fh) : nat :=
+    if (decide (count_fh = dir_fh)) then 1 else 0.
+
+  Definition add_up `{Countable T} (m : gmap T nat) : nat :=
+    map_fold (fun k v acc => plus acc v) 0 m.
+
+  Definition count_links (fh : fh) (i : inode_state) : nat :=
+    match inode_state_type i with
+    | Idir d =>
+      add_up (fmap (count_links_dir fh) d)
+    | _ => 0
     end.
 
-  Context `{!ElemOf nfs3_fh (gmap nfs3_fh inode_state)}.
+  Definition get_fh {A T} (f : fh) (a : A) `(rx : inode_state -> relation State State (res A T)) : relation State State (res A T) :=
+    i <- reads (fun s => s.(fhs) !! f);
+    match i with
+    | None => pure (Err a ERR_STALE) + pure (Err a ERR_BADHANDLE)
+    | Some i => rx (latest i)
+    end.
+
+  Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
+                               (at level 54, right associativity).
+
+  Definition inode_attr (f : fh) (i : inode_state) : relation State State fattr :=
+    nlink <- reads (fun s => add_up (fmap (count_links f) (fmap latest s.(fhs))));
+    pure (inode_attrs i nlink).
+
+  Definition getattr_step (f : fh) : relation State State (res unit fattr) :=
+    i <~- get_fh f tt;
+    attrs <- inode_attr f i;
+    pure (OK tt attrs).
+
+  Definition check_ctime_guard {A T} (i : inode_state) (ctime_guard : option time)
+                                     (a : A) (rx : unit -> relation State State (res A T)) :=
+    match ctime_guard with
+    | None => rx tt
+    | Some ct =>
+      if (decide (ct = i.(inode_state_meta).(inode_meta_ctime))) then
+        rx tt
+      else
+        pure (Err a ERR_NOT_SYNC)
+    end.
+
+  Definition time_ge (t t' : time) :=
+    t'.(time_sec) > t.(time_sec) \/
+    t'.(time_sec) = t.(time_sec) /\ t'.(time_nsec) >= t.(time_nsec).
+
+  Definition get_time : relation State State time :=
+    t <- reads (clock);
+    t' <- such_that (fun _ t' => time_ge t t');
+    _ <- puts (set clock (constructor t'));
+    pure t'.
+
+  Definition set_attr_one {F} (i : inode_state) (now : time)
+                              (f : inode_meta -> F)
+                              `{!Setter f}
+                              (sattr_req : option F) :
+                              inode_state :=
+    match sattr_req with
+    | None => i
+    | Some v =>
+     i <| inode_state_meta ::=
+          fun m => m <| inode_meta_ctime := now |> <| f := v |> |>
+    end.
+
+  Definition set_attr_time (i : inode_state) (now : time)
+                           (f : inode_meta -> time)
+                           `{!Setter f}
+                           (sattr_req : option set_time) :
+                           inode_state :=
+    match sattr_req with
+    | None => i
+    | Some v =>
+      let newtime := match v with
+                     | SET_TO_CLIENT_TIME t => t
+                     | SET_TO_SERVER_TIME => now
+                     end in
+      i <| inode_state_meta ::=
+           fun m => m <| f := newtime |> <| inode_meta_ctime := now |> |>
+    end.
+
+  Definition truncate {A T} (i : inode_state) (now : time)
+                            (sattr_req : option uint64)
+                            (a : A)
+                            (rx : inode_state -> relation State State (res A T)) :
+                            relation State State (res A T) :=
+    match sattr_req with
+    | None => rx i
+    | Some len =>
+      match i.(inode_state_type) with
+      | Ifile buf cverf =>
+        (if (decide (len_buf buf < len)) then pure (Err a ERR_NOSPC) else none) +
+        rx (i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
+              <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>)
+      | _ =>
+        pure (Err a ERR_INVAL)
+      end
+    end.
+
+  Definition put_fh_sync (f : fh) (i : inode_state) : relation State State unit :=
+    puts (set fhs (fun x => <[f := sync i]> x)).
+
+  Definition set_attr_nonlen (i : inode_state) (now : time) (a : sattr) : inode_state :=
+    let i := set_attr_one i now (f := inode_meta_mode) a.(sattr_mode) in
+    let i := set_attr_one i now (f := inode_meta_uid) a.(sattr_uid) in
+    let i := set_attr_one i now (f := inode_meta_gid) a.(sattr_gid) in
+    let i := set_attr_time i now (f := inode_meta_atime) a.(sattr_atime) in
+    let i := set_attr_time i now (f := inode_meta_mtime) a.(sattr_mtime) in
+    i.
+
+  Definition setattr_step (f : fh) (a : sattr) (ctime_guard : option time) : relation State State (res wcc_data unit) :=
+    i <~- get_fh f wcc_data_none;
+    let wcc_before := inode_wcc i in
+    _ <~- check_ctime_guard i ctime_guard (Build_wcc_data (Some wcc_before) (Some wcc_before));
+    t <- get_time;
+    i <~- truncate i t a.(sattr_size) (Build_wcc_data (Some wcc_before) (Some wcc_before));
+    let i := set_attr_nonlen i t a in
+    _ <- put_fh_sync f i;
+    pure (OK (Build_wcc_data (Some wcc_before) (Some (inode_wcc i))) tt).
+
+  Definition get_dir {A T} (i : inode_state) (a : A) (rx : gmap filename fh -> relation State State (res A T)) : relation State State (res A T) :=
+    match i.(inode_state_type) with
+    | Idir dmap => rx dmap
+    | _ => pure (Err a ERR_NOTDIR)
+    end.
+
+  Definition lookup_step (a : dirop) : relation State State (res2 post_op_attr fh post_op_attr) :=
+    d <~- get_fh a.(dirop_dir) None;
+    dattr <- inode_attr a.(dirop_dir) d;
+    dm <~- get_dir d (Some dattr);
+    match dm !! a.(dirop_fn) with
+    | None => pure (Err (Some dattr) ERR_NOENT)
+    | Some ffh =>
+      i <- reads (fun s => s.(fhs) !! ffh);
+      match i with
+      | None => pure (OK2 (Some dattr) ffh None)
+      | Some i =>
+        iattr <- inode_attr ffh (latest i);
+        pure (OK2 (Some dattr) ffh (Some iattr))
+      end
+    end.
+
+  Definition access_step (f : fh) (a : uint32) : relation State State (res post_op_attr uint32) :=
+    i <~- get_fh f None;
+    iattr <- inode_attr f i;
+    pure (OK (Some iattr) a).
+
+  Definition readlink_step (f : fh) : relation State State (res post_op_attr string) :=
+    i <~- get_fh f None;
+    iattr <- inode_attr f i;
+    match i.(inode_state_type) with
+    | Isymlink data => pure (OK (Some iattr) data)
+    | _ => pure (Err (Some iattr) ERR_INVAL)
+    end.
+
+  (* XXX we are ignoring atime on read (and every other operation).
+    if we do introduce atime, then we should make it async to avoid
+    disk writes on every read. *)
+  Definition read_ok (f : fh) (off : uint64) (count : uint32) : relation State State (res2 post_op_attr bool buf) :=
+    i <~- get_fh f None;
+    iattr <- inode_attr f i;
+    match i.(inode_state_type) with
+    | Ifile buf _ =>
+      let res := read_buf buf off count in
+      let eof := if decide (off + count < len_buf buf) then false else true in
+      pure (OK2 (Some iattr) eof res)
+    | _ => pure (Err (Some iattr) ERR_INVAL)
+    end.
+
+  Definition put_fh_async (f : fh) (i : inode_state) : relation State State unit :=
+    ia <- reads (fun s => s.(fhs) !! f);
+    match ia with
+    | None => pure tt
+    | Some ia =>
+      puts (set fhs (fun x => <[f := async_put i ia]> x))
+    end.
+
+  Definition write_step (f : fh) (off : uint64) (s : stable) (data : buf) : relation State State (res wcc_data write_ok) :=
+    i <~- get_fh f wcc_data_none;
+    let wcc_before := inode_wcc i in
+    match i.(inode_state_type) with
+    | Ifile buf cverf =>
+      t <- reads clock;
+      wverf <- reads verf;
+      let buf' := write_buf buf off data in
+      (if (decide (len_buf buf < len_buf buf')) then pure (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_NOSPC) else none) +
+      let i' := i <| inode_state_type := Ifile buf' cverf |>
+                  <| inode_state_meta ::= set inode_meta_mtime (constructor t) |> in
+      let wcc := Build_wcc_data (Some (inode_wcc i)) (Some (inode_wcc i')) in
+      let wok := Build_write_ok (len_buf data) s wverf in
+      match s with
+      | UNSTABLE =>
+        _ <- put_fh_async f i';
+        pure (OK wcc wok)
+      | _ =>
+        _ <- put_fh_sync f i';
+        pure (OK wcc wok)
+      end
+    | _ => pure (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_INVAL)
+    end.
+
+  Definition create_unchecked_step (a : dirop) (dm : gmap filename fh) (attr : sattr) : relation State State (res2 unit post_op_fh post_op_attr) :=
+    match dm !! a.(dirop_fn) with
+    | Some curfh =>
+      i <- reads (fun s => s.(fhs) !! curfh);
+      match i with
+      | None => pure (Err tt ERR_SERVERFAULT)
+      | Some i =>
+        now <- reads clock;
+        let i := i.(latest) in
+        let i := match attr.(sattr_size) with
+                 | None => i
+                 | Some len =>
+                   match i.(inode_state_type) with
+                   | Ifile buf cverf =>
+                     i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
+                       <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>
+                   | _ => i
+                   end
+                 end in
+        let i := set_attr_nonlen i now attr in
+        _ <- put_fh_sync curfh i;
+        iattr <- inode_attr curfh i;
+        pure (OK2 tt (Some curfh) (Some iattr))
+      end
+    | None =>
+      (* XXX *)
+    end.
+
+    | None =>
+(*
+      f <- such_that (fun s f => f ∉ s.(fhs));
+      _ <- put_fh_sync (f (Ifile empty_buf 0))
+*)
+      pure (Err wcc_ro ERR_NOSPC)
+    end).
+
+  Definition create_step (a : dirop) (h : createhow) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
+    d <~- get_fh a.(dirop_dir) wcc_data_none;
+
+    let wcc_before := inode_wcc d in
+    let wcc_ro := Build_wcc_data (Some wcc_before) (Some wcc_before) in
+    pure (Err wcc_ro ERR_NOSPC) + (
+
+    dm <~- get_dir d wcc_ro;
+
+    match dm !! a.(dirop_fn) with
+    | Some curfh =>
+      i <- reads (fun s => s.(fhs) !! curfh);
+      match i with
+      | None => pure (Err wcc_ro ERR_SERVERFAULT)
+      | Some i =>
+        match h with
+        | GUARDED _ => pure (Err wcc_ro ERR_EXIST)
+        | EXCLUSIVE cv =>
+          match i.(latest).(inode_state_type) with
+          | Ifile _ icv =>
+            if (decide (cv = icv)) then
+              iattr <- inode_attr curfh i.(latest);
+              pure (OK2 wcc_ro (Some curfh) (Some iattr))
+            else
+              pure (Err wcc_ro ERR_EXIST)
+          | _ =>
+            pure (Err wcc_ro ERR_EXIST)
+          end
+        | UNCHECKED sattr =>
+          now <- reads clock;
+          let i := i.(latest) in
+          let i := match sattr.(sattr_size) with
+                   | None => i
+                   | Some len =>
+                     match i.(inode_state_type) with
+                     | Ifile buf cverf =>
+                       i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
+                         <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>
+                     | _ => i
+                     end
+                   end in
+          let i := set_attr_nonlen i now sattr in
+          _ <- put_fh_sync curfh i;
+          iattr <- inode_attr curfh i;
+
+          d_after <- reads (fun s => s.(fhs) !! a.(dirop_dir));
+          match d_after with
+          | None => pure (OK2 (Build_wcc_data (Some wcc_before) None) (Some curfh) (Some iattr))
+          | Some d_after => pure (OK2 (Build_wcc_data (Some wcc_before) (Some (inode_wcc d_after))) (Some curfh) (Some iattr))
+          end
+        end
+      end
+
+    | None =>
+(*
+      f <- such_that (fun s f => f ∉ s.(fhs));
+      _ <- put_fh_sync (f (Ifile empty_buf 0))
+*)
+      pure (Err wcc_ro ERR_NOSPC)
+    end).
+
+
+
+
+
+(*
+  | CREATE (_ : dirop) (_ : createhow) :
+      Op (res2 wcc_data post_op_fh post_op_attr)
+  | MKDIR (_ : dirop) (_ : sattr) :
+      Op (res2 wcc_data post_op_fh post_op_attr)
+  | SYMLINK (_ : dirop) (_ : sattr) (_ : filename) :
+      Op (res2 wcc_data post_op_fh post_op_attr)
+  | MKNOD (_ : dirop) (_ : ftype) (_ : sattr) (_ : major_minor) :
+      Op (res2 wcc_data post_op_fh post_op_attr)
+  | REMOVE (_ : dirop) :
+      Op (res wcc_data unit)
+  | RMDIR (_ : dirop) :
+      Op (res wcc_data unit)
+  | RENAME (from : dirop) (to : dirop) :
+      Op (res (wcc_data * wcc_data) unit)
+  | LINK (_ : fh) (link : dirop) :
+      Op (res (wcc_data * post_op_attr) unit)
+  | READDIR (_ : fh) (_ : cookie) (_ : cookieverf) (count : uint32) :
+      Op (res post_op_attr readdir_ok)
+  | READDIRPLUS (_ : fh) (_ : cookie) (_ : cookieverf) (dircount : uint32) (maxcount : uint32) :
+      Op (res post_op_attr readdirplus_ok)
+  | FSSTAT (_ : fh) :
+      Op (res post_op_attr fsstat_ok)
+  | FSINFO (_ : fh) :
+      Op (res post_op_attr fsinfo_ok)
+  | PATHCONF (_ : fh) :
+      Op (res post_op_attr pathconf_ok)
+  | COMMIT (_ : fh) (off : uint64) (count : uint32) :
+      Op (res wcc_data writeverf)
+*)
+
 
 
   Definition dynamics : Dynamics Op State :=
     {| step T (op: Op T) :=
           match op with
+          | NULL => null_step
+(*
           | Lookup d n =>
             i <- reads (fun s => s !! d);
             match i with
@@ -439,6 +811,7 @@ Module NFS3.
                 <[fh := File (mkFileState vbuf ∅)]> s);
               pure tt
             end
+*)
           end;
        crash_step :=
           s' <- such_that (fun (s s' : State) => forall fh, inode_crash (s !! fh) (s' !! fh));
