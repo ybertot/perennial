@@ -283,7 +283,7 @@ Module NFS3.
       Op (res2 wcc_data post_op_fh post_op_attr)
   | SYMLINK (_ : dirop) (_ : sattr) (_ : filename) :
       Op (res2 wcc_data post_op_fh post_op_attr)
-  | MKNOD (_ : dirop) (_ : ftype) (_ : sattr) (_ : major_minor) :
+  | MKNOD (_ : dirop) (_ : mknod_type) (_ : sattr) :
       Op (res2 wcc_data post_op_fh post_op_attr)
   | REMOVE (_ : dirop) :
       Op (res wcc_data unit)
@@ -584,7 +584,7 @@ Module NFS3.
   (* XXX we are ignoring atime on read (and every other operation).
     if we do introduce atime, then we should make it async to avoid
     disk writes on every read. *)
-  Definition read_ok (f : fh) (off : uint64) (count : uint32) : relation State State (res2 post_op_attr bool buf) :=
+  Definition read_step (f : fh) (off : uint64) (count : uint32) : relation State State (res2 post_op_attr bool buf) :=
     i <~- get_fh f None;
     iattr <- inode_attr f i;
     match i.(inode_state_type) with
@@ -895,11 +895,127 @@ Module NFS3.
   Definition rmdir_step (a : dirop) : relation State State (res wcc_data unit) :=
     remove_like_core a (rmdir_core a).
 
+  Definition rename_core (from to : dirop) (from_dirmeta to_dirmeta : inode_meta) (from_dm to_dm : gmap filename fh) : relation State State (res unit unit) :=
+    pure (Err tt ERR_NOSPC) +
+    if (decide (from.(dirop_fn) = ".")) then pure (Err tt ERR_INVAL) else
+    if (decide (from.(dirop_fn) = "..")) then pure (Err tt ERR_INVAL) else
+    if (decide (to.(dirop_fn) = ".")) then pure (Err tt ERR_INVAL) else
+    if (decide (to.(dirop_fn) = "..")) then pure (Err tt ERR_INVAL) else
+    match from_dm !! from.(dirop_fn) with
+    | None => pure (Err tt ERR_NOENT)
+    | Some src_h =>
+      match to_dm !! to.(dirop_fn) with
+      | None =>
+        _ <- dir_link to to_dirmeta to_dm src_h;
+        _ <- dir_unlink from from_dirmeta from_dm;
+        pure (OK tt tt)
+      | Some dst_h =>
+        src_i <- reads (fun s => s.(fhs) !! src_h);
+        dst_i <- reads (fun s => s.(fhs) !! dst_h);
+        match src_i, dst_i with
+        | Some src_i, Some dst_i =>
+          let src_i := src_i.(latest) in
+          let dst_i := dst_i.(latest) in
+
+          match src_i.(inode_state_type), dst_i.(inode_state_type) with
+          | Idir src_dm, Idir dst_dm =>
+            let dst_names := dom (gset filename) dst_dm in
+            if (decide (size dst_names = 2)) then
+              _ <- dir_unlink to to_dirmeta to_dm;
+              _ <- dir_unlink from from_dirmeta from_dm;
+              _ <- dir_link to to_dirmeta to_dm src_h;
+              _ <- gc_fh dst_h;
+              pure (OK tt tt)
+            else
+              pure (Err tt ERR_EXIST)
+          | Idir _, _ => pure (Err tt ERR_EXIST)
+          | _, Idir _ => pure (Err tt ERR_EXIST)
+          | _, _ =>
+            _ <- dir_unlink to to_dirmeta to_dm;
+            _ <- dir_unlink from from_dirmeta from_dm;
+            _ <- dir_link to to_dirmeta to_dm src_h;
+            _ <- gc_fh dst_h;
+            pure (OK tt tt)
+          end
+        | _, _ => pure (Err tt ERR_SERVERFAULT)
+        end
+      end
+    end.
+
+  (* XXX rename allows a client to form loops in the directory structure,
+    and to make it unreachable from the root. *)
+
+  Definition rename_step (from to : dirop) : relation State State (res (wcc_data * wcc_data) unit) :=
+    from_d <~- get_fh from.(dirop_dir) (wcc_data_none, wcc_data_none);
+    to_d <~- get_fh to.(dirop_dir) (wcc_data_none, wcc_data_none);
+
+    let wcc_from_before := Some (inode_wcc from_d) in
+    let wcc_to_before := Some (inode_wcc to_d) in
+    let wcc_ro := ( Build_wcc_data wcc_from_before wcc_from_before,
+                    Build_wcc_data wcc_to_before wcc_to_before ) in
+
+    from_dm <~- get_dir from_d wcc_ro;
+    to_dm <~- get_dir to_d wcc_ro;
+
+    r <- rename_core from to from_d.(inode_state_meta) to_d.(inode_state_meta) from_dm to_dm;
+
+    from_d_after <- reads (fun s => s.(fhs) !! from.(dirop_dir));
+    to_d_after <- reads (fun s => s.(fhs) !! to.(dirop_dir));
+    let wcc_from_after := match from_d_after with
+                          | None => None
+                          | Some from_d_after => Some (inode_wcc from_d_after.(latest))
+                          end in
+    let wcc_to_after := match to_d_after with
+                        | None => None
+                        | Some to_d_after => Some (inode_wcc to_d_after.(latest))
+                        end in
+    let wcc := ( Build_wcc_data wcc_from_before wcc_from_after,
+                 Build_wcc_data wcc_to_before wcc_to_after ) in
+
+    pure (match r with
+          | Err _ e => Err wcc e
+          | OK _ v => OK wcc v
+          end).
+
+  Definition link_core (link : dirop) (h : fh) (i : inode_state) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res unit unit) :=
+    pure (Err tt ERR_NOSPC) +
+    match i.(inode_state_type) with
+    | Idir _ => pure (Err tt ERR_INVAL)
+    | _ =>
+      match dm !! link.(dirop_fn) with
+      | None =>
+        _ <- dir_link link dirmeta dm h;
+        pure (OK tt tt)
+      | Some curfh =>
+        pure (Err tt ERR_EXIST)
+      end
+    end.
+
+  Definition link_step (h : fh) (link : dirop) : relation State State (res (wcc_data * post_op_attr) unit) :=
+    i <~- get_fh h (wcc_data_none, None);
+    d <~- get_fh link.(dirop_dir) (wcc_data_none, None);
+
+    let wcc_before := Some (inode_wcc d) in
+    let wcc_ro := (Build_wcc_data wcc_before wcc_before, None) in
+
+    dm <~- get_dir d wcc_ro;
+    r <- link_core link h i d.(inode_state_meta) dm;
+
+    d_after <- reads (fun s => s.(fhs) !! link.(dirop_dir));
+    let wcc_after := match d_after with
+                     | None => None
+                     | Some d_after => Some (inode_wcc d_after.(latest))
+                     end in
+    iattr_after <- inode_attr h i;
+    let wcc := (Build_wcc_data wcc_before wcc_after, Some iattr_after) in
+
+    pure (match r with
+          | Err _ e => Err wcc e
+          | OK _ v => OK wcc v
+          end).
+
+
 (*
-  | RENAME (from : dirop) (to : dirop) :
-      Op (res (wcc_data * wcc_data) unit)
-  | LINK (_ : fh) (link : dirop) :
-      Op (res (wcc_data * post_op_attr) unit)
   | READDIR (_ : fh) (_ : cookie) (_ : cookieverf) (count : uint32) :
       Op (res post_op_attr readdir_ok)
   | READDIRPLUS (_ : fh) (_ : cookie) (_ : cookieverf) (dircount : uint32) (maxcount : uint32) :
@@ -914,74 +1030,61 @@ Module NFS3.
       Op (res wcc_data writeverf)
 *)
 
+  Definition commit_step (h : fh) (off : uint64) (count : uint32) : relation State State (res wcc_data writeverf) :=
+    i <~- get_fh h wcc_data_none;
+    let wcc_before := inode_wcc i in
+    let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
+    wverf <- reads verf;
+    match i.(inode_state_type) with
+    | Ifile buf cverf =>
+      _ <- put_fh_sync h i;
+      pure (OK wcc wverf)
+    | _ => pure (OK wcc wverf)
+    end.
 
+  Definition nfs_crash_step : relation State State unit :=
+    s' <- such_that (fun (s s' : State) =>
+      forall fh, inode_crash_opt (s.(fhs) !! fh) (s'.(fhs) !! fh) /\
+      s'.(verf) > s.(verf) /\
+      time_ge s.(clock) s'.(clock));
+    _ <- puts (fun _ => s');
+    pure tt.
+
+  Definition nfs_finish_step : relation State State unit :=
+    _ <- puts (fun s =>
+      let s := s <| fhs ::= fmap inode_finish |> in
+      let s := s <| verf ::= fun x => plus x 1 |> in
+      s);
+    pure tt.
 
   Definition dynamics : Dynamics Op State :=
     {| step T (op: Op T) :=
           match op with
           | NULL => null_step
-(*
-          | Lookup d n =>
-            i <- reads (fun s => s !! d);
-            match i with
-            | None => pure None
-            | Some (File _) => pure None
-            | Some (Dir dents) => pure (dents !! n)
-            end
-          | Getattr fh =>
-            i <- reads (fun s => s !! fh);
-            match i with
-            | None => pure None
-            | Some i => pure (Some (inode_attrs i))
-            end
-          | Read fh off count =>
-            i <- reads (fun s => s !! fh);
-            match i with
-            | None => pure None
-            | Some (Dir _) => pure None
-            | Some (File (mkFileState latest _)) =>
-              pure (Some (read_data latest off count))
-            end
-          | Write fh off buf =>
-            i <- reads (fun s => s !! fh);
-            match i with
-            | None => pure None
-            | Some (Dir _) => pure None
-            | Some (File (mkFileState latest pending)) =>
-              _ <- puts (fun s =>
-                <[fh := File (mkFileState (write_data latest off buf) (pending ∪ {[latest]}))]> s);
-              pure (Some (len_data buf))
-            end
-          | Create d n =>
-            i <- reads (fun s => s !! d);
-            match i with
-            | None => pure None
-            | Some (File _) => pure None
-            | Some (Dir dents) =>
-              fh <- such_that (fun s fh => fh ∉ s);
-              _ <- puts (fun s =>
-                <[fh := File (mkFileState empty_data ∅)]> s);
-              pure (Some fh)
-            end
-          | Commit fh =>
-            i <- reads (fun s => s !! fh);
-            match i with
-            | None => pure tt
-            | Some (Dir _) => pure tt
-            | Some (File (mkFileState vbuf pending)) =>
-              _ <- puts (fun s =>
-                <[fh := File (mkFileState vbuf ∅)]> s);
-              pure tt
-            end
-*)
+          | GETATTR h => getattr_step h
+          | SETATTR h attr ctime_guard => setattr_step h attr ctime_guard
+          | LOOKUP a => lookup_step a
+          | ACCESS h a => access_step h a
+          | READLINK h => readlink_step h
+          | READ h off count => read_step h off count
+          | WRITE h off stab data => write_step h off stab data
+          | CREATE a how => create_step a how
+          | MKDIR a attr => mkdir_step a attr
+          | SYMLINK a attr name => symlink_step a attr name
+          | MKNOD a ft attr => mknod_step a ft attr
+          | REMOVE a => remove_step a
+          | RMDIR a => rmdir_step a
+          | RENAME from to => rename_step from to
+          | LINK h link => link_step h link
+          | READDIR h c cverf count => pure (Err None ERR_NOTSUPP)
+          | READDIRPLUS h c cverf dircount maxcount => pure (Err None ERR_NOTSUPP)
+          | FSSTAT h => pure (Err None ERR_NOTSUPP)
+          | FSINFO h => pure (Err None ERR_NOTSUPP)
+          | PATHCONF h => pure (Err None ERR_NOTSUPP)
+          | COMMIT h off count => commit_step h off count
           end;
-       crash_step :=
-          s' <- such_that (fun (s s' : State) => forall fh, inode_crash (s !! fh) (s' !! fh));
-          _ <- puts (fun _ => s');
-          pure tt;
-       finish_step :=
-          _ <- puts (fun s => fmap inode_finish s);
-          pure tt;
+       crash_step := nfs_crash_step;
+       finish_step := nfs_finish_step;
     |}.
 
   Lemma crash_total_ok (s: State):
