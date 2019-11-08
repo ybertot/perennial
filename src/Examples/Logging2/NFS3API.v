@@ -1,5 +1,5 @@
 From Coq Require Import List.
-
+From RecordUpdate Require Import RecordSet.
 From Perennial Require Export Lib.
 Import RelationNotations.
 
@@ -61,7 +61,17 @@ Module NFS3.
   Definition fileid := uint64.
   Definition cookie := uint64.
 
-  Record fattr := mkFattr {
+  Record time := {
+    time_sec : uint32;
+    time_nsec : uint32;
+  }.
+
+  Record major_minor := {
+    major : uint32;
+    minor : uint32;
+  }.
+
+  Record fattr := {
     fattr_type : ftype;
     fattr_mode : uint32;
     fattr_nlink : uint32;
@@ -69,32 +79,31 @@ Module NFS3.
     fattr_gid : uint32;
     fattr_size : uint64;
     fattr_used : uint64;
-    fattr_rdev_major : uint32;
-    fattr_rdev_minor : uint32;
+    fattr_rdev : major_minor;
     fattr_fsid : uint64;
     fattr_fileid : fileid;
-    fattr_atime : uint64;
-    fattr_mtime : uint64;
-    fattr_ctime : uint64;
+    fattr_atime : time;
+    fattr_mtime : time;
+    fattr_ctime : time;
   }.
 
-  Record wcc_attr := mkWcc {
+  Record wcc_attr := {
     wcc_size : uint64;
-    wcc_mtime : uint64;
-    wcc_ctime : uint64;
+    wcc_mtime : time;
+    wcc_ctime : time;
   }.
 
-  Record wcc_data := mkWccData {
+  Record wcc_data := {
     wcc_before : option wcc_attr;
     wcc_after : option wcc_attr;
   }.
 
   Inductive set_time :=
-  | SET_TO_CLIENT_TIME (t : uint64)
+  | SET_TO_CLIENT_TIME (t : time)
   | SET_TO_SERVER_TIME
   .
 
-  Record sattr := mkSattr {
+  Record sattr := {
     sattr_mode : option uint32;
     sattr_uid : option uint32;
     sattr_gid : option uint32;
@@ -103,7 +112,7 @@ Module NFS3.
     sattr_mtime : option set_time;
   }.
 
-  Record dirop := mkDirop {
+  Record dirop := {
     dirop_dir : fh;
     dirop_fn : filename;
   }.
@@ -123,9 +132,31 @@ Module NFS3.
   Definition post_op_attr := option fattr.
   Definition post_op_fh := option fh.
 
+  (** Buffers define chunks of data for reads and writes,
+      and also the state of a file. *)
+
   Context {buf : Type}.
   Context `{!EqDecision buf}.
   Context `{!Countable buf}.
+
+  Parameter read_buf : buf -> nat -> nat -> buf.
+  Parameter write_buf : buf -> nat -> buf -> buf.
+  Parameter len_buf : buf -> nat.
+  Parameter empty_buf : buf.
+  Parameter truncate_buf : buf -> nat -> buf.
+
+  Record async `{Countable T} := {
+    latest : T;
+    pending : gset T;
+  }.
+
+  Arguments async T {EqDecision1 H}.
+
+  Definition possible `{Countable T} (ab : async T) :=
+    pending ab ∪ {[ latest ab ]}.
+
+  Definition sync `{Countable T} (v : T) : async T :=
+    Build_async v ∅.
 
   (** Return type wrappers that include an error code *)
 
@@ -191,7 +222,7 @@ Module NFS3.
     fsinfo_ok_wtmult : uint32;
     fsinfo_ok_dtpref : uint32;
     fsinfo_ok_maxfilesize : uint64;
-    fsinfo_ok_time_delta : uint64;
+    fsinfo_ok_time_delta : time;
     fsinfo_ok_properties : uint32;
   }.
 
@@ -209,7 +240,7 @@ Module NFS3.
       Op unit
   | GETATTR (_ : fh) :
       Op (res unit fattr)
-  | SETATTR (_ : fh) (a : sattr) (ctime_guard : option uint64) :
+  | SETATTR (_ : fh) (a : sattr) (ctime_guard : option time) :
       Op (res wcc_data unit)
   | LOOKUP (_ : dirop) :
       Op (res2 post_op_attr fh post_op_attr)
@@ -227,7 +258,7 @@ Module NFS3.
       Op (res2 wcc_data post_op_fh post_op_attr)
   | SYMLINK (_ : dirop) (_ : sattr) (_ : filename) :
       Op (res2 wcc_data post_op_fh post_op_attr)
-  | MKNOD (_ : dirop) (_ : ftype) (_ : sattr) (major : uint32) (minor : uint32) :
+  | MKNOD (_ : dirop) (_ : ftype) (_ : sattr) (_ : major_minor) :
       Op (res2 wcc_data post_op_fh post_op_attr)
   | REMOVE (_ : dirop) :
       Op (res wcc_data unit)
@@ -251,33 +282,95 @@ Module NFS3.
       Op (res wcc_data writeverf)
   .
 
-  (* XXX done up to this point *)
+  (* XXX inode needs to have an async wtime because it gets updated
+     in memory without flushing to disk.  not so clear what's the
+     cleanest representation of that... *)
 
-  Record file_state := mkFileState {
-    latest:  nfs3_buf;
-    pending: gset nfs3_buf;
-  }.
-
-  Inductive inode_state :=
-  | Dir : gmap nfs3_filename nfs3_fh -> inode_state
-  | File : file_state -> inode_state
+  Inductive inode_type_state :=
+  | Ifile (_ : async_buf) (_ : createverf)
+  | Idir (_ : gmap filename fh)
+  | Iblk (_ : major_minor)
+  | Ichr (_ : major_minor)
+  | Isymlink (_ : filename)
+  | Isock
+  | Ififo
   .
 
-  Definition State := gmap nfs3_fh inode_state.
+  Record inode_meta := {
+    inode_meta_mode : uint32;
+    inode_meta_uid : uint32;
+    inode_meta_gid : uint32;
+    inode_meta_fileid : fileid;
+    inode_meta_atime : time;
+    inode_meta_mtime : time;
+    inode_meta_ctime : time;
+  }.
 
-  Parameter inode_attrs : inode_state -> nfs3_fattr.
-  Parameter read_data : nfs3_buf -> nat -> nat -> nfs3_buf.
-  Parameter write_data : nfs3_buf -> nat -> nfs3_buf -> nfs3_buf.
-  Parameter len_data : nfs3_buf -> nat.
-  Parameter empty_data : nfs3_buf.
-  Context `{!ElemOf nfs3_fh (gmap nfs3_fh inode_state)}.
+  Record inode_state := {
+    inode_state_meta : inode_meta;
+    inode_state_type : inode_type_state;
+  }.
 
-  Definition inode_crash (s : option inode_state) (s' : option inode_state) : Prop :=
-    match s, s' with
-    | None, None => True
-    | Some (Dir d), Some (Dir d') => d = d'
+  Global Instance eta_inode_meta : Settable _ :=
+    settable! Build_inode_meta
+      < inode_meta_mode;
+        inode_meta_uid;
+        inode_meta_gid;
+        inode_meta_fileid;
+        inode_meta_atime;
+        inode_meta_mtime;
+        inode_meta_ctime >.
+
+  Record State := {
+    fhs : gmap fh inode_state;
+    verf : writeverf;
+    clock : time;
+  }.
+
+  Definition inode_attrs (i : inode_state) (nlink : uint32) : fattr :=
+    let m := inode_state_meta i in
+    Build_fattr
+      ( match (inode_state_type i) with
+        | Ifile _ _ => NF3REG
+        | Idir _ => NF3DIR
+        | Iblk _ => NF3BLK
+        | Ichr _ => NF3CHR
+        | Isymlink _ => NF3LNK
+        | Isock => NF3SOCK
+        | Ififo => NF3FIFO
+        end )
+      (inode_meta_mode m)
+      nlink
+      (inode_meta_uid m)
+      (inode_meta_gid m)
+      ( match (inode_state_type i) with
+        | Ifile ab _ => len_buf (latest ab)
+        | _ => 0
+        end )
+      0
+      ( match (inode_state_type i) with
+        | Iblk mm => mm
+        | Ichr mm => mm
+        | _ => Build_major_minor 0 0
+        end )
+      0
+      (inode_meta_fileid m)
+      (inode_meta_atime m)
+      (inode_meta_mtime m)
+      (inode_meta_ctime m)
+    .
+
+  Definition inode_crash (i : inode_state) (i' : inode_state) : Prop :=
+    inode_state_meta i = inode_state_meta i' /\
+    inode_type_crash (inode_state_type i) (inode_state_type i').
+
     | Some (File (mkFileState latest pending)), Some (File (mkFileState latest' pending')) =>
       latest' ∈ pending ∪ {[latest]} /\ pending' = ∅
+
+  Definition inode_crash_opt (s : option inode_state) (s' : option inode_state) : Prop :=
+    match s, s' with
+    | None, None => True
+    | Some i, Some i' => inode_crash i i'
     | _, _ => False
     end.
 
@@ -287,6 +380,9 @@ Module NFS3.
     | File (mkFileState latest pending) =>
       File (mkFileState latest ∅)
     end.
+
+  Context `{!ElemOf nfs3_fh (gmap nfs3_fh inode_state)}.
+
 
   Definition dynamics : Dynamics Op State :=
     {| step T (op: Op T) :=
