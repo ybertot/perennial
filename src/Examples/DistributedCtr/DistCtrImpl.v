@@ -24,9 +24,7 @@ Definition inc (rpair : expr) (lkpair: expr) : expr :=
 Definition sum (rpair : expr) (lkpair: expr) : expr :=
   let: "r1" := Fst rpair in
   let: "r2" := Snd rpair in
-  let: "lk1" := Fst lkpair in
-  let: "lk2" := Snd lkpair in
-  acquire "lk1";; acquire "lk2";;
+  let: "lk1" := Fst lkpair in let: "lk2" := Snd lkpair in acquire "lk1";; acquire "lk2";;
   "r" <-!"r1" + !"r2";;
   release "lk2";; release "lk1";;
   "r".
@@ -42,7 +40,7 @@ Section proof.
                   (*∗ own γ1 (● (Excl' n1)) ∗ own γ2 (● (Excl' n2)))%I.*)
 
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
-  Definition pair_eq (n: Z) (rpair : loc * loc) : iProp Σ := ∃ n, (fst rpair) ↦ #n ∗ (snd rpair) ↦ #n.
+  Definition pair_eq (n: Z) (rpair : loc * loc) : iProp Σ := (fst rpair) ↦ #n ∗ (snd rpair) ↦ #n.
 
   Print val . 
   Locate "#".
@@ -52,10 +50,18 @@ Section proof.
   Lemma alloc_spec : 
     {{{ True%I }}}
       alloc
-    {{{ '(l1,l2,lk1,lk2), RET Pair ((Pair #l1 #l2) (Pair lk1 lk2)); l1 ↦ #0 ∗ l2 ↦ #0 }}}.
+    {{{ l1 l2 lk1 lk2, RET PairV (PairV #l1 #l2) (PairV #lk1 #lk2); pair_eq 0 (l1, l2) }}}.
   Proof.
-    (* exercise *)
-  Admitted.
+    iIntros (Φ) "_ HPost".
+    unfold alloc.
+    wp_alloc r1 as "Hr1".
+    wp_alloc r2 as "Hr2"; wp_let; wp_lam.
+    wp_alloc lk1 as "Hlk1"; wp_let; wp_lam.
+    wp_alloc lk2 as "Hlk2"; wp_let.
+    wp_pures.
+    iApply "HPost".
+    unfold pair_eq; simpl in *; iFrame; auto.
+  Qed.
 
   Lemma inc_spec : ∀ n rpair lpair,
     {{{ pair_eq n rpair }}}
