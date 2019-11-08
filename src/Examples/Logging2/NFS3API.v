@@ -142,6 +142,13 @@ Module NFS3.
   | EXCLUSIVE (_ : createverf)
   .
 
+  Inductive mknod_type :=
+  | mknod_chr (_ : major_minor)
+  | mknod_blk (_ : major_minor)
+  | mknod_sock
+  | mknod_fifo
+  .
+
   Definition post_op_attr := option fattr.
   Definition post_op_fh := option fh.
 
@@ -440,7 +447,7 @@ Module NFS3.
     end.
 
   Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
-                               (at level 54, right associativity).
+                               (at level 54, right associativity, only parsing).
 
   Definition inode_attr (f : fh) (i : inode_state) : relation State State fattr :=
     nlink <- reads (fun s => add_up (fmap (count_links f) (fmap latest s.(fhs))));
@@ -601,7 +608,7 @@ Module NFS3.
     let wcc_before := inode_wcc i in
     match i.(inode_state_type) with
     | Ifile buf cverf =>
-      t <- reads clock;
+      t <- get_time;
       wverf <- reads verf;
       let buf' := write_buf buf off data in
       (if (decide (len_buf buf < len_buf buf')) then pure (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_NOSPC) else none) +
@@ -620,120 +627,275 @@ Module NFS3.
     | _ => pure (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_INVAL)
     end.
 
-  Definition create_unchecked_step (a : dirop) (dm : gmap filename fh) (attr : sattr) : relation State State (res2 unit post_op_fh post_op_attr) :=
+  Definition new_inode_meta : relation State State inode_meta :=
+    now <- get_time;
+    fid <- such_that (fun s fid => ~∃ f i, s.(fhs) !! f = Some i /\ i.(latest).(inode_state_meta).(inode_meta_fileid) = fid);
+    pure (Build_inode_meta
+      420 (* mode 0644 *)
+      0 (* uid *)
+      0 (* gid *)
+      fid
+      now
+      now
+      now).
+
+  Definition dir_link (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) (f : fh) : relation State State unit :=
+    now <- get_time;
+    let dirmeta := dirmeta <| inode_meta_mtime := now |> in
+    let dm := <[a.(dirop_fn) := f]> dm in
+    puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
+
+  Definition dir_unlink (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State unit :=
+    now <- get_time;
+    let dirmeta := dirmeta <| inode_meta_mtime := now |> in
+    let dm := delete a.(dirop_fn) dm in
+    puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
+
+  Definition create_unchecked_step (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
+    f <- match dm !! a.(dirop_fn) with
+         | Some curfh => pure curfh
+         | None =>
+           f <- such_that (fun s f => f ∉ dom (gset fh) s.(fhs));
+           m <- new_inode_meta;
+           _ <- puts (set fhs (insert f (sync (Build_inode_state m (Ifile empty_buf 0)))));
+           _ <- dir_link a dirmeta dm f;
+           pure f
+         end;
+    i <- reads (fun s => s.(fhs) !! f);
+    match i with
+    | None => pure (Err tt ERR_SERVERFAULT)
+    | Some i =>
+      now <- get_time;
+      let i := i.(latest) in
+      let i := match attr.(sattr_size) with
+               | None => i
+               | Some len =>
+                 match i.(inode_state_type) with
+                 | Ifile buf cverf =>
+                   i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
+                     <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>
+                 | _ => i
+                 end
+               end in
+      let i := set_attr_nonlen i now attr in
+      _ <- put_fh_sync f i;
+      iattr <- inode_attr f i;
+      pure (OK2 tt (Some f) (Some iattr))
+    end.
+
+  Definition create_guarded_step (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
+    match dm !! a.(dirop_fn) with
+    | Some curfh => pure (Err tt ERR_EXIST)
+    | None =>
+      f <- such_that (fun s f => f ∉ dom (gset fh) s.(fhs));
+      m <- new_inode_meta;
+      now <- get_time;
+      let i := match attr.(sattr_size) with
+               | None => Build_inode_state m (Ifile empty_buf 0)
+               | Some len => Build_inode_state m (Ifile (resize_buf len empty_buf) 0)
+               end in
+      let i := set_attr_nonlen i now attr in
+      _ <- put_fh_sync f i;
+      _ <- dir_link a dirmeta dm f;
+      iattr <- inode_attr f i;
+      pure (OK2 tt (Some f) (Some iattr))
+    end.
+
+  Definition create_exclusive_step (a : dirop) (cverf : createverf) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
     match dm !! a.(dirop_fn) with
     | Some curfh =>
       i <- reads (fun s => s.(fhs) !! curfh);
       match i with
       | None => pure (Err tt ERR_SERVERFAULT)
-      | Some i =>
-        now <- reads clock;
-        let i := i.(latest) in
-        let i := match attr.(sattr_size) with
-                 | None => i
-                 | Some len =>
-                   match i.(inode_state_type) with
-                   | Ifile buf cverf =>
-                     i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
-                       <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>
-                   | _ => i
-                   end
-                 end in
-        let i := set_attr_nonlen i now attr in
-        _ <- put_fh_sync curfh i;
-        iattr <- inode_attr curfh i;
-        pure (OK2 tt (Some curfh) (Some iattr))
+      | Some i => let i := i.(latest) in
+        match i.(inode_state_type) with
+        | Ifile _ v =>
+          if (decide (v = cverf)) then
+            iattr <- inode_attr curfh i;
+            pure (OK2 tt (Some curfh) (Some iattr))
+          else
+            pure (Err tt ERR_EXIST)
+        | _ =>
+          pure (Err tt ERR_EXIST)
+        end
       end
     | None =>
-      (* XXX *)
+      f <- such_that (fun s f => f ∉ dom (gset fh) s.(fhs));
+      m <- new_inode_meta;
+      let i := Build_inode_state m (Ifile empty_buf cverf) in
+      _ <- put_fh_sync f i;
+      _ <- dir_link a dirmeta dm f;
+      iattr <- inode_attr f i;
+      pure (OK2 tt (Some f) (Some iattr))
     end.
 
-    | None =>
-(*
-      f <- such_that (fun s f => f ∉ s.(fhs));
-      _ <- put_fh_sync (f (Ifile empty_buf 0))
-*)
-      pure (Err wcc_ro ERR_NOSPC)
-    end).
-
-  Definition create_step (a : dirop) (h : createhow) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
+  Definition create_like_core (a : dirop) (core : inode_meta -> gmap filename fh -> relation State State (res2 unit post_op_fh post_op_attr)) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
     d <~- get_fh a.(dirop_dir) wcc_data_none;
 
-    let wcc_before := inode_wcc d in
-    let wcc_ro := Build_wcc_data (Some wcc_before) (Some wcc_before) in
+    let wcc_before := Some (inode_wcc d) in
+    let wcc_ro := Build_wcc_data wcc_before wcc_before in
     pure (Err wcc_ro ERR_NOSPC) + (
 
     dm <~- get_dir d wcc_ro;
+    r <- core d.(inode_state_meta) dm;
 
+    d_after <- reads (fun s => s.(fhs) !! a.(dirop_dir));
+    let wcc_after := match d_after with
+                     | None => None
+                     | Some d_after => Some (inode_wcc d_after.(latest))
+                     end in
+    let wcc := Build_wcc_data wcc_before wcc_after in
+
+    pure (match r with
+          | Err _ e => Err wcc e
+          | OK _ v => OK wcc v
+          end)).
+
+  Definition create_step (a : dirop) (h : createhow) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
+    create_like_core a
+      (match h with
+       | GUARDED attr => create_guarded_step a attr
+       | UNCHECKED attr => create_unchecked_step a attr
+       | EXCLUSIVE cv => create_exclusive_step a cv
+       end).
+
+  Definition mkdir_core (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
     match dm !! a.(dirop_fn) with
+    | Some curfh => pure (Err tt ERR_EXIST)
+    | None =>
+      h <- such_that (fun s h => h ∉ dom (gset fh) s.(fhs));
+      m <- new_inode_meta;
+      now <- get_time;
+      let dm := ∅ in
+      let dm := <["." := h]> dm in
+      let dm := <[".." := a.(dirop_dir)]> dm in
+      let i := Build_inode_state m (Idir dm) in
+      let i := set_attr_nonlen i now attr in
+      _ <- put_fh_sync h i;
+      _ <- dir_link a dirmeta dm h;
+      iattr <- inode_attr h i;
+      pure (OK2 tt (Some h) (Some iattr))
+    end.
+
+  Definition mkdir_step (a : dirop) (attr : sattr) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
+    create_like_core a (mkdir_core a attr).
+
+  Definition symlink_core (a : dirop) (attr : sattr) (data : filename) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
+    match dm !! a.(dirop_fn) with
+    | Some curfh => pure (Err tt ERR_EXIST)
+    | None =>
+      h <- such_that (fun s h => h ∉ dom (gset fh) s.(fhs));
+      m <- new_inode_meta;
+      now <- get_time;
+      let i := Build_inode_state m (Isymlink data) in
+      let i := set_attr_nonlen i now attr in
+      _ <- put_fh_sync h i;
+      _ <- dir_link a dirmeta dm h;
+      iattr <- inode_attr h i;
+      pure (OK2 tt (Some h) (Some iattr))
+    end.
+
+  Definition symlink_step (a : dirop) (attr : sattr) (data : filename) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
+    create_like_core a (symlink_core a attr data).
+
+  Definition mknod_core (a : dirop) (attr : sattr) (ft : mknod_type) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
+    match dm !! a.(dirop_fn) with
+    | Some curfh => pure (Err tt ERR_EXIST)
+    | None =>
+      h <- such_that (fun s h => h ∉ dom (gset fh) s.(fhs));
+      m <- new_inode_meta;
+      now <- get_time;
+      let t := match ft with
+               | mknod_chr mm => Ichr mm
+               | mknod_blk mm => Iblk mm
+               | mknod_sock => Isock
+               | mknod_fifo => Ififo
+               end in
+      let i := Build_inode_state m t in
+      let i := set_attr_nonlen i now attr in
+      _ <- put_fh_sync h i;
+      _ <- dir_link a dirmeta dm h;
+      iattr <- inode_attr h i;
+      pure (OK2 tt (Some h) (Some iattr))
+    end.
+
+  Definition mknod_step (a : dirop) (ft : mknod_type) (attr : sattr) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
+    create_like_core a (mknod_core a attr ft).
+
+  Definition remove_like_core (a : dirop) (core : inode_meta -> gmap filename fh -> relation State State (res unit unit)) : relation State State (res wcc_data unit) :=
+    d <~- get_fh a.(dirop_dir) wcc_data_none;
+
+    let wcc_before := Some (inode_wcc d) in
+    let wcc_ro := Build_wcc_data wcc_before wcc_before in
+
+    dm <~- get_dir d wcc_ro;
+    r <- core d.(inode_state_meta) dm;
+
+    d_after <- reads (fun s => s.(fhs) !! a.(dirop_dir));
+    let wcc_after := match d_after with
+                     | None => None
+                     | Some d_after => Some (inode_wcc d_after.(latest))
+                     end in
+    let wcc := Build_wcc_data wcc_before wcc_after in
+
+    pure (match r with
+          | Err _ e => Err wcc e
+          | OK _ v => OK wcc v
+          end).
+
+  Definition gc_fh (h : fh) : relation State State unit :=
+    nlink <- reads (fun s => add_up (fmap (count_links h) (fmap latest s.(fhs))));
+    if (decide (nlink = 0)) then puts (set fhs (delete h)) else pure tt.
+
+  Definition remove_core (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res unit unit) :=
+    match dm !! a.(dirop_fn) with
+    | None => pure (Err tt ERR_NOENT)
     | Some curfh =>
       i <- reads (fun s => s.(fhs) !! curfh);
       match i with
-      | None => pure (Err wcc_ro ERR_SERVERFAULT)
-      | Some i =>
-        match h with
-        | GUARDED _ => pure (Err wcc_ro ERR_EXIST)
-        | EXCLUSIVE cv =>
-          match i.(latest).(inode_state_type) with
-          | Ifile _ icv =>
-            if (decide (cv = icv)) then
-              iattr <- inode_attr curfh i.(latest);
-              pure (OK2 wcc_ro (Some curfh) (Some iattr))
-            else
-              pure (Err wcc_ro ERR_EXIST)
-          | _ =>
-            pure (Err wcc_ro ERR_EXIST)
-          end
-        | UNCHECKED sattr =>
-          now <- reads clock;
-          let i := i.(latest) in
-          let i := match sattr.(sattr_size) with
-                   | None => i
-                   | Some len =>
-                     match i.(inode_state_type) with
-                     | Ifile buf cverf =>
-                       i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
-                         <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>
-                     | _ => i
-                     end
-                   end in
-          let i := set_attr_nonlen i now sattr in
-          _ <- put_fh_sync curfh i;
-          iattr <- inode_attr curfh i;
-
-          d_after <- reads (fun s => s.(fhs) !! a.(dirop_dir));
-          match d_after with
-          | None => pure (OK2 (Build_wcc_data (Some wcc_before) None) (Some curfh) (Some iattr))
-          | Some d_after => pure (OK2 (Build_wcc_data (Some wcc_before) (Some (inode_wcc d_after))) (Some curfh) (Some iattr))
-          end
+      | None => pure (Err tt ERR_SERVERFAULT)
+      | Some i => let i := i.(latest) in
+        match i.(inode_state_type) with
+        | Idir _ => pure (Err tt ERR_INVAL) (* XXX oddly, not allowed in RFC1813?? *)
+        | _ =>
+          _ <- dir_unlink a dirmeta dm;
+          _ <- gc_fh curfh;
+          pure (OK tt tt)
         end
       end
+    end.
 
-    | None =>
+  Definition remove_step (a : dirop) : relation State State (res wcc_data unit) :=
+    remove_like_core a (remove_core a).
+
+  Definition rmdir_core (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res unit unit) :=
+    if (decide (a.(dirop_fn) = ".")) then pure (Err tt ERR_INVAL) else
+    if (decide (a.(dirop_fn) = "..")) then pure (Err tt ERR_INVAL) else
+    match dm !! a.(dirop_fn) with
+    | None => pure (Err tt ERR_NOENT)
+    | Some curfh =>
+      i <- reads (fun s => s.(fhs) !! curfh);
+      match i with
+      | None => pure (Err tt ERR_SERVERFAULT)
+      | Some i => let i := i.(latest) in
+        match i.(inode_state_type) with
+        | Idir m =>
+          let names := dom (gset filename) m in
+          if (decide (size names = 2)) then
+            _ <- dir_unlink a dirmeta dm;
+            _ <- gc_fh curfh;
+            pure (OK tt tt)
+          else
+            pure (Err tt ERR_NOTEMPTY)
+        | _ => pure (Err tt ERR_NOTDIR)
+        end
+      end
+    end.
+
+  Definition rmdir_step (a : dirop) : relation State State (res wcc_data unit) :=
+    remove_like_core a (rmdir_core a).
+
 (*
-      f <- such_that (fun s f => f ∉ s.(fhs));
-      _ <- put_fh_sync (f (Ifile empty_buf 0))
-*)
-      pure (Err wcc_ro ERR_NOSPC)
-    end).
-
-
-
-
-
-(*
-  | CREATE (_ : dirop) (_ : createhow) :
-      Op (res2 wcc_data post_op_fh post_op_attr)
-  | MKDIR (_ : dirop) (_ : sattr) :
-      Op (res2 wcc_data post_op_fh post_op_attr)
-  | SYMLINK (_ : dirop) (_ : sattr) (_ : filename) :
-      Op (res2 wcc_data post_op_fh post_op_attr)
-  | MKNOD (_ : dirop) (_ : ftype) (_ : sattr) (_ : major_minor) :
-      Op (res2 wcc_data post_op_fh post_op_attr)
-  | REMOVE (_ : dirop) :
-      Op (res wcc_data unit)
-  | RMDIR (_ : dirop) :
-      Op (res wcc_data unit)
   | RENAME (from : dirop) (to : dirop) :
       Op (res (wcc_data * wcc_data) unit)
   | LINK (_ : fh) (link : dirop) :
