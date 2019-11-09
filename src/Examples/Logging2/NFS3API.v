@@ -248,7 +248,10 @@ Module NFS3.
     fsinfo_ok_dtpref : uint32;
     fsinfo_ok_maxfilesize : uint64;
     fsinfo_ok_time_delta : time;
-    fsinfo_ok_properties : uint32;
+    fsinfo_ok_properties_link : bool;
+    fsinfo_ok_properties_symlink : bool;
+    fsinfo_ok_properties_homogeneous : bool;
+    fsinfo_ok_properties_cansettime : bool;
   }.
 
   Record pathconf_ok := {
@@ -1014,21 +1017,41 @@ Module NFS3.
           | OK _ v => OK wcc v
           end).
 
+  Definition readdir_step (h : fh) (c : cookie) (cv : cookieverf) (count : uint32) : relation State State (res post_op_attr readdir_ok) :=
+    pure (Err None ERR_NOTSUPP).
 
-(*
-  | READDIR (_ : fh) (_ : cookie) (_ : cookieverf) (count : uint32) :
-      Op (res post_op_attr readdir_ok)
-  | READDIRPLUS (_ : fh) (_ : cookie) (_ : cookieverf) (dircount : uint32) (maxcount : uint32) :
-      Op (res post_op_attr readdirplus_ok)
-  | FSSTAT (_ : fh) :
-      Op (res post_op_attr fsstat_ok)
-  | FSINFO (_ : fh) :
-      Op (res post_op_attr fsinfo_ok)
-  | PATHCONF (_ : fh) :
-      Op (res post_op_attr pathconf_ok)
-  | COMMIT (_ : fh) (off : uint64) (count : uint32) :
-      Op (res wcc_data writeverf)
-*)
+  Definition readdirplus_step (h : fh) (c : cookie) (cv : cookieverf) (dircount : uint32) (maxcount : uint32) : relation State State (res post_op_attr readdirplus_ok) :=
+    pure (Err None ERR_NOTSUPP).
+
+  Definition fsstat_step (h : fh) : relation State State (res post_op_attr fsstat_ok) :=
+    i <~- get_fh h None;
+    iattr <- inode_attr h i;
+    st <- such_that (fun _ st =>
+      st.(fsstat_ok_fbytes) <= st.(fsstat_ok_tbytes) /\
+      st.(fsstat_ok_abytes) <= st.(fsstat_ok_fbytes) /\
+      st.(fsstat_ok_ffiles) <= st.(fsstat_ok_tfiles) /\
+      st.(fsstat_ok_afiles) <= st.(fsstat_ok_ffiles));
+    pure (OK (Some iattr) st).
+
+  Definition fsinfo_step (h : fh) : relation State State (res post_op_attr fsinfo_ok) :=
+    i <~- get_fh h None;
+    iattr <- inode_attr h i;
+    info <- such_that (fun _ info =>
+      info.(fsinfo_ok_time_delta) = Build_time 0 1 /\
+      info.(fsinfo_ok_properties_link) = true /\
+      info.(fsinfo_ok_properties_symlink) = true /\
+      info.(fsinfo_ok_properties_homogeneous) = true /\
+      info.(fsinfo_ok_properties_cansettime) = true);
+    pure (OK (Some iattr) info).
+
+  Definition pathconf_step (h : fh) : relation State State (res post_op_attr pathconf_ok) :=
+    i <~- get_fh h None;
+    iattr <- inode_attr h i;
+    pc <- such_that (fun _ pc =>
+      pc.(pathconf_ok_no_trunc) = true /\
+      pc.(pathconf_ok_case_insensitive) = false /\
+      pc.(pathconf_ok_case_preserving) = true);
+    pure (OK (Some iattr) pc).
 
   Definition commit_step (h : fh) (off : uint64) (count : uint32) : relation State State (res wcc_data writeverf) :=
     i <~- get_fh h wcc_data_none;
@@ -1076,11 +1099,11 @@ Module NFS3.
           | RMDIR a => rmdir_step a
           | RENAME from to => rename_step from to
           | LINK h link => link_step h link
-          | READDIR h c cverf count => pure (Err None ERR_NOTSUPP)
-          | READDIRPLUS h c cverf dircount maxcount => pure (Err None ERR_NOTSUPP)
-          | FSSTAT h => pure (Err None ERR_NOTSUPP)
-          | FSINFO h => pure (Err None ERR_NOTSUPP)
-          | PATHCONF h => pure (Err None ERR_NOTSUPP)
+          | READDIR h c cverf count => readdir_step h c cverf count
+          | READDIRPLUS h c cverf dircount maxcount => readdirplus_step h c cverf dircount maxcount
+          | FSSTAT h => fsstat_step h
+          | FSINFO h => fsinfo_step h
+          | PATHCONF h => pathconf_step h
           | COMMIT h off count => commit_step h off count
           end;
        crash_step := nfs_crash_step;
