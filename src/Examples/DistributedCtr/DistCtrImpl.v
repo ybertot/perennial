@@ -34,27 +34,61 @@ Section proof.
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
   Definition LockN : namespace := nroot .@ "LockN".
 
-  Definition parallel_inc_inv (rpair : loc * loc) : iProp Σ := (*(γ1 γ2 : gname) : iProp Σ :=*)
-    (∃ n1 n2:Z, (⌜#n1 = #n2⌝
-                  ∗ (fst rpair) ↦ #(n1))
-                  ∗ ((snd rpair) ↦ #(n2))%I).
-                  (*∗ own γ1 (● (Excl' n1)) ∗ own γ2 (● (Excl' n2)))%I.*)
+  Lemma ghost_var_alloc n :
+    (|==> ∃ γ, own γ (● (Excl' n)) ∗ own γ (◯ (Excl' n)))%I.
+  Proof.
+    iMod (own_alloc (● (Excl' n) ⋅ ◯ (Excl' n))) as (γ) "[??]".
+    - by apply auth_both_valid.
+    - by eauto with iFrame.
+  Qed.
+
+  Lemma ghost_var_agree γ n m :
+    own γ (● (Excl' n)) -∗ own γ (◯ (Excl' m)) -∗ ⌜ n = m ⌝.
+  Proof.
+    iIntros "Hγ● Hγ◯".
+    Check own_valid_2.
+    by iDestruct (own_valid_2 with "Hγ● Hγ◯")
+      as %[<-%Excl_included%leibniz_equiv _]%auth_both_valid.
+    (* XXX What is this last line doing??? *)
+  Qed.
+
+  Lemma ghost_var_update γ n' n m :
+    own γ (● (Excl' n)) -∗ own γ (◯ (Excl' m)) ==∗
+      own γ (● (Excl' n')) ∗ own γ (◯ (Excl' n')).
+  Proof.
+    iIntros "Hγ● Hγ◯".
+    iMod (own_update_2 _ _ _ (● Excl' n' ⋅ ◯ Excl' n') with "Hγ● Hγ◯") as "[$$]".
+    { apply auth_update. apply option_local_update. apply exclusive_local_update. done. }
+    (* ??? *)
+    done.
+  Qed.
+
+  Definition parallel_inc_inv (n1 n2 : Z) (rpair : loc * loc) (γ1 γ2 : gname) : iProp Σ :=
+    ⌜#n1 = #n2⌝
+    ∗ (fst rpair) ↦ #(n1)
+    ∗ (snd rpair) ↦ #(n2)
+    ∗ own γ1 (● (Excl' n1)) ∗ own γ2 (● (Excl' n2))%I.
+    (* we need these to tell the value of n1 and n2 *)
 
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
 
   Lemma alloc_spec : 
     {{{ True%I }}}
       alloc #()
-      {{{ r1 r2 lk, RET PairV (PairV #r1 #r2) lk; ∃ γ, is_lock LockN γ lk (parallel_inc_inv (r1, r2))}}}.
+      {{{ r1 r2 lk γ1 γ2, RET PairV (PairV #r1 #r2) lk; ∃ γ, is_lock LockN γ lk (parallel_inc_inv 0 0 (r1, r2) γ1 γ2)}}}.
   (* DO I NEED FORALL OR EXISTS GAMMA *)
   (* parallel_inc_inv (r1, r2) ∗ not needed because held in lock? *)
   Proof.
     iIntros (Φ) "_ HPost".
+    iMod (ghost_var_alloc 0) as (γ1) "[Hγ1● Hγ1◯]".
+    iMod (ghost_var_alloc 0) as (γ2) "[Hγ2● Hγ2◯]".
+
     unfold alloc.
     wp_alloc r1 as "Hr1".
     wp_alloc r2 as "Hr2"; wp_let.
-    wp_apply (newlock_spec LockN (parallel_inc_inv (r1, r2)) with "[Hr1 Hr2]"). 
-    iExists 0; iExists 0; iFrame; auto.
+ 
+    wp_apply (newlock_spec LockN (parallel_inc_inv 0 0 (r1, r2) γ1 γ2) with "[Hr1 Hr2 Hγ1● Hγ2●]").
+    unfold parallel_inc_inv; iFrame; auto.
 
     iIntros (lk γ) "HIsLk".
     wp_let.
@@ -62,11 +96,9 @@ Section proof.
     iApply "HPost". iExists γ; auto.
   Qed.
 
-  Print wp_par.
-  Print is_lock.
-  Lemma inc_spec : ∀ n r1 r2 lk1 lk2 R1 R2,
-    {{{ is_lock lk1 R1 ∗ is_lock lk2 R2 ∗ pair_eq n (r1, r2)}}}
-      inc (#r1, #r2) (#lk1, #lk2) 
+  Lemma inc_spec : ∀ n r1 r2 lk1 lk2 R1 R2 γ, (*should γ be forall? *)
+    {{{ is_lock LockN γ lk (parallel_inc_inv(r1, r2)) }}}
+      inc (#r1, #r2) lk
     {{{ z, RET #z; pair_eq (n+1) (r1, r2)}}}.
   Proof.
     iIntros (n r1 r2 lk1 lk2 ϕ) "HPair Hϕ".
