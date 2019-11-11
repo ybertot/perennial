@@ -45,17 +45,21 @@ Section proof.
   Lemma alloc_spec : 
     {{{ True%I }}}
       alloc #()
-      {{{ r1 r2 lk, RET PairV (PairV #r1 #r2) #lk; parallel_inc_inv (r1, r2) ∗ ∃ γ, is_lock LockN γ #lk (parallel_inc_inv (r1, r2))}}}.
+      {{{ r1 r2 lk, RET PairV (PairV #r1 #r2) lk; ∃ γ, is_lock LockN γ lk (parallel_inc_inv (r1, r2))}}}.
   (* DO I NEED FORALL OR EXISTS GAMMA *)
+  (* parallel_inc_inv (r1, r2) ∗ not needed because held in lock? *)
   Proof.
     iIntros (Φ) "_ HPost".
     unfold alloc.
     wp_alloc r1 as "Hr1".
-    wp_alloc r2 as "Hr2"; wp_let; wp_lam.
-    wp_alloc lk as "Hlk"; wp_let.
-    wp_pures.
-    iApply "HPost".
+    wp_alloc r2 as "Hr2"; wp_let.
+    wp_apply (newlock_spec LockN (parallel_inc_inv (r1, r2)) with "[Hr1 Hr2]"). 
+    iExists 0; iExists 0; iFrame; auto.
 
+    iIntros (lk γ) "HIsLk".
+    wp_let.
+    wp_pures.
+    iApply "HPost". iExists γ; auto.
   Qed.
 
   Print wp_par.
