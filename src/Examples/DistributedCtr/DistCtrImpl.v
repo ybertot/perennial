@@ -2,30 +2,56 @@ From iris.algebra Require Import auth frac_auth excl.
 From iris.base_logic.lib Require Import invariants.
 From iris.heap_lang Require Import proofmode notation lib.par lib.spin_lock.
 
-Definition alloc : val :=
-  λ: "()",
-  let: "r1" := ref #0 in
-  let: "r2" := ref #0 in
+Definition alloc : val := λ: "()",
+  let: "master" := ref #0 in
+  let: "backup" := ref #0 in
   let: "lk" := newlock #() in
-  Pair (Pair "r1" "r2") "lk".
+  Pair (Pair (SOME "master") (SOME "backup")) "lk".
 
-(* precondition: r1 r2 are an alloced pair *)
-Definition inc : val :=
-  λ: "rpair" "lk",
-  let: "r1" := Fst "rpair" in
-  let: "r2" := Snd "rpair" in
+Definition update_replica: val :=
+  λ: "replica1" "replica2",
+  match: "replica1" with
+    SOME "r1" => 
+     match: "replica2" with
+       SOME "r2" => 
+            "r1" <- !"r1" + #1;;
+            "r2" <- !"r2" + #1
+       | NONE =>                       
+            "r1" <- !"r1" + #1;;
+            "r2" <- !"r1"
+     end
+  | NONE =>
+    match: "replica2" with
+       SOME "r2" => 
+            "r2" <- !"r2" + #1;;
+            "r1" <- !"r2"
+    | NONE => #()
+    end
+   end.
+
+Definition get_replica: val :=
+  λ: "replica1" "replica2",
+  match: "replica1" with
+    SOME "r1" => !"r1"
+    | NONE => 
+     match: "replica2" with
+       SOME "r2" => 
+            !"r2"
+       | NONE => #()
+     end
+  end.
+
+Definition update: val :=
+  λ: "master" "backup" "lk",
   acquire "lk";;
-  (("r1" <- !"r1" + #1)
-  |||
-  ("r2" <- !"r2" + #1))
+  update_replica "master";;
+  update_replica "backup";;
   release "lk".
 
-Definition sum : val :=
-  λ: "rpair" "lk",
-  let: "r1" := Fst "rpair" in
-  let: "r2" := Snd "rpair" in
+Definition get : val :=
+  λ: "master" "backup" "lk",
   acquire "lk";;
-  "r" <-!"r1" + !"r2";;
+  get_replica "master" "backup";;
   release "lk";;
   "r".
 
@@ -49,7 +75,6 @@ Section proof.
     Check own_valid_2.
     by iDestruct (own_valid_2 with "Hγ● Hγ◯")
       as %[<-%Excl_included%leibniz_equiv _]%auth_both_valid.
-    (* XXX What is this last line doing??? *)
   Qed.
 
   Lemma ghost_var_update γ n' n m :
@@ -59,7 +84,6 @@ Section proof.
     iIntros "Hγ● Hγ◯".
     iMod (own_update_2 _ _ _ (● Excl' n' ⋅ ◯ Excl' n') with "Hγ● Hγ◯") as "[$$]".
     { apply auth_update. apply option_local_update. apply exclusive_local_update. done. }
-    (* ??? *)
     done.
   Qed.
 
@@ -72,12 +96,15 @@ Section proof.
 
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
 
+  Definition value_duplicated (n : Z) (r1 r2 : loc) (lk: val) : iProp Σ := ∃ (γ γ1 γ2 : gname), 
+    is_lock LockN γ lk (parallel_inc_inv n n (r1, r2) γ1 γ2) ∗ own γ1 (◯ (Excl' n)) ∗ own γ2 (◯ (Excl' n)).
+
   Lemma alloc_spec : 
     {{{ True%I }}}
       alloc #()
-      {{{ r1 r2 lk γ1 γ2, RET PairV (PairV #r1 #r2) lk; ∃ γ, is_lock LockN γ lk (parallel_inc_inv 0 0 (r1, r2) γ1 γ2)}}}.
-  (* DO I NEED FORALL OR EXISTS GAMMA *)
-  (* parallel_inc_inv (r1, r2) ∗ not needed because held in lock? *)
+    {{{ r1 r2 lk, RET PairV (PairV #r1 #r2) lk;
+        value_duplicated 0 r1 r2 lk 
+    }}}.
   Proof.
     iIntros (Φ) "_ HPost".
     iMod (ghost_var_alloc 0) as (γ1) "[Hγ1● Hγ1◯]".
@@ -93,25 +120,37 @@ Section proof.
     iIntros (lk γ) "HIsLk".
     wp_let.
     wp_pures.
-    iApply "HPost". iExists γ; auto.
+    iApply "HPost". unfold value_duplicated. 
+    iExists γ, γ1, γ2. iFrame; auto.
   Qed.
 
-  Lemma inc_spec : ∀ n r1 r2 lk1 lk2 R1 R2 γ, (*should γ be forall? *)
-    {{{ is_lock LockN γ lk (parallel_inc_inv(r1, r2)) }}}
+  Lemma inc_spec : ∀ n r1 r2 lk, (*should γ be forall? *)
+    {{{ value_duplicated n r1 r2 lk }}}
       inc (#r1, #r2) lk
-    {{{ z, RET #z; pair_eq (n+1) (r1, r2)}}}.
+    {{{ RET #() ; value_duplicated (n+1) r1 r2 lk }}}.
   Proof.
-    iIntros (n r1 r2 lk1 lk2 ϕ) "HPair Hϕ".
+    iIntros (n r1 r2 lk ϕ) "Hvaldup Hϕ".
     unfold inc.
-    unfold pair_eq in *.
     wp_pures.
-    destruct r1; destruct r2.
-    wp_apply (wp_par (λ _, True%I) (λ _, True%I)).
-    Print acquire_spec.
-    - wp_apply (acquire_spec). iDestruct 1 as (n) "[Hr %]"
-    unfold acquire in *.
+    unfold value_duplicated in *.
+    iDestruct "Hvaldup" as (γ γ1 γ2) "[Hislk [Hγ1◯ Hγ2◯]]".
+    wp_apply (acquire_spec with "[Hislk]"). iApply "Hislk".
+    iIntros "(Hlked & HInv)".
     wp_pures.
-    wp_alloc r1 as "Hr1".
+    iDestruct "HInv" as "(_ & Hr1 & Hr2 & Hγ1● & Hγ2● )"; simpl in *.
+    wp_apply (wp_par (λ _, own γ1 (◯ Excl' (n+1))) (λ _, own γ2 (◯ Excl' (n+1)))
+                with "[Hr1 Hγ1◯ Hγ1●] [Hr2 Hγ2◯ Hγ2●]").
+    - iMod (ghost_var_update γ1 (n+1) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]".
+      wp_load; wp_op; wp_store; auto.
+    - iMod (ghost_var_update γ2 (n+1) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
+      wp_load; wp_op; wp_store; auto.
+    - iIntros (v1 v2) "(Hγ1◯ & Hγ2◯)".
+      iNext.
+      wp_pures.
+      Check release_spec.
+      wp_apply ((release_spec LockN γ lk (parallel_inc_inv (n+1) (n+1) (r1, r2) γ1 γ2)) with "[Hlked Hγ1◯ Hγ2◯]").
+
+      auto.
   Admitted.
 
   Lemma sum_spec : ∀ n rpair lpair,

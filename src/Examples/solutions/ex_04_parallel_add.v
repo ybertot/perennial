@@ -95,6 +95,7 @@ Section proof2.
   Proof.
     iIntros "Hγ● Hγ◯".
     Check own_valid_2.
+    Print authR.
     by iDestruct (own_valid_2 with "Hγ● Hγ◯")
       as %[<-%Excl_included%leibniz_equiv _]%auth_both_valid.
     (* XXX What is this last line doing??? *)
@@ -107,7 +108,7 @@ Section proof2.
     iIntros "Hγ● Hγ◯".
     iMod (own_update_2 _ _ _ (● Excl' n' ⋅ ◯ Excl' n') with "Hγ● Hγ◯") as "[$$]".
     { apply auth_update. apply option_local_update. apply exclusive_local_update. done. }
-    (* ??? *)
+    (* going through chain of RAs (auth -> option -> excl) *)
     done.
   Qed.
 
@@ -130,7 +131,7 @@ Section proof2.
       iDestruct (ghost_var_agree with "Hγ1● Hγ1◯") as %->.
       iMod (ghost_var_update γ1 2 with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]".
       wp_apply (release_spec with "[- $Hl Hγ1◯]"); [|by auto].
-      (* WHAT DOES - MEAN *)
+      (* WHAT DOES - MEAN : negation except for framing? *)
       iFrame.
       iExists _, _. iFrame "Hγ1● Hγ2●". rewrite (_ : 2 + n2 = 0 + n2 + 2); [done | ring]. (* this does arithmetic *)
     - wp_apply (acquire_spec with "Hl").
