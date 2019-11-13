@@ -25,9 +25,10 @@ Definition update_replica: val :=
        SOME "r2" => 
             "r2" <- !"r2" + #1;;
             "r1" <- !"r2"
-    | NONE => #()
+    | NONE => #() (* TODO reallocate replica? *)
     end
-   end.
+  end
+  Pair "replica1" "replica2".
 
 Definition get_replica: val :=
   λ: "replica1" "replica2",
@@ -39,24 +40,24 @@ Definition get_replica: val :=
             !"r2"
        | NONE => #()
      end
-  end.
+  end
+  Pair "replica1" "replica2".
 
 Definition update: val :=
   λ: "master" "backup" "lk",
   acquire "lk";;
-  update_replica "master";;
-  update_replica "backup";;
-  release "lk".
+  "replicas" <- update_replica "master" "backup";;
+  release "lk";;
+  "replicas".
 
 Definition get : val :=
   λ: "master" "backup" "lk",
   acquire "lk";;
-  get_replica "master" "backup";;
+  "replicas" <- get_replica "master" "backup";;
   release "lk";;
-  "r".
+  Pair "replicas" "r".
 
 Section proof.
-  (** Come up with a suitable invariant and prove the spec **)
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
   Definition LockN : namespace := nroot .@ "LockN".
 
