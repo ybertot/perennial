@@ -25,9 +25,10 @@ Definition update_replica: val :=
        SOME "r2" => 
             "r2" <- !"r2" + #1;;
             "r1" <- !"r2"
-    | NONE => #() (* TODO reallocate replica? *)
+    | NONE => (* TODO should we just reallocate replica? *)
+       (Pair (Pair "replica1" "replica2") "ignore_lk") <- alloc #() 
     end
-  end
+  end;;
   Pair "replica1" "replica2".
 
 Definition get_replica: val :=
@@ -38,9 +39,10 @@ Definition get_replica: val :=
      match: "replica2" with
        SOME "r2" => 
             !"r2"
-       | NONE => #()
+     | NONE => (* TODO should we just reallocate replica? *)
+       (Pair (Pair "replica1" "replica2") "ignore_lk") <- alloc #() 
      end
-  end
+  end;;
   Pair "replica1" "replica2".
 
 Definition update: val :=
@@ -88,22 +90,22 @@ Section proof.
     done.
   Qed.
 
-  Definition parallel_inc_inv (n1 n2 : Z) (rpair : loc * loc) (γ1 γ2 : gname) : iProp Σ :=
+  Definition update_inv (n1 n2 : Z) (mloc bloc : loc) (γ1 γ2 : gname) : iProp Σ :=
     ⌜#n1 = #n2⌝
-    ∗ (fst rpair) ↦ #(n1)
-    ∗ (snd rpair) ↦ #(n2)
+    ∗ mloc ↦ #(n1)
+    ∗ bloc ↦ #(n2)
     ∗ own γ1 (● (Excl' n1)) ∗ own γ2 (● (Excl' n2))%I.
     (* we need these to tell the value of n1 and n2 *)
 
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
 
   Definition value_duplicated (n : Z) (r1 r2 : loc) (lk: val) : iProp Σ := ∃ (γ γ1 γ2 : gname), 
-    is_lock LockN γ lk (parallel_inc_inv n n (r1, r2) γ1 γ2) ∗ own γ1 (◯ (Excl' n)) ∗ own γ2 (◯ (Excl' n)).
+    is_lock LockN γ lk (update_inv n n r1 r2 γ1 γ2) ∗ own γ1 (◯ (Excl' n)) ∗ own γ2 (◯ (Excl' n)).
 
   Lemma alloc_spec : 
     {{{ True%I }}}
       alloc #()
-    {{{ r1 r2 lk, RET PairV (PairV #r1 #r2) lk;
+    {{{ r1 r2 lk, RET PairV (PairV (SOMEV #r1) (SOMEV #r2)) lk;
         value_duplicated 0 r1 r2 lk 
     }}}.
   Proof.
@@ -112,11 +114,11 @@ Section proof.
     iMod (ghost_var_alloc 0) as (γ2) "[Hγ2● Hγ2◯]".
 
     unfold alloc.
-    wp_alloc r1 as "Hr1".
-    wp_alloc r2 as "Hr2"; wp_let.
+    wp_alloc master as "Hr1".
+    wp_alloc backup as "Hr2"; wp_let.
  
-    wp_apply (newlock_spec LockN (parallel_inc_inv 0 0 (r1, r2) γ1 γ2) with "[Hr1 Hr2 Hγ1● Hγ2●]").
-    unfold parallel_inc_inv; iFrame; auto.
+    wp_apply (newlock_spec LockN (update_inv 0 0 master backup γ1 γ2) with "[Hr1 Hr2 Hγ1● Hγ2●]").
+    unfold update_inv; iFrame; auto.
 
     iIntros (lk γ) "HIsLk".
     wp_let.
