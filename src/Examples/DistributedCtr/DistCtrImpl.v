@@ -2,69 +2,52 @@ From iris.algebra Require Import auth frac_auth excl.
 From iris.base_logic.lib Require Import invariants.
 From iris.heap_lang Require Import proofmode notation lib.par lib.spin_lock.
 
-Definition alloc : val := λ: "()",
-  let: "master" := ref #0 in
-  let: "backup" := ref #0 in
+Definition alloc_replicas : val := λ: "()",
+  let: "master" := ref (SOME #0) in
+  let: "backup" := ref (SOME #0) in
   let: "lk" := newlock #() in
-  Pair (Pair (SOME "master") (SOME "backup")) "lk".
+  Pair (Pair "master" "backup") "lk".
 
-Definition update_replica: val :=
+Definition kill_replica1: val :=
+  λ: "replica1" "replica2",
+  "replica1" <- NONE;;
+   Pair "replica1" "replica2".
+
+Definition kill_replica2: val :=
+  λ: "replica1" "replica2",
+  "replica2" <- NONE;;
+   Pair "replica1" "replica2".
+
+Definition update_replicas: val :=
   λ: "replica1" "replica2" "lk",
   acquire "lk";;
-  match: "replica1" with
-    SOME "r1" => 
-    "r1" <- !"r1" + #1;;
-    match: "replica2" with
-      SOME "r2" => "r2" <- !"r2" + #1;;
-        release "lk";;
-        Pair (SOME "r1") (SOME "r2")
-    | NONE =>
-      let: "r2" := ref #0 in
-      "r2" <- !"r1";;
-      release "lk";;
-      Pair (SOME "r1") (SOME "r2")
-     end
-  | NONE =>
-    match: "replica2" with
-    SOME "r2" =>
-      let: "r1" := ref #0 in
-         "r2" <- !"r2" + #1;;
-        "r1" <- !"r2";;
-        release "lk";;
-        Pair (SOME "r1") (SOME "r2")
-    | NONE => let: "r1" := ref #0 in
-              let: "r2" := ref #0 in
-        release "lk";;
-        Pair (SOME "r1") (SOME "r2")
-    end
-  end.
+  match: !"replica1" with
+  SOME "v1" => "replica1" <- SOME ("v1" + #1);;
+                "replica2" <- SOME ("v1" + #1)
+  | NONE => match: !"replica2" with
+            SOME "v2" => "replica1" <- SOME ("v2" + #1);;
+                         "replica2" <- SOME ("v2" + #1)
+            | NONE => "replica1" <- SOME #0;;
+                      "replica2" <- SOME #0
+            end
+  end;;
+  release "lk";;
+  Pair "replica1" "replica2".
 
-Definition get_replica: val := λ: "replica1" "replica2" "lk",
+Definition get_replicas: val := λ: "replica1" "replica2" "lk",
   acquire "lk";;
-  match: "replica1" with
-    SOME "r1" => "r" <- !"r1"
-    | NONE => 
-      match: "replica2" with
-        SOME "r2" => 
-        let: "r1" := ref #0 in
-        "r" <- !"r2";;
-        "r1" <- !"r2";;
-        release "lk";;
-        Pair (Pair (SOME "r1") (SOME "r2")) "r"
-       | NONE => "r1" <- ref #0;; "r2" <- ref #0
-        release "lk";;
-        Pair (Pair (SOME "r1") (SOME "r2")) "r"
-     end
-  end.
-
-(* wrappers, not doing much right now. can we hide backup from the client? *)
-Definition update: val :=
-  λ: "master" "backup" "lk",
-  update_replica "master" "backup".
-
-Definition get : val :=
-  λ: "master" "backup" "lk",
-  get_replica "master" "backup".
+  match: !"replica1" with
+    SOME "v1" => "ret" <- "v1";;
+                 "replica2" <- "v1"
+    | NONE => match: !"replica2" with
+              SOME "v2" => "ret" <- "v2";;
+                             "replica1" <- "v2"
+              | NONE => "replica1" <- SOME #0;;
+                        "replica2" <- SOME #0
+              end
+    end;;
+    release "lk";;
+    Pair (Pair "replica1" "replica2") "ret".
 
 Section proof.
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
@@ -79,9 +62,7 @@ Section proof.
   Qed.
 
   Lemma ghost_var_agree γ n m :
-    own γ (● (Excl' n)) -∗ own γ (◯ (Excl' m)) -∗ ⌜ n = m ⌝.
-  Proof.
-    iIntros "Hγ● Hγ◯".
+    own γ (● (Excl' n)) -∗ own γ (◯ (Excl' m)) -∗ ⌜ n = m ⌝. Proof. iIntros "Hγ● Hγ◯".
     Check own_valid_2.
     by iDestruct (own_valid_2 with "Hγ● Hγ◯")
       as %[<-%Excl_included%leibniz_equiv _]%auth_both_valid.
@@ -97,46 +78,45 @@ Section proof.
     done.
   Qed.
 
-  Definition update_inv_exists (n: Z) (m b : loc) (γ1 γ2 : gname): iProp Σ :=
-      m ↦ #(n) ∗ b ↦ #(n) ∗ own γ1 (● (Excl' n)) ∗ own γ2 (● (Excl' n))%I.
+  (* killing replica spec, preserves value_duplicated *)
+  (* invariant: some x or none, some x matches non-auth ghost state *)
+  (* lock invariant: auth ghost state *)
+  Definition update_val_inv (n: Z) (γ1 γ2 : gname): iProp Σ :=
+      own γ1 (● (Excl' n)) ∗ own γ2 (● (Excl' n))%I.
 
-  Definition update_inv (mloc bloc : option loc) (γ1 γ2 : gname): iProp Σ := ∃ n : Z,
-      match mloc, bloc with
-      | Some m, Some b => update_inv_exists n b m γ1 γ2
-      | Some m, None => ∃ nloc, update_inv_exists n m nloc γ1 γ2 
-      | None, Some b => ∃ nloc, update_inv_exists n nloc b γ1 γ2 
-      | None, None => ∃ nloc1 nloc2, update_inv_exists n nloc1 nloc2 γ1 γ2 
-      end.
+  Definition lock_inv (n: Z) (lk: val) : iProp Σ := ∃ γ γ1 γ2,
+      is_lock LockN γ lk (update_val_inv n γ1 γ2).
 
+  Definition value_duplicated_inv (n : Z) (optv1 optv2: option Z) : iProp Σ := ∃ (γ1 γ2 : gname), 
+      ⌜ optv1 = Some n ∨ optv1 = None ⌝ ∗ own γ1 (◯ (Excl' n))
+      ∗ ⌜ optv2 = Some n ∨ optv2 = None ⌝ ∗ own γ2 (◯ (Excl' n)).
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
-
-  Definition value_duplicated (n : Z) (r1 r2 : option loc) (lk: val) : iProp Σ := ∃ (γ γ1 γ2 : gname), 
-    is_lock LockN γ lk (update_inv r1 r2 γ1 γ2) ∗ own γ1 (◯ (Excl' n)) ∗ own γ2 (◯ (Excl' n)).
 
   Lemma alloc_spec : 
     {{{ True%I }}}
-      alloc #()
-    {{{ r1 r2 lk, RET PairV (PairV (SOMEV #r1) (SOMEV #r2)) lk;
-        value_duplicated 0 (Some r1) (Some r2) lk
+      alloc_replicas #()
+      {{{ r1 r2 lk, RET PairV (PairV r1 r2) lk;
+          lock_inv 0 lk ∗
+          value_duplicated_inv 0 (Some 0) (Some 0)
     }}}.
   Proof.
     iIntros (Φ) "_ HPost".
     iMod (ghost_var_alloc 0) as (γ1) "[Hγ1● Hγ1◯]".
     iMod (ghost_var_alloc 0) as (γ2) "[Hγ2● Hγ2◯]".
 
-    unfold alloc.
+    unfold alloc_replicas.
     wp_alloc master as "Hr1".
     wp_alloc backup as "Hr2"; wp_let.
  
-    wp_apply (newlock_spec LockN (update_inv (Some master) (Some backup) γ1 γ2) with "[Hr1 Hr2 Hγ1● Hγ2●]").
-    unfold update_inv. unfold update_inv_exists. iFrame; auto.
+    wp_apply (newlock_spec LockN (update_val_inv 0 γ1 γ2) with "[Hγ1● Hγ2●]").
+    unfold update_val_inv. iFrame; auto.
 
-    iExists 0. iFrame; auto.
     iIntros (lk γ) "HIsLk".
     wp_let.
     wp_pures.
-    iApply "HPost". unfold value_duplicated.
+    iApply "HPost". iSplit; unfold lock_inv; unfold value_duplicated_inv.
     iExists γ, γ1, γ2. iFrame; auto.
+    iExists γ1, γ2. iFrame; auto.
   Qed.
 
   Lemma update_replica_some_spec : ∀ n master backup lk (r1 r2 : loc),
@@ -266,5 +246,4 @@ Section proof.
     iApply "Hϕ".
     iExists γ, γ1, γ2; iFrame; auto.
   Qed.
-
 End proof.
