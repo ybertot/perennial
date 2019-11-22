@@ -27,7 +27,7 @@ Definition alloc_replicas : val := λ: "()",
   let: "backup" := alloc_node #() in
   Pair "master" "backup".
 
-Definition get_replicas : val :=
+Definition recover_replicas: val :=
   λ: "node1" "node2",
   match: !"node1" with
     SOME "v1" => "node2" <- "v1";;
@@ -39,7 +39,16 @@ Definition get_replicas : val :=
                                 "node2" <- SOME #0;;
                                 #-1
               end
-  end;;
+  end.
+ 
+Definition get_replicas: val :=
+  λ: "node1" "node2" "lk1" "lk2",
+  acquire "lk1";;
+  acquire "lk2";;
+  "r" <- recover_replicas "node1" "node2";;
+  if: "r" = "-1" then "r" <- #0 else #();;
+  release "lk2";;
+  release "lk1";;
   "r".
  
 Definition update_replicas: val :=
@@ -48,7 +57,7 @@ Definition update_replicas: val :=
   acquire "lk2";;
   let: "s1" := update_node "node1" in
   let: "s2" := update_node "node2" in
-  if: "s1" = #0 then get_replicas "node1" "node2" else #();;
+  if: "s1" = #0 then recover_replicas "node1" "node2" else #();;
   release "lk2";;
   release "lk1".
 
@@ -189,6 +198,91 @@ Section proof.
     iApply "HPost". 
     iFrame; auto.
   Qed.
+
+  Lemma recover_replicas_both_alive_spec : ∀ (n: Z) γ1 γ2 node1 node2,
+      {{{
+           node1 ↦ SOMEV #n ∗ node2 ↦ SOMEV #n
+           ∗ global_inv n (Some n) (Some n) γ1 γ2
+    }}}
+      recover_replicas #node1 #node2
+    {{{ RET #n;
+           node1 ↦ SOMEV #(n) ∗ node2 ↦ SOMEV #(n)
+           ∗ global_inv (n) (Some (n)) (Some (n)) γ1 γ2
+    }}}.
+  Proof.
+  Admitted.
+
+  Lemma recover_replicas_one_dead_spec : ∀ (n: Z) γ1 γ2 node1 node2,
+      {{{
+           (node1 ↦ NONEV ∗ node2 ↦ SOMEV #n ∨ 
+            node1 ↦ SOMEV #n ∗ node2 ↦ NONEV)
+           ∗ global_inv n (Some n) (Some n) γ1 γ2
+    }}}
+      recover_replicas #node1 #node2
+    {{{ RET #n;
+           node1 ↦ SOMEV #(n) ∗ node2 ↦ SOMEV #(n)
+           ∗ global_inv (n) (Some (n)) (Some (n)) γ1 γ2
+    }}}.
+  Proof.
+  Admitted.
+
+  Lemma recover_replicas_both_dead_spec : ∀ (n: Z) γ1 γ2 node1 node2,
+      {{{
+           (node1 ↦ NONEV ∗ node2 ↦ NONEV)
+           ∗ global_inv n (Some n) (Some n) γ1 γ2
+    }}}
+      recover_replicas #node1 #node2
+    {{{ RET #();
+           node1 ↦ SOMEV #(0) ∗ node2 ↦ SOMEV #(0)
+           ∗ global_inv (0) (Some 0) (Some 0) γ1 γ2
+    }}}.
+  Proof.
+  Admitted.
+
+  Lemma get_replicas_one_alive_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
+      {{{
+           node1 ↦ SOMEV #n ∗ node2 ↦ SOMEV #n ∨
+           node1 ↦ NONEV ∗ node2 ↦ SOMEV #n ∨ 
+           node1 ↦ SOMEV #n ∗ node2 ↦ NONEV
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv n γ1)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv n γ1)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv n γ2)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv n γ2)
+           ∗ global_inv n (Some n) (Some n) γ1 γ2
+    }}}
+      get_replicas #node1 lk1 #node2 lk2
+    {{{ RET #n;
+           node1 ↦ SOMEV #(n) 
+           ∗ node2 ↦ SOMEV #(n)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv (n) γ1)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv (n) γ1)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv (n) γ2)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv (n) γ2)
+           ∗ global_inv (n) (Some (n)) (Some (n)) γ1 γ2
+    }}}.
+  Proof.
+  Admitted.
+
+  Lemma get_replicas_both_dead_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
+      {{{
+           (node1 ↦ NONEV ∗ node2 ↦ NONEV)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv n γ1)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv n γ1)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv n γ2)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv n γ2)
+           ∗ global_inv n (Some n) (Some n) γ1 γ2
+    }}}
+      get_replicas #node1 lk1 #node2 lk2
+    {{{ RET #0;
+           node1 ↦ SOMEV #(0) ∗ node2 ↦ SOMEV #(0)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv (0) γ1)
+           ∗ is_lock LockN γ3 lk1 (node_lock_inv (0) γ1)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv (0) γ2)
+           ∗ is_lock LockN γ4 lk2 (node_lock_inv (0) γ2)
+           ∗ global_inv (0) (Some 0) (Some 0) γ1 γ2
+    }}}.
+  Proof.
+  Admitted.
 
   Lemma update_replicas_both_alive_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
       {{{
