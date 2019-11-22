@@ -6,7 +6,7 @@ From iris.heap_lang Require Import proofmode notation lib.par lib.spin_lock.
 Definition alloc_node: val := λ: "()",
   let: "node" := ref (SOME #0) in
   let: "lk" := newlock #() in
-  Pair "master" "lk".
+  Pair "node" "lk".
 
 Definition update_node: val := 
   λ: "node",
@@ -82,42 +82,63 @@ Section proof.
     done.
   Qed.
 
-  Definition update_val_inv (γ1 γ2 : gname): iProp Σ := ∃ n,
-      own γ1 (● (Excl' n)) ∗ own γ2 (● (Excl' n))%I.
+  Definition node_val_inv (n : Z) (optv: option Z) (γ : gname): iProp Σ := 
+      ⌜ optv = Some n ∨ optv = None ⌝ ∗ own γ (◯ (Excl' n)).
 
-  Definition lock_inv (lk: val) (γ γ1 γ2: gname) : iProp Σ :=
-      is_lock LockN γ lk (update_val_inv γ1 γ2).
+  Definition node_lock_inv (n: Z) (γ: gname) : iProp Σ :=
+      own γ (● (Excl' n))%I.
 
-  Definition value_duplicated_inv (n : Z) (optv1 optv2: option Z) (γ1 γ2 : gname): iProp Σ := 
-      ⌜ optv1 = Some n ∨ optv1 = None ⌝ ∗ own γ1 (◯ (Excl' n))
-      ∗ ⌜ optv2 = Some n ∨ optv2 = None ⌝ ∗ own γ2 (◯ (Excl' n)).
+  Definition global_inv (n : Z) (optv1 optv2: option Z) (γ1 γ2 : gname): iProp Σ :=
+    (node_val_inv n optv1 γ1) ∗ (node_val_inv n optv2 γ2).
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
 
-  Lemma alloc_spec : 
+  Lemma alloc_node_spec : 
     {{{ True%I }}}
-      alloc_replicas #()
-      {{{ r1 r2 lk γ γ1 γ2, RET PairV (PairV r1 r2) lk;
-          lock_inv lk γ γ1 γ2 ∗
-          value_duplicated_inv 0 (Some 0) (Some 0) γ1 γ2
+      alloc_node #()
+      {{{ r1 lk γ γ1 , RET PairV r1 lk;
+          is_lock LockN γ lk (node_lock_inv 0 γ1) ∗
+          node_val_inv 0 (Some 0) γ1
     }}}.
   Proof.
     iIntros (Φ) "_ HPost".
     iMod (ghost_var_alloc 0) as (γ1) "[Hγ1● Hγ1◯]".
-    iMod (ghost_var_alloc 0) as (γ2) "[Hγ2● Hγ2◯]".
 
-    unfold alloc_replicas.
+    unfold alloc_node.
     wp_alloc master as "Hr1".
-    wp_alloc backup as "Hr2"; wp_let.
+    wp_let.
  
-    wp_apply (newlock_spec LockN (update_val_inv γ1 γ2) with "[Hγ1● Hγ2●]").
-    unfold update_val_inv. 
-    iExists 0. iFrame; auto.
+    wp_apply (newlock_spec LockN (node_lock_inv 0 γ1) with "Hγ1●").
     iIntros (lk γ) "HIsLk".
     wp_let.
     wp_pures.
-    iApply "HPost". iSplit; unfold lock_inv; unfold value_duplicated_inv.
+    iApply "HPost". 
     iFrame; auto.
-    iFrame; auto.
+  Qed.
+
+  Lemma alloc_replicas_spec : 
+    {{{ True%I }}}
+      alloc_replicas #()
+      {{{ r1 r2 lk1 lk2 γ1 γ2 γ3 γ4, RET PairV (PairV r1 lk1) (PairV r2 lk2);
+          is_lock LockN γ3 lk1 (node_lock_inv 0 γ1) ∗
+          is_lock LockN γ3 lk1 (node_lock_inv 0 γ1) ∗
+          is_lock LockN γ4 lk2 (node_lock_inv 0 γ2) ∗
+          is_lock LockN γ4 lk2 (node_lock_inv 0 γ2) ∗
+          global_inv 0 (Some 0) (Some 0) γ1 γ2
+    }}}.
+  Proof.
+    iIntros (Φ) "_ HPost".
+    unfold alloc_replicas.
+    wp_pures.
+    wp_apply (alloc_node_spec); auto.
+    iIntros (r1 lk γ4 γ1) "(Hislk1 & Hnodeinv1)".
+    wp_let.
+    wp_apply (alloc_node_spec); auto.
+    iIntros (r2 lk2 γ3 γ2) "(Hislk2 & Hnodeinv2)".
+    wp_let.
+    wp_pures.
+    iApply "HPost".
+    repeat iSplit; auto.
+    iFrame.
   Qed.
 
   Lemma update_replica_some_spec : ∀ n master backup lk v1 v2 γ γ1 γ2,
