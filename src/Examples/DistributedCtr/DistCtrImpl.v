@@ -2,65 +2,56 @@ From iris.algebra Require Import auth frac_auth excl.
 From iris.base_logic.lib Require Import invariants.
 From iris.heap_lang Require Import proofmode notation lib.par lib.spin_lock.
 
+(* LOCAL NODE-BASED FUNCTIONS *)
 Definition alloc_node: val := λ: "()",
   let: "node" := ref (SOME #0) in
   let: "lk" := newlock #() in
   Pair "master" "lk".
 
+Definition update_node: val := 
+  λ: "node",
+  match: !"node" with
+    SOME "v1" => "node" <- SOME ("v1" + #1);;
+                        "r" <- #1
+  | NONE => "node" <- SOME #0;;
+                   "r" <- #0
+  end;;
+  "r".
+
+Definition kill_node: val :=
+  λ: "node",
+  "node" <- NONE.
+
+(* GLOBAL, CLIENT-FACING FUNCTIONS *)
 Definition alloc_replicas : val := λ: "()",
   let: "master" := alloc_node #() in
   let: "backup" := alloc_node #() in
   Pair "master" "backup".
 
-Definition kill_replica: val :=
-  λ: "node",
-  "node" <- NONE.
-
-Definition update_node: val := 
-  λ: "node",
-  match: !"node" with
-    SOME "v1" => "node" <- SOME ("v1" + #1);; #1
-  | NONE => "node" <- SOME #0;; #0
-  end.
-
-Definition recover_replicas : val :=
+Definition get_replicas : val :=
   λ: "node1" "node2",
   match: !"node1" with
-    SOME "v1" => "node2" <- "v1"
+    SOME "v1" => "node2" <- "v1";;
+                         "r" <- "v1"
     | NONE => match: !"node2" with
-              SOME "v2" => "node1" <- "v2"
+                SOME "v2" => "node1" <- "v2";;
+                               "r" <- "v2"
               | NONE => "node1" <- SOME #0;;
-                        "node2" <- SOME #0
+                                "node2" <- SOME #0;;
+                                "r" <- #0
               end
-  end.
+  end;;
+  "r".
  
 Definition update_replicas: val :=
   λ: "node1" "node2" "lk1" "lk2",
   acquire "lk1";;
   acquire "lk2";;
-  let: "s1" : val := update_node "node1" in
-  let: "s2" : val := update_node "node2" in
-  match "s1" with
-  #0 => recover_replicas "node1" "node2"
-  | _ => #()
-  end;;
-  release "lk1";;
-  release "lk2".
-      
-Definition get_replicas: val := λ: "replica1" "replica2" "lk",
-  acquire "lk";;
-  match: !"replica1" with
-    SOME "v1" => "ret" <- "v1";;
-                 "replica2" <- "v1"
-    | NONE => match: !"replica2" with
-              SOME "v2" => "ret" <- "v2";;
-                             "replica1" <- "v2"
-              | NONE => "replica1" <- SOME #0;;
-                        "replica2" <- SOME #0
-              end
-    end;;
-    release "lk";;
-    Pair (Pair "replica1" "replica2") "ret".
+  let: "s1" := update_node "node1" in
+  let: "s2" := update_node "node2" in
+  if: "s1" = #0 then get_replicas "node1" "node2" else #();;
+  release "lk2";;
+  release "lk1".
 
 Section proof.
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
@@ -91,9 +82,6 @@ Section proof.
     done.
   Qed.
 
-  (* killing replica spec, preserves value_duplicated *)
-  (* invariant: some x or none, some x matches non-auth ghost state *)
-  (* lock invariant: auth ghost state *)
   Definition update_val_inv (γ1 γ2 : gname): iProp Σ := ∃ n,
       own γ1 (● (Excl' n)) ∗ own γ2 (● (Excl' n))%I.
 
