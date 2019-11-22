@@ -2,38 +2,51 @@ From iris.algebra Require Import auth frac_auth excl.
 From iris.base_logic.lib Require Import invariants.
 From iris.heap_lang Require Import proofmode notation lib.par lib.spin_lock.
 
-Definition alloc_replicas : val := λ: "()",
-  let: "master" := ref (SOME #0) in
-  let: "backup" := ref (SOME #0) in
+Definition alloc_node: val := λ: "()",
+  let: "node" := ref (SOME #0) in
   let: "lk" := newlock #() in
-  Pair (Pair "master" "backup") "lk".
+  Pair "master" "lk".
 
-Definition kill_replica1: val :=
-  λ: "replica1" "replica2",
-  "replica1" <- NONE;;
-   Pair "replica1" "replica2".
+Definition alloc_replicas : val := λ: "()",
+  let: "master" := alloc_node #() in
+  let: "backup" := alloc_node #() in
+  Pair "master" "backup".
 
-Definition kill_replica2: val :=
-  λ: "replica1" "replica2",
-  "replica2" <- NONE;;
-   Pair "replica1" "replica2".
+Definition kill_replica: val :=
+  λ: "node",
+  "node" <- NONE.
 
+Definition update_node: val := 
+  λ: "node",
+  match: !"node" with
+    SOME "v1" => "node" <- SOME ("v1" + #1);; #1
+  | NONE => "node" <- SOME #0;; #0
+  end.
+
+Definition recover_replicas : val :=
+  λ: "node1" "node2",
+  match: !"node1" with
+    SOME "v1" => "node2" <- "v1"
+    | NONE => match: !"node2" with
+              SOME "v2" => "node1" <- "v2"
+              | NONE => "node1" <- SOME #0;;
+                        "node2" <- SOME #0
+              end
+  end.
+ 
 Definition update_replicas: val :=
-  λ: "replica1" "replica2" "lk",
-  acquire "lk";;
-  match: !"replica1" with
-  SOME "v1" => "replica1" <- SOME ("v1" + #1);;
-                "replica2" <- SOME ("v1" + #1)
-  | NONE => match: !"replica2" with
-            SOME "v2" => "replica1" <- SOME ("v2" + #1);;
-                         "replica2" <- SOME ("v2" + #1)
-            | NONE => "replica1" <- SOME #0;;
-                      "replica2" <- SOME #0
-            end
+  λ: "node1" "node2" "lk1" "lk2",
+  acquire "lk1";;
+  acquire "lk2";;
+  let: "s1" : val := update_node "node1" in
+  let: "s2" : val := update_node "node2" in
+  match "s1" with
+  #0 => recover_replicas "node1" "node2"
+  | _ => #()
   end;;
-  release "lk";;
-  Pair "replica1" "replica2".
-
+  release "lk1";;
+  release "lk2".
+      
 Definition get_replicas: val := λ: "replica1" "replica2" "lk",
   acquire "lk";;
   match: !"replica1" with
@@ -81,13 +94,13 @@ Section proof.
   (* killing replica spec, preserves value_duplicated *)
   (* invariant: some x or none, some x matches non-auth ghost state *)
   (* lock invariant: auth ghost state *)
-  Definition update_val_inv (n: Z) (γ1 γ2 : gname): iProp Σ :=
+  Definition update_val_inv (γ1 γ2 : gname): iProp Σ := ∃ n,
       own γ1 (● (Excl' n)) ∗ own γ2 (● (Excl' n))%I.
 
-  Definition lock_inv (n: Z) (lk: val) : iProp Σ := ∃ γ γ1 γ2,
-      is_lock LockN γ lk (update_val_inv n γ1 γ2).
+  Definition lock_inv (lk: val) (γ γ1 γ2: gname) : iProp Σ :=
+      is_lock LockN γ lk (update_val_inv γ1 γ2).
 
-  Definition value_duplicated_inv (n : Z) (optv1 optv2: option Z) : iProp Σ := ∃ (γ1 γ2 : gname), 
+  Definition value_duplicated_inv (n : Z) (optv1 optv2: option Z) (γ1 γ2 : gname): iProp Σ := 
       ⌜ optv1 = Some n ∨ optv1 = None ⌝ ∗ own γ1 (◯ (Excl' n))
       ∗ ⌜ optv2 = Some n ∨ optv2 = None ⌝ ∗ own γ2 (◯ (Excl' n)).
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
@@ -95,9 +108,9 @@ Section proof.
   Lemma alloc_spec : 
     {{{ True%I }}}
       alloc_replicas #()
-      {{{ r1 r2 lk, RET PairV (PairV r1 r2) lk;
-          lock_inv 0 lk ∗
-          value_duplicated_inv 0 (Some 0) (Some 0)
+      {{{ r1 r2 lk γ γ1 γ2, RET PairV (PairV r1 r2) lk;
+          lock_inv lk γ γ1 γ2 ∗
+          value_duplicated_inv 0 (Some 0) (Some 0) γ1 γ2
     }}}.
   Proof.
     iIntros (Φ) "_ HPost".
@@ -108,45 +121,54 @@ Section proof.
     wp_alloc master as "Hr1".
     wp_alloc backup as "Hr2"; wp_let.
  
-    wp_apply (newlock_spec LockN (update_val_inv 0 γ1 γ2) with "[Hγ1● Hγ2●]").
-    unfold update_val_inv. iFrame; auto.
-
+    wp_apply (newlock_spec LockN (update_val_inv γ1 γ2) with "[Hγ1● Hγ2●]").
+    unfold update_val_inv. 
+    iExists 0. iFrame; auto.
     iIntros (lk γ) "HIsLk".
     wp_let.
     wp_pures.
     iApply "HPost". iSplit; unfold lock_inv; unfold value_duplicated_inv.
-    iExists γ, γ1, γ2. iFrame; auto.
-    iExists γ1, γ2. iFrame; auto.
+    iFrame; auto.
+    iFrame; auto.
   Qed.
 
-  Lemma update_replica_some_spec : ∀ n master backup lk (r1 r2 : loc),
-      {{{ ⌜ (master = SOMEV #r1 ∧ backup = SOME #r2) ⌝ 
-          ∗ value_duplicated n (Some r1) (Some r2) lk
+  Lemma update_replica_some_spec : ∀ n master backup lk v1 v2 γ γ1 γ2,
+      {{{
+           lock_inv lk γ γ1 γ2
+           ∗ value_duplicated_inv n (Some v1) (Some v2) γ1 γ2
+           ∗ master ↦ SOMEV #v1
+           ∗ backup ↦ SOMEV #v2
       }}}
-      update_replica master backup lk
-      {{{ nr1 nr2, RET (SOMEV #nr1, SOMEV #nr2) ;
-          value_duplicated (n+1) (Some nr1) (Some nr2) lk
+        update_replicas #master #backup lk
+      {{{ RET Pair #master #backup; 
+           lock_inv lk γ γ1 γ2
+           ∗ value_duplicated_inv (n+1) (Some (v1+1)) (Some (v2+1)) γ1 γ2
+           ∗ master ↦ SOMEV #(v1 + 1)
+           ∗ backup ↦ SOMEV #(v2 + 1)
       }}}.
   Proof.
-    iIntros (n master backup lk r1 r2 ϕ) "Hvaldup Hϕ".
-    unfold update_replica.
-    iDestruct "Hvaldup" as ([-> ->]) "HInv".
-    iDestruct "HInv" as (γ γ1 γ2) "[#Hislk [Hγ1◯ Hγ2◯]]";
-      wp_pures;
-      wp_apply (acquire_spec with "[$Hislk]");
-      iIntros "(Hlked & HInv)";
-      wp_pures;
-      iDestruct "HInv" as (n') "(Hr1 & Hr2 & Hγ1● & Hγ2● )";
-        iDestruct (ghost_var_agree with "Hγ1● Hγ1◯") as %->;
-        iMod (ghost_var_update γ1 (n+1) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
-        iMod (ghost_var_update γ2 (n+1) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
-    wp_load; wp_op; wp_store.
-    wp_load; wp_op; wp_store.
-    wp_apply (release_spec LockN γ lk (update_inv (Some r1) (Some r2) γ1 γ2) with "[- $Hlked Hγ1◯ Hγ2◯ Hϕ]").
-      iSplit; auto. unfold update_inv.
-      iExists (n + 1). iFrame; auto.
-      iIntros. wp_pures.
-      iApply "Hϕ".
+    iIntros (n master backup lk v1 v2 γ γ1 γ2 ϕ) "Hvaldup Hϕ".
+    unfold update_replicas.
+    iDestruct "Hvaldup" as "(#Hlk & HInv & Hm & Hb)".
+    unfold value_duplicated_inv.
+    iDestruct "HInv" as "[Hv1 [Hγ1◯ [Hv2 Hγ2◯]]]".
+
+    wp_pures.
+    wp_apply (acquire_spec with "Hlk").
+    iIntros "(Hlked & HInv)".
+    iDestruct "HInv" as (n') "(Hγ1● & Hγ2● )".
+    iDestruct (ghost_var_agree with "Hγ1● Hγ1◯") as %->.
+    iMod (ghost_var_update γ1 (n+1) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
+    iMod (ghost_var_update γ2 (n+1) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
+    wp_pures.
+    wp_load. wp_match. wp_store. wp_store.
+    wp_apply (release_spec LockN γ lk (update_val_inv γ1 γ2) with "[- $Hlked Hγ1◯ Hγ2◯ Hv1 Hv2 Hm Hb Hϕ]").
+    iSplit; auto. unfold update_val_inv.
+    iExists (n+1). iFrame; auto.
+    iIntros. wp_pures.
+    unfold lock_inv.
+    iDestruct "Hϕ" as (
+    iApply "Hϕ".
       iExists γ, γ1, γ2; iFrame; auto.
   Qed.
 
