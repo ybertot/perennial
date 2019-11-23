@@ -27,7 +27,7 @@ Definition wpc_pre `{!irisG Λ Σ} (s : stuckness)
    ∀ σ κs n, state_interp σ κs n ={E1, E2}=∗ NC ntok ∗ |={E2, E1}=> (C ={E1, E2}=∗  Φc ∗ state_interp σ κs n ∗ C))%I.
 
 Axiom NC_C: forall Σ k, @NC Σ (S k) ∗ @C Σ -∗ False.
-Axiom NC_S: forall Σ k, @NC Σ (S k) -∗ @NC Σ k ∗ @NC Σ 1.
+Axiom NC_S: forall Σ k, @NC Σ (S k) ⊣⊢ @NC Σ k ∗ @NC Σ 1.
 
 Local Instance wpc_pre_contractive `{!irisG Λ Σ} s : Contractive (wpc_pre s).
 Proof.
@@ -246,6 +246,55 @@ Qed.
 
 Lemma wpc_crash_inv (N: namespace) ntok s E e Φ Φc :
   inv N ((NC 1 ∗ (Φc ∨ Tok)) ∨ (Φc ∗ (NC 1 ∨ Tok))) ∗
+      Tok ∗
+  WPC e @ ntok; s ; E; ↑N {{ Φ }} {{ True }} ⊢
+  WPC e @ (S ntok); s ; E ; ∅ {{ Φ }} {{ ▷ Φc }}.
+Proof.
+  iIntros "(#Hinv&Htok&H)".
+  iLöb as "IH" forall (e E Φ ntok).
+  rewrite !wpc_unfold /wpc_pre.
+  iSplit.
+  - iDestruct "H" as "(H&_)".
+    iMod "H" as (k) "H".
+    iExists k. iModIntro.
+    iIntros "HNC".
+    destruct (to_val e) as [v|] eqn:?.
+    * by iApply "H".
+    * iIntros (σ1 κ κs n) "Hσ".
+      iSpecialize ("H" with "[$]").
+      iMod ("H" with "[$]") as "[% H]".
+      iModIntro. iSplit; first auto.
+      iIntros (e2 σ2 efs Hstep).
+      iMod ("H" with "[//]") as "H". iIntros "!> !>".
+      iMod "H" as "(Hσ & H & Hefs)".
+      iFrame "Hσ". iFrame "Hefs". iModIntro. replace (S ntok + k) with (S (ntok + k)); last by lia. by iApply ("IH" with "[$]").
+  - iIntros. iDestruct "H" as "(_&H)".
+    rewrite (NC_S _ (ntok)).
+    iMod ("H" with "[$]") as "($&Hrest)".
+    iInv "Hinv" as "H" "Hclo".
+    iAssert (|={↑ N ∖ ↑ N}=> ▷ (NC 1 ∗ (Φc ∨ Tok) ∨ Φc ∗ (NC 1 ∨ Tok)) ∗ ▷ NC 1)%I with "[H Htok]" as "H".
+    { iDestruct "H" as "[H|H]".
+      - iDestruct "H" as "(HNC&[HΦ|>Htok'])".
+        * by iFrame.
+        * iExFalso. iApply (Tok_Tok with "[$]").
+      - iDestruct "H" as "(HΦ&[>HNC|>Htok'])"; last first.
+        * iExFalso. iApply (Tok_Tok with "[$]").
+        * iSplitL "HΦ Htok".
+          { by iFrame. }
+          by iFrame.
+    }
+    iMod "H" as "(Hclo'&>$)".
+    iMod ("Hclo" with "[$]").
+    iMod "Hrest". iApply fupd_intro_mask; first by set_solver+.
+    iIntros. iMod ("Hrest" with "[$]") as "(?&$&C)".
+    iInv "Hinv" as "Hi" "_".
+    iDestruct "Hi" as "[(>Hnc&?)|($&?)]".
+    { iExFalso. iApply (NC_C with "[$]"). }
+    iFrame. iApply fupd_mask_weaken; first by set_solver+. eauto.
+Qed.
+
+Lemma wpc_crash_inv_weak (N: namespace) ntok s E e Φ Φc :
+  inv N ((NC 1 ∗ (Φc ∨ Tok)) ∨ (Φc ∗ (NC 1 ∨ Tok))) ∗
   WPC e @ ntok; s ; E; ↑N {{ Φ }} {{ True }} ⊢
   WPC e @ ntok; s ; E ; ∅ {{ Φ }} {{ ▷ Φc }}.
 Proof.
@@ -261,29 +310,55 @@ Proof.
   eauto.
 Qed.
 
-(*
+Lemma fupd_wpc ntok s E1 E2 e Φ Φc:
+  (|={E1}=> WPC e @ ntok; s; E1 ; E2 {{ Φ }} {{ Φc }}) ⊢ WPC e @ ntok; s; E1 ; E2 {{ Φ }} {{ Φc }}.
+Proof.
+  rewrite wpc_unfold /wpc_pre. iIntros "H". iSplit.
+  - destruct (to_val e) as [v|] eqn:?;
+     by iMod "H" as "(?&_)".
+  - by iMod "H" as "(_&H)".
+Qed.
+
 Lemma wpc_crash_inv_alloc (N: namespace) ntok s E e Φ Φc :
+  ↑N ⊆ E →
+  Φc ∗ Tok ∗ NC 1 ∗
+  (inv N ((NC 1 ∗ (Φc ∨ Tok)) ∨ (Φc ∗ (NC 1 ∨ Tok))) -∗ Tok -∗
+  WPC e @ ntok; s ; E; ↑N {{ Φ }} {{ True }}) ⊢
+  WPC e @ ((* S *) ntok); s ; E ; ∅ {{ Φ }} {{ ▷ Φc }}.
+Proof.
+  iIntros (?) "(HΦ&Htok&HNC&Hw)".
+  iApply fupd_wpc.
+  iMod (inv_alloc N E ((NC 1 ∗ (Φc ∨ Tok)) ∨ (Φc ∗ (NC 1 ∨ Tok)))%I
+                  with "[HΦ HNC]") as "#Hinv".
+  { by iFrame. }
+  iSpecialize ("Hw" with "[$] [$]"). iApply wpc_crash_inv_weak; eauto.
+Qed.
+
+Lemma wpc_crash_inv_alloc_2 (N: namespace) s E e Φ Φc :
   ↑N ⊆ E →
   Φc ∗ Tok ∗
   (inv N ((NC 1 ∗ (Φc ∨ Tok)) ∨ (Φc ∗ (NC 1 ∨ Tok))) -∗ Tok -∗
-  WPC e @ ntok; s ; E; ↑N {{ Φ }} {{ True }}) ⊢
-  WPC e @ ntok; s ; E ; ∅ {{ Φ }} {{ ▷ Φc }}.
+  WPC e @ 1; s ; E; ↑N {{ Φ }} {{ True }}) ⊢
+  WPC e @ 0; s ; E ; ∅ {{ Φ }} {{ ▷ Φc }}.
 Proof.
   iIntros (?) "(HΦ&Htok&Hw)".
   rewrite !wpc_unfold /wpc_pre.
   iSplit; last first.
+  iAssert (∀ (σ : state Λ) (κs : list (observation Λ)) (n : nat),
+    state_interp σ κs n ∗ NC 1
+    ={E,∅}=∗ NC 1 ∗ (|={∅,E}=> C ={E,∅}=∗ ▷ Φc ∗ state_interp σ κs n ∗ C))%I
+          with "[-]" as "H".
+  iIntros (???) "(Hσ&HNC)".
+  iMod (inv_alloc N E ((NC 1 ∗ (Φc ∨ Tok)) ∨ (Φc ∗ (NC 1 ∨ Tok)))%I
+                  with "[HΦ HNC]") as "#Hinv".
+  { by iFrame. }
+  iSpecialize ("Hw" with "[$] [$]").
+  iDestruct "Hw" as "(_&H)".
+  iMod ("H" with "[$]") as "($&?)".
 
-  iApply (wpc_strong_mono s s E E (↑N) with "H"); try set_solver+.
-  iSplit; auto.
-  iIntros "(_&HC)". iInv N as "Hi" "Hclo".
-  iAssert (|={↑N ∖ ↑N,∅}=> ▷ (Φc ∗ C))%I with "[-]" as "H"; last first.
-  { iMod "H" as "(?&>C)". iFrame. eauto. }
-  iApply fupd_mask_weaken; first by set_solver+.
-  iNext. iDestruct "Hi" as "[(Hnc&?)|($&?)]".
-  {  iExFalso. iApply (NC_C with "[$]"). }
-  eauto.
-Qed.
-*)
+
+  iInv "Hinv" as "H" "Hclo".
+Abort.
 
 Lemma wpc_crash_inv_rev (N: namespace) ntok s E e Φ Φc :
  ↑N ⊆ E →
