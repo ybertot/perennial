@@ -431,19 +431,23 @@ Module NFS3.
     | SymBool : SpecOp bool
     | SymFH : SpecOp fh
     | Unreachable : SpecOp unit
-    | Reads : forall {T : Type} (f : State -> T), SpecOp T
-    | Puts : forall (f : State -> State), SpecOp unit
+    | Reads : SpecOp State
+    | Puts : State -> SpecOp unit
     .
-
-    Definition symBool := Call SymBool.
-    Definition reads {T : Type} (f : State -> T) := Call (Reads f).
-    Definition puts (f : State -> State) := Call (Puts f).
-    Definition pure `(v : T) := @Ret SpecOp _ v.
-
-    Definition spec_proc := proc SpecOp.
 
     Import ProcNotations.
     Open Scope proc.
+
+    Definition symBool := Call SymBool.
+    Definition reads {T : Type} (read_f : State -> T) :=
+      s <- Call Reads;
+      Ret (read_f s).
+    Definition puts (put_f : State -> State) :=
+      s <- Call Reads;
+      Call (Puts (put_f s)).
+    Definition pure `(v : T) := @Ret SpecOp _ v.
+
+    Definition spec_proc := proc SpecOp.
 
     Definition null_step : spec_proc unit :=
       pure tt.
@@ -487,6 +491,7 @@ Module NFS3.
 
   End SymbolicStep.
 
+Check getattr_step.
 Require Import Extraction.
 Extraction Language JSON.
 Recursive Extraction getattr_step.
