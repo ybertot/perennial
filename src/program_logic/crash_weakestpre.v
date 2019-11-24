@@ -23,7 +23,7 @@ Definition wpc_pre `{!irisG Λ Σ} (s : stuckness) (k: nat)
    end ∧
    match to_val e1 with
    | Some v => |={E1, E2}=> Φc
-   | None => |={E1, ∅}=> |={∅, ∅}▷=>^(S k) |={∅, E1}=> Φc ∗ |={∅, E2}=> emp
+   | None => |={E1, ∅}=> |={∅, ∅}▷=>^(S k) |={∅, ∅}=> Φc ∗ |={∅, E2}=> emp
    end)%I.
 
 Local Instance wpc_pre_contractive `{!irisG Λ Σ} s k : Contractive (wpc_pre s k).
@@ -294,25 +294,29 @@ Admitted.
 Context `{!stagedG Σ}.
 
 Definition detached_staged k E1 E2 P : iProp Σ :=
-  (|={E1, ∅}=> |={∅, ∅}▷=>^k |={∅, E1}=> |={E1, E2}=> P)%I.
+  (|={E1, ∅}=> |={∅, ∅}▷=>^k |={∅, E2}=> P)%I.
 
 Definition detached_ci k E1 E2 N (P: iProp Σ) : iProp Σ :=
   P ∨ (∃ γ, Tok ∗ staged_inv N γ (detached_staged k E1 E2 P))%I.
 
-Lemma step_fupdN_inner_later E k P:
-  ▷^k P -∗ |={E,∅}=> |={∅,∅}▷=>^k |={∅,E}=> P.
+Lemma step_fupdN_inner_later E1 E2 k P:
+  E2 ⊆ E1 →
+  ▷^k P -∗ |={E1,∅}=> |={∅,∅}▷=>^k |={∅,E2}=> P.
 Proof.
+  iIntros (Hle).
   iInduction k as [| k] "IH".
-  - rewrite //=. iApply fupd_intro_mask. set_solver.
+  - rewrite //=. iIntros "HP".
+    iMod (fupd_intro_mask' _ E2); eauto.
+    iApply fupd_intro_mask; eauto; set_solver.
   - iIntros. iMod (fupd_intro_mask' _ ∅) as "Hclo".
     { set_solver. }
     rewrite Nat_iter_S.
     iModIntro. iModIntro. iNext. iMod "Hclo". by iApply "IH".
 Qed.
 
-Lemma step_fupdN_inner_plus E k1 k2 P:
-  (|={E,∅}=> |={∅,∅}▷=>^k1 |={∅, E}=> |={E,∅}=> |={∅,∅}▷=>^k2 |={∅,E}=> P)
-  ⊢ (|={E,∅}=> |={∅,∅}▷=>^(k1 + k2) |={∅,E}=> P)%I.
+Lemma step_fupdN_inner_plus E1 E2 k1 k2 P:
+  (|={E1,∅}=> |={∅,∅}▷=>^k1 |={∅, E1}=> |={E1,∅}=> |={∅,∅}▷=>^k2 |={∅,E2}=> P)
+  ⊢ (|={E1,∅}=> |={∅,∅}▷=>^(k1 + k2) |={∅,E2}=> P)%I.
 Proof.
   rewrite Nat_iter_add.
   iIntros "H". iMod "H". iModIntro.
@@ -322,11 +326,19 @@ Proof.
   * rewrite Nat_iter_S. iMod "H". iMod "H". eauto.
 Qed.
 
-(*
-Lemma wpc_crash E e k Φc
-
-WPC e2 @ k; E1 ∖ ↑N1 ∖ ↑N2;E2 {{ v, (Φ v ∧ (|={E1,E2}=> Φc)) ∗ P }}{{Φc ∗ P}}
-*)
+Lemma wpc_crash s E1 E2 e k Φ Φc:
+  WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }} -∗
+  |={E1, ∅}=> |={∅, ∅}▷=>^(S k) |={∅, ∅}=> Φc ∗ |={∅, E2}=> emp.
+Proof.
+  iIntros "H".
+  rewrite wpc_unfold /wpc_pre.
+  iDestruct "H" as "(_&H)".
+  destruct (to_val e) as [v|].
+  - iMod "H". iMod (fupd_intro_mask' _ ∅) as "Hclo"; first by set_solver+.
+    iModIntro. iApply step_fupdN_inner_later; auto. iModIntro. do 2 iNext.
+    iFrame.
+  - eauto.
+Qed.
 
 Lemma wpc_staged_invariant_aux s k E1 E2 E1' E2' e Φ Φc P Q1 R1 Q2 R2 N1 N2 γ :
   ↑N1 ⊆ E1 →
@@ -370,9 +382,8 @@ Proof.
     iMod ("Hclo'" with "[HP]").
     { iSplitL. iApply "HP". iAlways.
       iIntros. rewrite /detached_staged.
-      iApply step_fupdN_inner_later.
-      iNext.
-      iApply (fupd_mask_weaken); eauto.
+      iApply step_fupdN_inner_later; first auto.
+      iNext. eauto.
     }
     iModIntro.
     iSplitL "HQ1".
@@ -404,6 +415,7 @@ Proof.
     iIntros "H".
     rewrite wpc_unfold /wpc_pre.
     rewrite Hval. iDestruct "H" as "(_&HP)".
+    rewrite /detached_staged.
     iMod (fupd_intro_mask') as "Hclo"; [| iMod "HP"].
     { set_solver. }
     iModIntro.
@@ -411,9 +423,9 @@ Proof.
     { reflexivity. }
     { lia. }
     iApply (step_fupdN_wand with "HP").
-    iIntros "HP". iMod "HP". iMod "Hclo". iModIntro.
+    iIntros "HP". iMod "HP". iDestruct "HP" as "((_&HP)&Hclo')".
+    iMod "Hclo'".
     iApply fupd_mask_weaken; auto.
-    iDestruct "HP" as "((_&$)&_)".
   }
   iMod "Hclo'".
   iModIntro.
@@ -467,8 +479,18 @@ Proof.
       iApply (step_fupdN_wand with "H"). iIntros "H".
       iMod "H". iMod "Hclo''" as "_".
       iDestruct "H" as "(_&H&_)".
-      (* Have to adjust HSI here *)
-      admit.
+      iPoseProof (wpc_crash with "H") as "H".
+      iModIntro.
+      iMod (fupd_intro_mask') as "Hclo"; [| iMod "H"].
+      { set_solver. }
+      iModIntro.
+      iApply (step_fupdN_le (S k)).
+      { reflexivity. }
+      { lia. }
+      iApply (step_fupdN_wand with "H").
+      iIntros "HP". iMod "HP". iDestruct "HP" as "((_&HP)&Hclo')".
+      iMod "Hclo'".
+      iApply fupd_mask_weaken; auto.
     }
     iMod "Hclo'". iModIntro.
     iApply ("IH" with "Hclo' [] []").
@@ -493,14 +515,7 @@ Proof.
     iApply (step_fupdN_wand with "H").
     iIntros "H".
     iMod "H" as "(($&HP)&$)".
-    iMod "Hclo''". iMod ("Hclo'" with "[HP]").
-    iSplitL "HP"; first by iApply "HP".
-    iAlways. iIntros.
-    rewrite /detached_staged.
-    iApply step_fupdN_inner_later.
-    iNext.
-    iApply (fupd_mask_weaken); eauto.
-    iModIntro; eauto.
+    eauto.
 Abort.
 
 Lemma wpc_staged_invariant s k E1 E2 E1' E2' e Φ Φc P N1 N2 :
