@@ -7,7 +7,6 @@ Import uPred.
 
 (* Define a weakestpre with an explicit crash invariant (i.e. there is a postcondition and a crash condition *)
 
-(* TODO: if e is not a value, should we be allowed to do laters on the Φc? *)
 Definition wpc_pre `{!irisG Λ Σ} (s : stuckness) (k: nat)
     (wpc : coPset -d> coPset -d> expr Λ -d> (val Λ -d> iPropO Σ) -d> iPropO Σ -d> iPropO Σ) :
     coPset -d> coPset -d> expr Λ -d> (val Λ -d> iPropO Σ) -d> iPropO Σ -d> iPropO Σ := λ E1 E2 e1 Φ Φc,
@@ -311,6 +310,24 @@ Proof.
     iModIntro. iModIntro. iNext. iMod "Hclo". by iApply "IH".
 Qed.
 
+Lemma step_fupdN_inner_plus E k1 k2 P:
+  (|={E,∅}=> |={∅,∅}▷=>^k1 |={∅, E}=> |={E,∅}=> |={∅,∅}▷=>^k2 |={∅,E}=> P)
+  ⊢ (|={E,∅}=> |={∅,∅}▷=>^(k1 + k2) |={∅,E}=> P)%I.
+Proof.
+  rewrite Nat_iter_add.
+  iIntros "H". iMod "H". iModIntro.
+  iApply (step_fupdN_mono with "H"). iIntros "H".
+  destruct k2.
+  * simpl. do 3 iMod "H". eauto.
+  * rewrite Nat_iter_S. iMod "H". iMod "H". eauto.
+Qed.
+
+(*
+Lemma wpc_crash E e k Φc
+
+WPC e2 @ k; E1 ∖ ↑N1 ∖ ↑N2;E2 {{ v, (Φ v ∧ (|={E1,E2}=> Φc)) ∗ P }}{{Φc ∗ P}}
+*)
+
 Lemma wpc_staged_invariant_aux s k E1 E2 E1' E2' e Φ Φc P Q1 R1 Q2 R2 N1 N2 γ :
   ↑N1 ⊆ E1 →
   ↑N2 ⊆ E1 →
@@ -318,10 +335,10 @@ Lemma wpc_staged_invariant_aux s k E1 E2 E1' E2' e Φ Φc P Q1 R1 Q2 R2 N1 N2 γ
   (E1 ⊆ E1') →
   (E2' ⊆ E2) →
   N1 ## N2 →
-  inv N1 (detached_ci k E1' E2' N2 P) ∗
+  inv N1 (detached_ci (2 * S (S (S k))) E1' E2' N2 P) ∗
   □ (Q1 -∗ R1) ∗
   □ (Q2 -∗ R2) ∗
-  staged_inv N2 γ (detached_staged (S k) E1' E2' P) ∗
+  staged_inv N2 γ (detached_staged (2 * (S (S (S k)))) E1' E2' P) ∗
   staged_value N2 γ (|={E1 ∖ ↑N1 ∖ ↑N2, ∅}=> |={∅, ∅}▷=>^(S k)
                      |={∅, E1 ∖ ↑N1 ∖ ↑N2}=>
                      Q1 ∗ WPC e @ k; E1 ∖ ↑N1 ∖ ↑N2;E2 {{ v, (Φ v ∧ |={E1,E2}=> Φc) ∗ P }}{{Φc ∗ P}} ∗ Q2) ⊢
@@ -389,7 +406,11 @@ Proof.
     rewrite Hval. iDestruct "H" as "(_&HP)".
     iMod (fupd_intro_mask') as "Hclo"; [| iMod "HP"].
     { set_solver. }
-    iModIntro. iApply (step_fupdN_wand with "HP").
+    iModIntro.
+    iApply (step_fupdN_le (S k)).
+    { reflexivity. }
+    { lia. }
+    iApply (step_fupdN_wand with "HP").
     iIntros "HP". iMod "HP". iMod "Hclo". iModIntro.
     iApply fupd_mask_weaken; auto.
     iDestruct "HP" as "((_&$)&_)".
@@ -435,6 +456,17 @@ Proof.
     { iSplitL "H". iApply "H".
       iAlways. iIntros "H".
       rewrite /detached_staged.
+      replace (2 * S (S (S k))) with (S (S (S k)) + S (S (S k))) by lia.
+      iApply step_fupdN_inner_plus.
+      iMod (fupd_intro_mask' _ (E1 ∖ ↑N1 ∖ ↑N2)) as "Hclo''".
+      { set_solver. }
+      iMod "H".
+      iModIntro.
+      iApply (step_fupdN_le (S k)); first reflexivity.
+      { lia. }
+      iApply (step_fupdN_wand with "H"). iIntros "H".
+      iMod "H". iMod "Hclo''" as "_".
+      iDestruct "H" as "(_&H&_)".
       (* Have to adjust HSI here *)
       admit.
     }
