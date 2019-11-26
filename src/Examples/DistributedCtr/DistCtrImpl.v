@@ -210,13 +210,13 @@ Section proof.
 
   Lemma recover_replicas_both_alive_spec : ∀ (n: Z) γ1 γ2 node1 node2,
       {{{
-          ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
            ∗ node1 ↦ SOMEV #n ∗ node2 ↦ SOMEV #n
            ∗ global_inv (Some n) (Some n) γ1 γ2
     }}}
       recover_replicas #node1 #node2
       {{{ RET #n;
-          ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
            ∗ node1 ↦ SOMEV #(n) ∗ node2 ↦ SOMEV #(n)
            ∗ global_inv (Some (n)) (Some (n)) γ1 γ2
     }}}.
@@ -239,14 +239,14 @@ Section proof.
 
   Lemma recover_replicas_one_dead_spec : ∀ (n: Z) γ1 γ2 node1 node2,
       {{{
-          ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
            ∗ ((node1 ↦ NONEV ∗ node2 ↦ SOMEV #n) ∨ 
             (node1 ↦ SOMEV #n ∗ node2 ↦ NONEV))
            ∗ global_inv (Some n) (Some n) γ1 γ2
     }}}
       recover_replicas #node1 #node2
     {{{ RET #n;
-          ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
            ∗ node1 ↦ SOMEV #(n) ∗ node2 ↦ SOMEV #(n)
            ∗ global_inv (Some (n)) (Some (n)) γ1 γ2
     }}}.
@@ -294,22 +294,23 @@ Section proof.
     wp_pures. wp_load; wp_pures. wp_load; wp_pures.
     wp_store; wp_store.
     iApply "HPost". iFrame.
-    admit. (* TODO how to deal with framing here? *)
-  Admitted.
+    iSplitL "Hγ1◯ Hγ2◯". iExists 0. iFrame; auto.
+    iSplitL "Hγ1●"; iExists 0; auto.
+  Qed.
 
   Lemma get_replicas_one_alive_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
       {{{
-          ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
            ∗ ((node1 ↦ SOMEV #n ∗ node2 ↦ SOMEV #n) ∨
-           (node1 ↦ NONEV ∗ node2 ↦ SOMEV #n) ∨ 
-           (node1 ↦ SOMEV #n ∗ node2 ↦ NONEV))
+            (node1 ↦ NONEV ∗ node2 ↦ SOMEV #n) ∨ 
+            (node1 ↦ SOMEV #n ∗ node2 ↦ NONEV))
            ∗ is_lock LockN γ3 lk1 (node_lock_inv γ1)
            ∗ is_lock LockN γ4 lk2 (node_lock_inv γ2)
            ∗ global_inv (Some n) (Some n) γ1 γ2
     }}}
       get_replicas #node1 #node2 lk1 lk2
     {{{ RET #n;
-        ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
         ∗ node1 ↦ SOMEV #(n) ∗ node2 ↦ SOMEV #(n)
         ∗ is_lock LockN γ3 lk1 (node_lock_inv γ1)
         ∗ is_lock LockN γ4 lk2 (node_lock_inv γ2)
@@ -396,7 +397,7 @@ Qed.
 
   Lemma update_replicas_one_alive_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
       {{{
-          ⌜ (bool_decide (#n = #(-1)) = false) ⌝
+          ⌜ n >= 0 ⌝
            ∗ ((node1 ↦ SOMEV #n ∗ node2 ↦ SOMEV #n) ∨
            (node1 ↦ NONEV ∗ node2 ↦ SOMEV #n) ∨ 
            (node1 ↦ SOMEV #n ∗ node2 ↦ NONEV))
@@ -407,7 +408,7 @@ Qed.
       update_replicas #node1 #node2 lk1 lk2
       {{{ n', RET #();
         ⌜ #n' = #(n+1) ⌝
-        ∗ ⌜ (bool_decide (#n' = #(-1)) = false) ⌝
+        ∗ ⌜ n' >= 0 ⌝
         ∗ node1 ↦ SOMEV #(n') ∗ node2 ↦ SOMEV #(n')
         ∗ is_lock LockN γ3 lk1 (node_lock_inv γ1)
         ∗ is_lock LockN γ4 lk2 (node_lock_inv γ2)
@@ -560,5 +561,4 @@ Qed.
     iIntros; wp_pures.
     iApply "HPost". iFrame. iSplit; auto. 
   Qed.
-
 End proof.
