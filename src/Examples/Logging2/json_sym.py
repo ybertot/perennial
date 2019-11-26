@@ -26,6 +26,37 @@ class SymbolicJSON(object):
     t = datatype.create()
     return t
 
+  def proc(self, procexpr, state):
+    procexpr = self.context.reduce(procexpr)
+    if procexpr['what'] != 'expr:constructor':
+      raise Exception("proc() on unexpected thing", procexpr['what'])
+
+    if procexpr['name'] == 'Bind':
+      p0 = procexpr['args'][0]
+      p1lam = procexpr['args'][1]
+
+      state0, res0 = self.proc(p0, state)
+      p1 = {
+        'what': 'expr:apply',
+        'args': [res0],
+        'func': p1lam,
+      }
+      return self.proc(p1, state0)
+    elif procexpr['name'] == 'Ret':
+      retval = self.context.reduce(procexpr['args'][0])
+      return state, retval
+    elif procexpr['name'] == 'Call':
+      callop = self.context.reduce(procexpr['args'][0])
+      if callop['what'] != 'expr:constructor':
+        raise Exception("callop expected constructor, got", callop['what'])
+
+      if callop['name'] == 'Reads':
+        return state, state
+      else:
+        raise Exception("unexpected callop constructor", callop['name'])
+    else:
+      raise Exception("unexpected proc constructor", procexpr['name'])
+
 def constructor_by_name(self, sort, cname):
   for i in range(0, sort.num_constructors()):
     if sort.constructor(i).name() == cname:

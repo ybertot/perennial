@@ -70,6 +70,10 @@ class Context(object):
         expr = f
         continue
 
+      if expr['what'] == 'expr:coerce':
+        expr = expr['value']
+        continue
+
       if expr['what'] == 'expr:global':
         mod, name = self.scope_name(expr['name'], expr['mod'])
         expr, _ = mod.get_term(name)

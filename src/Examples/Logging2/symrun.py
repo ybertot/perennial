@@ -15,19 +15,6 @@ jc.load(j)
 
 m = jc.get_module('Main')
 
-getattr_step, _ = m.get_term("getattr_step")
-
-arg = 5
-
-expr = {
-  'what': 'expr:apply',
-  'args': [arg],
-  'func': getattr_step,
-}
-
-res = jc.reduce(expr)
-print res
-
 stateType = m.get_type("state")
 
 sym = json_sym.SymbolicJSON(jc)
@@ -37,5 +24,22 @@ sym.register_base_type("gmap", lambda args: z3.ArraySort(sym.z3_sort(args[0]), s
 sym.register_base_type("buf", lambda args: z3.SeqSort(z3.BitVecSort(8)))
 sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort(args[0])))
 
-z3sort = sym.z3_sort(stateType)
-print z3sort
+stateSort = sym.z3_sort(stateType)
+s0 = z3.Const('s0', stateSort)
+
+
+getattr_step, _ = m.get_term("getattr_step")
+
+arg = z3.Int('fh')
+
+expr = {
+  'what': 'expr:apply',
+  'args': [arg],
+  'func': getattr_step,
+}
+
+getattr_step_fh = jc.reduce(expr)
+
+s1, res = sym.proc(getattr_step_fh, s0)
+print s1
+print res
