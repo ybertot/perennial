@@ -230,13 +230,13 @@ Proof.
 Qed.
 
 Lemma wpc_strong_mono s1 s2 k1 k2 E1 E2 E1' E2' e Φ Ψ Φc Ψc :
-  s1 ⊑ s2 → k1 ≤ k2 → E1 ⊆ E2 → E2' ⊆ E1' → E2' ⊆ E2 →
+  s1 ⊑ s2 → k1 ≤ k2 → E1 ⊆ E2 → E2' ⊆ E1' →
   WPC e @ s1; k1; E1 ; E1' {{ Φ }} {{ Φc }} -∗
   (∀ v, Φ v ={E2}=∗ Ψ v) ∧ (Φc ={E1', E2'}=∗ Ψc) -∗
   WPC e @ s2; k2; E2 ; E2' {{ Ψ }} {{ Ψc }}.
 Proof.
-  iIntros (?? HE HE' HE2) "H HΦ".
-  iLöb as "IH" forall (e E1 E2 E1' E2' HE HE' HE2 Φ Ψ Φc Ψc).
+  iIntros (?? HE HE') "H HΦ".
+  iLöb as "IH" forall (e E1 E2 E1' E2' HE HE' Φ Ψ Φc Ψc).
   rewrite !wpc_unfold /wpc_pre.
   destruct (to_val e) as [v|] eqn:?.
   {
@@ -270,9 +270,9 @@ Proof.
       { lia. }
       iIntros "(Hσ & H & Hefs)". iFrame.
       iSplitR "Hefs".
-      ** iApply ("IH" with "[] [] [] H [HΦ]"); auto.
+      ** iApply ("IH" with "[] [] H [HΦ]"); auto.
       ** iApply (big_sepL_impl with "Hefs"); iIntros "!#" (k ef _).
-         iIntros "H". eauto. iApply ("IH" with "[] [] [] H"); auto.
+         iIntros "H". eauto. iApply ("IH" with "[] [] H"); auto.
     * iDestruct "H" as "(_&H)". iMod "H". iDestruct "H" as "(HΦc&Hclo')".
       iMod "Hclo'". iDestruct "HΦ" as "(_&HΦ)".
       iMod ("HΦ" with "[$]") as "HΦc".
@@ -295,15 +295,13 @@ Proof.
 Qed.
 
 Lemma wpc_frame_l s k E1 E2 e Φ Φc R :
-  E2 ⊆ E1 →
   R ∗ WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }} ⊢ WPC e @ s; k; E1 ; E2 {{ v, R ∗ Φ v }} {{ R ∗ Φc }}.
-Proof. iIntros (?) "[? H]". iApply (wpc_strong_mono with "H"); auto with iFrame. Qed.
+Proof. iIntros "[? H]". iApply (wpc_strong_mono with "H"); auto with iFrame. Qed.
 
 Lemma wpc_fupd_open s k E1 E2 E2' e Φ Φc :
-  E2 ⊆ E1 →
   E2 ⊆ E2' →
   WPC e @ s; k ; E1 ; E2' {{ Φ }} {{ |={E2', E2}=> Φc }} ⊢ WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }}.
-Proof. iIntros (??) "H". iApply (wpc_strong_mono s s k k E1 E1 E2' with "H []"); auto. Qed.
+Proof. iIntros (?) "H". iApply (wpc_strong_mono s s k k E1 E1 E2' with "H []"); auto. Qed.
 
 (** XXX: this could be strengthened by being more careful about the masks **)
 Lemma wpc_inv (N: namespace) s k E e Φ Φc :
@@ -355,9 +353,8 @@ Proof.
 Qed.
 
 Lemma wpc_fupd s k E1 E2 e Φ Φc:
-  E2 ⊆ E1 →
   ( WPC e @ s; k; E1 ; E2 {{ v, |={E1}=> Φ v }} {{ Φc }}) ⊢ WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }}.
-Proof. iIntros (?) "H". iApply (wpc_strong_mono with "H"); auto. Qed.
+Proof. iIntros "H". iApply (wpc_strong_mono with "H"); auto. Qed.
 
 Axiom Tok: iProp Σ.
 Axiom Tok_Tok : Tok ∗ Tok -∗ False.
@@ -996,10 +993,9 @@ Qed.
 
 (** * Derived rules *)
 Lemma wpc_mono s k E1 E2 e Φ Ψ Φc Ψc :
-  E2 ⊆ E1 →
   (∀ v, Φ v ⊢ Ψ v) → (Φc ⊢ Ψc) → WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }} ⊢ WPC e @ s; k; E1; E2 {{ Ψ }} {{ Ψc }}.
 Proof.
-  iIntros (? HΦ HΦc) "H"; iApply (wpc_strong_mono with "H"); auto.
+  iIntros (HΦ HΦc) "H"; iApply (wpc_strong_mono with "H"); auto.
   iSplit.
   - iIntros (v) "?". by iApply HΦ.
   - iIntros "?". by iApply HΦc.
@@ -1086,7 +1082,7 @@ Section proofmode_classes.
   Global Instance frame_wpc p s k E1 E2 e R Φ Ψ Φc Ψc :
     (∀ v, Frame p R (Φ v) (Ψ v)) →
      Frame p R Φc Ψc →
-    Frame p R (WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }}) (WPC e @ s; E1; E2 {{ Ψ }} {{ Ψc }}).
+    Frame p R (WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }}) (WPC e @ s; k; E1; E2 {{ Ψ }} {{ Ψc }}).
   Proof. rewrite /Frame=> HR HRc. rewrite wpc_frame_l. apply wpc_mono; [ apply HR | apply HRc ]. Qed.
 
   Global Instance is_except_0_wpc s E1 E2 e Φ Φc : IsExcept0 (WPC e @ s; E1 ; E2 {{ Φ }} {{ Φc }}).
