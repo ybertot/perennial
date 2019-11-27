@@ -31,12 +31,17 @@ class Module(object):
         expr['mod'] = self
       if expr.get('what') == 'type:glob':
         expr['mod'] = self
+      if expr.get('what') == 'expr:constructor':
+        expr['mod'] = self
       for k, v in expr.items():
         self._annotate_globals(v)
 
     if type(expr) == list:
       for v in expr:
         self._annotate_globals(v)
+
+  def redefine_term(self, n, val):
+    self.decls[n]['value'] = val
 
   def get_type(self, n):
     return self.types[n]
@@ -62,13 +67,18 @@ class Context(object):
   def reduce(self, expr):
     while True:
       if expr['what'] == 'expr:apply':
-        f = expr['func']
-        args = expr['args']
-        for arg in args:
-          f = self.reduce(f)
-          f = apply(f, arg)
-        expr = f
-        continue
+        f = self.reduce(expr['func'])
+        if f['what'] == 'expr:lambda':
+          args = expr['args']
+          res = apply(f, args[0])
+          expr = {
+            'what': 'expr:apply',
+            'args': args[1:],
+            'func': res,
+          }
+          if len(expr['args']) == 0:
+            expr = expr['func']
+          continue
 
       if expr['what'] == 'expr:coerce':
         expr = expr['value']
