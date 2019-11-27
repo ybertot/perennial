@@ -48,7 +48,7 @@ class SymbolicJSON(object):
         return state, m[k]
       elif f['id'] == 'len_buf':
         state, buf = self.proc(args[0], state)
-        return state, z3.Length(buf)
+        return state, z3.Int2BV(z3.Length(buf), 64)
       else:
         raise Exception('unknown special function', f['id'])
     else:
@@ -111,11 +111,20 @@ class SymbolicJSON(object):
         state, procexpr = self.proc_constructor_other(procexpr, state)
         continue
 
+      if procexpr['what'] == 'expr:special':
+        if procexpr['id'] == 'u64_zero':
+          procexpr = 0
+          continue
+        elif procexpr['id'] == 'u32_zero':
+          procexpr = 0
+          continue
+        else:
+          raise Exception("unknown special", procexpr['id'])
+
       print procexpr
       raise Exception("proc() on unexpected thing", procexpr['what'])
 
   def proc_constructor_other(self, procexpr, state):
-    print "Other constructor:", procexpr
     t = procexpr['type']
     if t['name'] == 'res':
       t['args'][0] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'unit'}

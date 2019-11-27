@@ -48,15 +48,17 @@ Module NFS3.
   | NF3FIFO
   .
 
-  Definition fh := nat.
-  Definition writeverf := nat.
-  Definition createverf := nat.
-  Definition cookieverf := nat.
+  Axiom fh : Type.
+  Axiom writeverf : Type.
+  Axiom createverf : Type.
+  Axiom cookieverf : Type.
   Definition filename := string.
 
   (* XXX fix later *)
-  Definition uint32 := nat.
-  Definition uint64 := nat.
+  Axiom uint32 : Type.
+  Axiom uint64 : Type.
+  Axiom u32_zero : uint32.
+  Axiom u64_zero : uint64.
 
   Definition fileid := uint64.
   Definition cookie := uint64.
@@ -67,6 +69,7 @@ Module NFS3.
   }.
 
   Global Instance EqDec_time : EqDecision time.
+(*
     intro; intros.
     destruct x, y.
     destruct (eq_nat_dec time_sec0 time_sec1).
@@ -75,6 +78,8 @@ Module NFS3.
     - right; subst; congruence.
     - right; subst; congruence.
   Defined.
+*)
+  Admitted.
 
   Record major_minor := {
     major : uint32;
@@ -160,7 +165,7 @@ Module NFS3.
 
   Parameter read_buf : buf -> nat -> nat -> buf.
   Parameter write_buf : buf -> nat -> buf -> buf.
-  Parameter len_buf : buf -> nat.
+  Parameter len_buf : buf -> uint64.
   Parameter empty_buf : buf.
   Parameter resize_buf : nat -> buf -> buf. (* fill with zero if growing *)
 
@@ -359,6 +364,12 @@ Module NFS3.
   Global Instance countable_inode_state : Countable inode_state.
   Admitted.
 
+  Global Instance eq_dec_fh : EqDecision fh.
+  Admitted.
+
+  Global Instance countable_fh : Countable fh.
+  Admitted.
+
   Record State := {
     fhs : gmap fh (async inode_state);
     verf : writeverf;
@@ -387,15 +398,15 @@ Module NFS3.
       (inode_meta_gid m)
       ( match (inode_state_type i) with
         | Ifile b _ => len_buf b
-        | _ => 0
+        | _ => u64_zero
         end )
-      0
+      u64_zero
       ( match (inode_state_type i) with
         | Iblk mm => mm
         | Ichr mm => mm
-        | _ => Build_major_minor 0 0
+        | _ => Build_major_minor u32_zero u32_zero
         end )
-      0
+      u64_zero
       (inode_meta_fileid m)
       (inode_meta_atime m)
       (inode_meta_mtime m)
@@ -407,7 +418,7 @@ Module NFS3.
     Build_wcc_attr
       ( match (inode_state_type i) with
         | Ifile b _ => len_buf b
-        | _ => 0
+        | _ => u64_zero
         end )
       (inode_meta_mtime m)
       (inode_meta_ctime m).

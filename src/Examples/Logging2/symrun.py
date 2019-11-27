@@ -29,6 +29,14 @@ sym.register_base_type("gmap", lambda args: z3.ArraySort(sym.z3_sort(args[0]),
   })))
 sym.register_base_type("buf", lambda args: z3.SeqSort(z3.BitVecSort(8)))
 sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort(args[0])))
+sym.register_base_type("fh", lambda args: z3.IntSort())
+sym.register_base_type("uint32", lambda args: z3.BitVecSort(32))
+sym.register_base_type("uint64", lambda args: z3.BitVecSort(64))
+
+### Fix later
+sym.register_base_type("fileid", lambda args: z3.BitVecSort(64))
+sym.register_base_type("createverf", lambda args: z3.BitVecSort(64))
+sym.register_base_type("writeverf", lambda args: z3.BitVecSort(64))
 
 sym.set_bool_type(m.get_type("bool"))
 
@@ -43,6 +51,14 @@ m.redefine_term('gmap_lookup', {
 m.redefine_term('len_buf', {
   'what': 'expr:special',
   'id': 'len_buf',
+})
+m.redefine_term('u32_zero', {
+  'what': 'expr:special',
+  'id': 'u32_zero',
+})
+m.redefine_term('u64_zero', {
+  'what': 'expr:special',
+  'id': 'u64_zero',
 })
 
 stateSort = sym.z3_sort(stateType)
