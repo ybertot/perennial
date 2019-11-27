@@ -80,3 +80,12 @@ getattr_step_fh = jc.reduce(expr)
 s1, res = sym.proc(getattr_step_fh, s0)
 print s1
 print res
+
+ERR_PERM = res.sort().accessor(1, 1)(res).sort().constructor(0)()
+
+s = z3.Solver()
+# s.add(s0 != s1)
+# s.add(res.sort().recognizer(0)(res))
+s.add(res.sort().recognizer(1)(res))
+s.add(res.sort().accessor(1, 1)(res) == ERR_PERM)
+print 'Check:', s.check()
