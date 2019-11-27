@@ -473,91 +473,115 @@ Qed.
     iDestruct "Hown2" as (n0 _) "Hown2".
     destruct Hn; inversion H; subst.
     unfold update_replicas.
-    iDestruct "Hnode" as "[(Hnode1 & Hnode2) | Honedead]"; wp_pures;
+    iDestruct "Hnode" as "[(Hnode1 & Hnode2) | Honedead]";
+      wp_pures; 
       wp_apply (acquire_spec with "Hlkinv1");
       iIntros "(Hlked1 & Hγ1●)"; wp_pures;
       wp_apply (acquire_spec with "Hlkinv2");
-      iIntros "(Hlked2 & Hγ2●)"; wp_pures.
+      iIntros "(Hlked2 & Hγ2●)"; wp_pures;
+      iDestruct "Hγ1●" as (n1) "Hγ1●";
+      iDestruct "Hγ2●" as (n2) "Hγ2●";
+      iMod (ghost_var_update γ1 (n') with "Hγ1● Hown1") as "[Hγ1● Hγ1◯]";
+      iMod (ghost_var_update γ2 (n') with "Hγ2● Hown2") as "[Hγ2● Hγ2◯]".
+   
+    - wp_apply (update_node_some_spec with "[Hnode1 Hγ1◯ Hγ1●]").
+      iFrame. iSplit; auto. unfold node_lock_inv. iExists n'; auto.
+      iIntros "(Hnode1 & Hγ1● & Hγ1◯)". wp_let; wp_pures.
 
-    - wp_apply (update_node_some_spec with "[Hnode1 Hown1 Hγ1●]").
-        unfold node_val_inv.
-        iFrame; auto.
-        iIntros "(Hnode1 & Hnodelkinv1 & Hvalinv1)". wp_let; wp_pures.
+      wp_apply (update_node_some_spec with "[Hnode2 Hγ2◯ Hγ2●]").
+      iFrame. iSplit; auto. unfold node_lock_inv. iExists n'; auto.
+      iIntros "(Hnode2 & Hγ2● & Hγ2◯)". wp_let; wp_pures.
+      unfold node_lock_inv; unfold node_val_inv.
 
-        wp_apply (update_node_some_spec with "[Hnode2 Hown2 Hγ2●]").
-        unfold node_val_inv.
-        iFrame; auto.
-        iIntros "(Hnode2 & Hnodelkinv2 & Hvalinv2)". wp_let; wp_pures.
+      wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
+      iFrame; iSplit; auto.
+      iIntros; wp_pures.
 
-        wp_apply (release_spec with "[Hnodelkinv2 Hlked2]"); iFrame; auto.
-        iIntros; wp_pures.
+      wp_apply (release_spec with "[Hlked1 Hγ1● Hlkinv1]").
+      iFrame; iSplit; auto.
+      iIntros; wp_pures.
 
-        wp_apply (release_spec with "[Hnodelkinv1 Hlked1]"); iFrame; auto.
-        iIntros; wp_pures.
+      iApply "HPost"; iSplit; auto; iFrame; iSplit; auto.
+      iPureIntro; omega.
+      iSplit; auto. iSplit; auto.
+      iExists (n'+1). iFrame; auto.
 
-        iApply "HPost". iSplit; auto. iFrame; auto. iSplit.
-        iPureIntro. omega.
-        iSplit; auto. iSplit; auto.
-        iExists (n' + 1). iFrame; auto.
+    - iDestruct "Honedead" as "[(Hnode1 & Hnode2) | (Hnode1 & Hnode2)]"; 
+        unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
 
-    - iDestruct "Honedead" as "[(Hnode1 & Hnode2) | (Hnode1 & Hnode2)]".
-      * wp_apply (update_node_none_spec with "[Hnode1 Hown1 Hγ1●]").
-        unfold node_val_inv.
-        iFrame; auto.
-        iIntros "(Hnode1 & Hnodelkinv1 & Hvalinv1)". wp_let; wp_pures.
+      * wp_apply (update_node_none_spec with "[Hnode1 Hγ1◯ Hγ1●]").
+        iFrame. iSplit; auto. unfold node_lock_inv. iExists n'; auto.
+        iIntros "(Hnode1 & Hγ1● & Hγ1◯)". wp_let; wp_pures.
 
-        wp_apply (update_node_some_spec with "[Hnode2 Hown2 Hγ2●]").
-        unfold node_val_inv.
-        iFrame; auto.
-        iIntros "(Hnode2 & Hnodelkinv2 & Hvalinv2)". wp_let; wp_pures.
+        wp_apply (update_node_some_spec with "[Hnode2 Hγ2◯ Hγ2●]").
+        iFrame. iSplit; auto. unfold node_lock_inv. iExists n'; auto.
+        iIntros "(Hnode2 & Hγ2● & Hγ2◯)". wp_let; wp_pures.
+        unfold node_lock_inv; unfold node_val_inv.
+        iDestruct "Hγ1●" as (n1') "Hγ1●";
+        iDestruct "Hγ2●" as (n2') "Hγ2●".
+        iDestruct "Hγ1◯" as (naf _) "Hγ1◯".
+        iDestruct "Hγ2◯" as (_) "Hγ2◯".
+        iMod (ghost_var_update γ1 (n'+1) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
+        iMod (ghost_var_update γ2 (n'+1) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
 
         wp_apply ((recover_replicas_one_dead_spec (n'+1) γ1 γ2)
-                    with "[- HPost Hlked1 Hlked2 Hnodelkinv1 Hnodelkinv2]").
-        unfold global_inv. iSplit; iFrame; auto.
+                                with "[- HPost Hlked1 Hlked2 ]").
+        iSplit; auto.
         iPureIntro; omega.
-        iSplitL "Hnode1 Hnode2 Hvalinv1 Hvalinv2". iLeft; iFrame; auto.
-        iExists (n'+1). unfold node_val_inv. iSplit.
-        iLeft; iFrame; auto.
-        iExists n'; iFrame; auto.
-        unfold node_val_inv.
+        unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
+        iSplitL "Hnode1 Hnode2 Hγ1◯ Hγ2◯".
+        iLeft. iFrame; auto.
+        iExists (n' +1); iFrame; auto.
+        iSplitR "Hγ2◯"; auto.
+        iSplitL "Hγ1●"; auto.
 
-        iIntros "(Hnval & Hnode1 & Hnode2 & Hinv)".
-        wp_pures.
-
-        wp_apply (release_spec with "[Hlkinv2 Hlked2 Hnodelkinv2]"). iSplit; auto. iFrame; auto.
+        iIntros "(_ & Hnode1 & Hnode2 & Hinv & Hγ1● & Hγ2●)". wp_pures.
+        wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
+        iFrame; iSplit; auto.
         iIntros; wp_pures.
-
-        wp_apply (release_spec with "[Hlkinv1 Hnodelkinv1 Hlked1]"); iFrame; auto.
+        wp_apply (release_spec with "[Hlked1 Hγ1● Hlkinv1]").
+        iFrame; iSplit; auto.
         iIntros; wp_pures.
-        iApply "HPost"; iSplit; auto. iFrame; iSplit; auto.
+        iApply "HPost"; iSplit; auto; iFrame; iSplit; auto.
+        iPureIntro; omega.
 
-      * wp_apply (update_node_some_spec with "[Hnode1 Hown1 Hγ1●]").
-        unfold node_val_inv.
-        iFrame; auto.
-        iIntros "(Hnode1 & Hnodelkinv1 & Hvalinv1)". wp_let; wp_pures.
+      * wp_apply (update_node_some_spec with "[Hnode1 Hγ1◯ Hγ1●]").
+        iFrame. iSplit; auto. unfold node_lock_inv. iExists n'; auto.
+        iIntros "(Hnode1 & Hγ1● & Hγ1◯)". wp_let; wp_pures.
 
-        wp_apply (update_node_none_spec with "[Hnode2 Hown2 Hγ2●]").
-        unfold node_val_inv.
-        iFrame; auto.
-        iIntros "(Hnode2 & Hnodelkinv2 & Hvalinv2)". wp_let; wp_pures.
+        wp_apply (update_node_none_spec with "[Hnode2 Hγ2◯ Hγ2●]").
+        iFrame. iSplit; auto. unfold node_lock_inv. iExists n'; auto.
+        iIntros "(Hnode2 & Hγ2● & Hγ2◯)". wp_let; wp_pures.
+        unfold node_lock_inv; unfold node_val_inv.
+        iDestruct "Hγ1●" as (n1') "Hγ1●";
+        iDestruct "Hγ2●" as (n2') "Hγ2●".
+
+        iDestruct "Hγ1◯" as (_) "Hγ1◯".
+        iDestruct "Hγ2◯" as (naf _) "Hγ2◯".
+        iMod (ghost_var_update γ1 (n'+1) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
+        iMod (ghost_var_update γ2 (n'+1) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
 
         wp_apply ((recover_replicas_one_dead_spec (n'+1) γ1 γ2)
-        with "[- HPost Hlked1 Hlked2 Hnodelkinv1 Hnodelkinv2]").
-        iFrame; auto.
-        unfold global_inv. iFrame; auto. iSplit; iFrame; auto.
-        admit. (* TODO bool_decide *)
-        admit. (* TODO framing  *)
+                                with "[- HPost Hlked1 Hlked2 ]").
+        iSplit; auto.
+        iPureIntro; omega.
+        unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
+        iSplitL "Hnode1 Hnode2 Hγ1◯ Hγ2◯".
+        iRight. iFrame; auto.
+        iExists (n' +1); iFrame; auto.
+        iSplitR "Hγ2◯"; auto.
+        iSplitL "Hγ1●"; auto.
 
-            iIntros "(Hnval & Hnode1 & Hnode2 & Hinv)".
-            wp_pures.
-
-            wp_apply (release_spec with "[Hlkinv2 Hlked2 Hnodelkinv2]"). iSplit; auto. iFrame; auto.
-            iIntros; wp_pures.
-
-            wp_apply (release_spec with "[Hlkinv1 Hnodelkinv1 Hlked1]"); iFrame; auto.
-            iIntros; wp_pures.
-            iApply "HPost"; iSplit; auto. iFrame. iSplit; auto.
-  Admitted.
+        iIntros "(_ & Hnode1 & Hnode2 & Hinv & Hγ1● & Hγ2●)". wp_pures.
+        wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
+        iFrame; iSplit; auto.
+        iIntros; wp_pures.
+        wp_apply (release_spec with "[Hlked1 Hγ1● Hlkinv1]").
+        iFrame; iSplit; auto.
+        iIntros; wp_pures.
+        iApply "HPost"; iSplit; auto; iFrame; iSplit; auto.
+        iPureIntro; omega.
+  Qed.
 
   Lemma update_replicas_both_dead_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
       {{{
@@ -577,37 +601,49 @@ Qed.
     iIntros (n γ1 γ2 γ3 γ4 lk1 lk2 node1 node2 ϕ) "((Hnode1 & Hnode2) & #Hlkinv1 & #Hlkinv2 & Hglobalinv) HPost".
     unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
     iDestruct "Hglobalinv" as (n') "(Hown1 & Hown2)".
-    iDestruct "Hown1" as (Hn) "Hown1".
-    iDestruct "Hown2" as (_) "Hown2".
+    iDestruct "Hown1" as (Hn) "Hγ1◯".
+    iDestruct "Hown2" as (n0 _) "Hγ2◯".
     destruct Hn; inversion H; subst.
     unfold update_replicas.
     wp_pures.
     wp_apply (acquire_spec with "Hlkinv1");
       iIntros "(Hlked1 & Hγ1●)"; wp_pures;
       wp_apply (acquire_spec with "Hlkinv2");
-      iIntros "(Hlked2 & Hγ2●)"; wp_pures.
+      iIntros "(Hlked2 & Hγ2●)"; wp_pures;
+        iDestruct "Hγ1●" as (n1) "Hγ1●";
+        iDestruct "Hγ2●" as (n2) "Hγ2●";
+        iMod (ghost_var_update γ1 (0) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
+        iMod (ghost_var_update γ2 (0) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
 
-    wp_apply (update_node_none_spec with "[Hnode1 Hown1 Hγ1●]").
-        unfold node_val_inv.
+    wp_apply (update_node_none_spec with "[Hnode1 Hγ1◯ Hγ1●]").
+        unfold node_val_inv; unfold node_lock_inv.
         iFrame; auto.
-        iIntros "(Hnode1 & Hnodelkinv1 & Hvalinv1)". wp_let; wp_pures.
+        iIntros "(Hnode1 & Hγ1● & Hγ1◯)". wp_let; wp_pures.
 
-    wp_apply (update_node_none_spec with "[Hnode2 Hown2 Hγ2●]").
-        unfold node_val_inv.
+    wp_apply (update_node_none_spec with "[Hnode2 Hγ2◯ Hγ2●]").
+        unfold node_val_inv; unfold node_lock_inv.
         iFrame; auto.
-        iIntros "(Hnode2 & Hnodelkinv2 & Hvalinv2)". wp_let; wp_pures.
+        iIntros "(Hnode2 & Hγ2● & Hγ2◯)". wp_let; wp_pures.
+        unfold node_lock_inv; unfold node_val_inv.
+    iDestruct "Hγ1◯" as (nah01 _) "Hγ1◯".
+    iDestruct "Hγ2◯" as (nah02 _) "Hγ2◯".
+    iDestruct "Hγ1●" as (nah1) "Hγ1●";
+    iDestruct "Hγ2●" as (nah2) "Hγ2●".
+    iMod (ghost_var_update γ1 (0) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
+    iMod (ghost_var_update γ2 (0) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
 
     wp_apply ((recover_replicas_both_dead_spec 0 γ1 γ2)
-                with "[- HPost Hlked1 Hlked2]"). 
+                with "[- HPost Hlked1 Hlked2]").
     iFrame; unfold global_inv; unfold node_lock_inv; unfold node_val_inv; auto.
-    iExists 0; iFrame; auto.
+    iSplitL "Hγ1◯ Hγ2◯". iExists 0. iFrame; auto. iSplit; auto.
+    iSplitL "Hγ1●"; auto.
 
-    iIntros "(Hnode1 & Hnode2 & Hinv & Hn1inv & Hn2inv)".
+    iIntros "(Hnode1 & Hnode2 & Hinv & Hγ1● & Hγ2●)".
     wp_pures.
-    wp_apply (release_spec with "[Hlked2 Hlkinv2 Hn2inv]").
+    wp_apply (release_spec with "[Hlked2 Hlkinv2 Hγ2●]").
     iFrame; auto.
     iIntros; wp_pures.
-    wp_apply (release_spec with "[Hlked1 Hlkinv1 Hn1inv]").
+    wp_apply (release_spec with "[Hlked1 Hlkinv1 Hγ1●]").
     iFrame; auto.
     iIntros; wp_pures.
     iApply "HPost". iFrame. iSplit; auto. 
