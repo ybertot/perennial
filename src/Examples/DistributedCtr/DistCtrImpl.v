@@ -104,8 +104,8 @@ Section proof.
   Definition node_lock_inv (γ: gname) : iProp Σ :=
     (∃ n, own γ (● (Excl' n)))%I.
 
-  Definition global_inv (optv1 optv2: option Z) (γ1 γ2 : gname): iProp Σ := ∃ n,
-    (node_val_inv n optv1 γ1) ∗ (node_val_inv n optv2 γ2).
+  Definition global_inv (optv1 optv2: option Z) (γ1 γ2 : gname): iProp Σ := 
+    ∃ n, (node_val_inv n optv1 γ1) ∗ ∃ n, (node_val_inv n optv2 γ2).
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
 
   Lemma alloc_node_spec : 
@@ -193,19 +193,20 @@ Section proof.
     {{{ RET #0;
           node ↦ NONEV
           ∗ node_lock_inv γ1
-          ∗ node_val_inv 0 (Some 0) γ1
+          ∗ (∃ n, node_val_inv n None γ1)
     }}}.
   Proof.
     iIntros (n γ1 node Φ) "(Hnode & Hlkinv & Hnodeinv & Hown) HPost".
     unfold update_node.
     unfold node_lock_inv.
     iDestruct "Hlkinv" as (n') "Hlkinv".
-    iMod (ghost_var_update γ1 0 with "Hlkinv Hown") as "[Hγ1● Hγ1◯]".
     wp_pures.
     wp_load.
     wp_pures.
-    iApply "HPost". 
-    iFrame; auto.
+    iApply "HPost".
+    iSplitL "Hnode"; auto.
+    iSplitL "Hlkinv". iExists n'; auto.
+    unfold node_val_inv. iExists n. iSplit; auto. 
   Qed.
 
   Lemma recover_replicas_both_alive_spec : ∀ (n: Z) γ1 γ2 node1 node2,
@@ -213,20 +214,24 @@ Section proof.
           ⌜ ~n < 0 ⌝
            ∗ node1 ↦ SOMEV #n ∗ node2 ↦ SOMEV #n
            ∗ global_inv (Some n) (Some n) γ1 γ2
+           ∗ node_lock_inv γ1
+           ∗ node_lock_inv γ2
     }}}
       recover_replicas #node1 #node2
       {{{ RET #n;
           ⌜ ~n < 0 ⌝
            ∗ node1 ↦ SOMEV #(n) ∗ node2 ↦ SOMEV #(n)
            ∗ global_inv (Some (n)) (Some (n)) γ1 γ2
+           ∗ node_lock_inv γ1
+           ∗ node_lock_inv γ2
     }}}.
   Proof.
-    iIntros (n γ1 γ2 node1 node2 ϕ) "(Hn & Hnode1 & Hnode2 & Hinv) HPost".
+    iIntros (n γ1 γ2 node1 node2 ϕ) "(Hn & Hnode1 & Hnode2 & Hinv & Hlkinv1 & Hlkinv2) HPost".
     iDestruct "Hn" as %Hn.
     unfold global_inv; unfold node_val_inv.
     iDestruct "Hinv" as (n0) "(Hown1 & Hown2)".
     iDestruct "Hown1" as (Hsomen) "Hown1".
-    iDestruct "Hown2" as (_) "Hown2".
+    iDestruct "Hown2" as (n1) "Hown2".
     destruct Hsomen; [ | inversion H].
     unfold recover_replicas.
     wp_pures.
@@ -258,7 +263,7 @@ Section proof.
     unfold global_inv; unfold node_val_inv;
     iDestruct "Hinv" as (n') "(Hown1 & Hown2)";
     iDestruct "Hown1" as (Hn) "Hown1";
-    iDestruct "Hown2" as (_) "Hown2";
+    iDestruct "Hown2" as (n1) "(_ & Hown2)";
     iDestruct "Hnodelk1" as (nlk1) "Hnodelk1";
     iDestruct "Hnodelk2" as (nlk2) "Hnodelk2";
     iMod (ghost_var_update γ1 n with "Hnodelk1 Hown1") as "[Hγ1● Hγ1◯]";
@@ -269,7 +274,8 @@ Section proof.
     [wp_load; wp_pures | ]; wp_store;
     iApply "HPost"; iFrame; iSplitR "Hγ1● Hγ2●"; unfold node_lock_inv. 
     1,3: iExists n; iFrame; auto.
-    all: iSplitL "Hγ1●"; iExists n; auto.
+    1,2: iSplitR "Hγ2◯"; [iLeft | iExists n]; auto.
+    all: iSplitL "Hγ1●"; iExists n; auto. 
   Qed.
 
   Lemma recover_replicas_both_dead_spec : ∀ (n: Z) γ1 γ2 node1 node2, 
@@ -291,7 +297,7 @@ Section proof.
     unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
     iDestruct "Hinv" as (n') "(Hown1 & Hown2)".
     iDestruct "Hown1" as (Hn) "Hown1".
-    iDestruct "Hown2" as (_) "Hown2".
+    iDestruct "Hown2" as (n1 _) "Hown2".
     iDestruct "Hnodelk1" as (nlk1) "Hnodelk1".
     iDestruct "Hnodelk2" as (nlk2) "Hnodelk2".
     iMod (ghost_var_update γ1 (0) with "Hnodelk1 Hown1") as "[Hγ1● Hγ1◯]".
@@ -303,6 +309,7 @@ Section proof.
     wp_store; wp_store.
     iApply "HPost". iFrame.
     iSplitL "Hγ1◯ Hγ2◯". iExists 0. iFrame; auto.
+    iSplitR "Hγ2◯"; auto.
     iSplitL "Hγ1●"; iExists 0; auto.
   Qed.
 
@@ -330,7 +337,7 @@ Section proof.
     unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
     iDestruct "Hglobalinv" as (n') "(Hown1 & Hown2)".
     iDestruct "Hown1" as (Hn) "Hown1".
-    iDestruct "Hown2" as (_) "Hown2".
+    iDestruct "Hown2" as (n0 _) "Hown2".
     destruct Hn; inversion H; subst.
     unfold get_replicas.
     iDestruct "Hnode" as "[(Hnode1 & Hnode2) | Honedead]";
@@ -339,30 +346,48 @@ Section proof.
       iIntros "(Hlked1 & Hγ1●)"; wp_pures;
       wp_apply (acquire_spec with "Hlkinv2");
       iIntros "(Hlked2 & Hγ2●)"; wp_pures;
-      [ wp_apply ((recover_replicas_both_alive_spec n' γ1 γ2)
-                        with "[- HPost Hlked1 Hlked2 Hγ1● Hγ2●]")  |
-        wp_apply ((recover_replicas_one_dead_spec n' γ1 γ2)
-                            with "[- HPost Hlked1 Hlked2]") ];
-      iFrame; auto; unfold global_inv; unfold node_val_inv.
-    
-      - iSplit; auto.
+      iDestruct "Hγ1●" as (n1) "Hγ1●";
+      iDestruct "Hγ2●" as (n2) "Hγ2●";
+      iMod (ghost_var_update γ1 (n') with "Hγ1● Hown1") as "[Hγ1● Hγ1◯]";
+      iMod (ghost_var_update γ2 (n') with "Hγ2● Hown2") as "[Hγ2● Hγ2◯]".
+   
+      - wp_apply ((recover_replicas_both_alive_spec n' γ1 γ2)
+                        with "[- HPost Hlked1 Hlked2]").
+        unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
+        iFrame; iSplit; auto.
+        iSplitL "Hγ1◯ Hγ2◯".
         iExists n'; iFrame; auto.
-      - iIntros "(_ & Hnode1 & Hnode2 & Hinv)". wp_let; wp_pures.
-        case_bool_decide; try contradiction;
-          wp_pures; wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
+        iSplitR "Hγ2◯"; auto.
+        iSplitL "Hγ1●"; iExists n'; auto.
+        iIntros "(_ & Hnode1 & Hnode2 & Hinv & Hγ1● & Hγ2●)". wp_let; wp_pures.
+        case_bool_decide; try contradiction; wp_pures.
+
+        wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
         iFrame; iSplit; auto.
         iIntros; wp_pures.
         wp_apply (release_spec with "[Hlked1 Hγ1● Hlkinv1]").
         iFrame; iSplit; auto.
         iIntros; wp_pures.
         iApply "HPost"; iSplit; auto; iFrame; iSplit; auto.
-      - iSplit; auto.
-        iDestruct "Honedead" as "[H1dead | H2dead]".
+      - wp_apply ((recover_replicas_one_dead_spec n' γ1 γ2)
+                            with "[- HPost Hlked1 Hlked2 ]").
+        iSplit; auto.
+        iDestruct "Honedead" as "[H1dead | H2dead]";
+        unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
+        iSplitL "H1dead Hγ1◯ Hγ2◯".
         iLeft. iFrame; auto. iExists n'; iFrame; auto.
+        iSplitR "Hγ2◯"; auto. 
+        iSplitL "Hγ1●"; auto.
+
+        iSplitL "H2dead Hγ1◯ Hγ2◯".
         iRight. iFrame; auto. iExists n'; iFrame; auto.
-      - iIntros "(_ & Hnode1 & Hnode2 & Hinv & Hγ1● & Hγ2●)". wp_let; wp_pures.
-        case_bool_decide; try contradiction;
-          wp_pures. wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
+        iSplitR "Hγ2◯"; auto. 
+        iSplitL "Hγ1●"; auto.
+        unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
+
+        iIntros "(_ & Hnode1 & Hnode2 & Hinv & Hγ1● & Hγ2●)". wp_let; wp_pures.
+        case_bool_decide; try contradiction; wp_pures.
+        wp_apply (release_spec with "[Hlked2 Hγ2● Hlkinv2]").
         iFrame; iSplit; auto.
         iIntros; wp_pures.
         wp_apply (release_spec with "[Hlked1 Hγ1● Hlkinv1]").
@@ -390,7 +415,7 @@ Qed.
     unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
     iDestruct "Hglobalinv" as (n') "(Hown1 & Hown2)".
     iDestruct "Hown1" as (Hn) "Hown1".
-    iDestruct "Hown2" as (_) "Hown2".
+    iDestruct "Hown2" as (n0 _) "Hown2".
     destruct Hn; inversion H; subst.
     unfold get_replicas.
     wp_pures.
@@ -398,13 +423,20 @@ Qed.
       iIntros "(Hlked1 & Hγ1●)"; wp_pures;
       wp_apply (acquire_spec with "Hlkinv2");
       iIntros "(Hlked2 & Hγ2●)"; wp_pures.
+    iDestruct "Hγ1●" as (nlk1) "Hγ1●".
+    iDestruct "Hγ2●" as (nlk2) "Hγ2●".
+ 
+    iMod (ghost_var_update γ1 n' with "Hγ1● Hown1") as "[Hγ1● Hγ1◯]".
+    iMod (ghost_var_update γ2 n' with "Hγ2● Hown2") as "[Hγ2● Hγ2◯]".
+
     wp_apply ((recover_replicas_both_dead_spec n' γ1 γ2)
                 with "[- HPost Hlked1 Hlked2]"). 
     iFrame; unfold global_inv; unfold node_lock_inv; unfold node_val_inv; auto.
-    iExists n'; iFrame; auto.
+    iSplitL "Hγ1◯ Hγ2◯". iExists n'; iFrame; auto.
+    iSplitR "Hγ2◯"; auto. 
+    iSplitL "Hγ1●"; auto.
 
     iIntros "(Hnode1 & Hnode2 & Hinv & Hn1inv & Hn2inv)".
-    wp_pures.
     wp_apply (release_spec with "[Hlked2 Hlkinv2 Hn2inv]").
     iFrame; auto.
     iIntros; wp_pures.
@@ -438,7 +470,7 @@ Qed.
     unfold global_inv; unfold node_val_inv; unfold node_lock_inv.
     iDestruct "Hglobalinv" as (n') "(Hown1 & Hown2)".
     iDestruct "Hown1" as (Hn) "Hown1".
-    iDestruct "Hown2" as (_) "Hown2".
+    iDestruct "Hown2" as (n0 _) "Hown2".
     destruct Hn; inversion H; subst.
     unfold update_replicas.
     iDestruct "Hnode" as "[(Hnode1 & Hnode2) | Honedead]"; wp_pures;
@@ -457,7 +489,7 @@ Qed.
         iFrame; auto.
         iIntros "(Hnode2 & Hnodelkinv2 & Hvalinv2)". wp_let; wp_pures.
 
-               wp_apply (release_spec with "[Hnodelkinv2 Hlked2]"); iFrame; auto.
+        wp_apply (release_spec with "[Hnodelkinv2 Hlked2]"); iFrame; auto.
         iIntros; wp_pures.
 
         wp_apply (release_spec with "[Hnodelkinv1 Hlked1]"); iFrame; auto.
@@ -481,11 +513,14 @@ Qed.
 
         wp_apply ((recover_replicas_one_dead_spec (n'+1) γ1 γ2)
                     with "[- HPost Hlked1 Hlked2 Hnodelkinv1 Hnodelkinv2]").
-        iFrame; auto.
-        unfold global_inv. iFrame; auto. iSplit; iFrame; auto.
-        iPureIntro. omega.
-        iSplitL "Hnode1 Hnode2"; auto. iLeft; iFrame; auto.
+        unfold global_inv. iSplit; iFrame; auto.
+        iPureIntro; omega.
+        iSplitL "Hnode1 Hnode2 Hvalinv1 Hvalinv2". iLeft; iFrame; auto.
+        iExists (n'+1). unfold node_val_inv. iSplit.
+        iLeft; iFrame; auto.
         iExists n'; iFrame; auto.
+        unfold node_val_inv.
+
         iIntros "(Hnval & Hnode1 & Hnode2 & Hinv)".
         wp_pures.
 
