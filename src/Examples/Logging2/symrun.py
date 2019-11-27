@@ -30,6 +30,8 @@ sym.register_base_type("gmap", lambda args: z3.ArraySort(sym.z3_sort(args[0]),
 sym.register_base_type("buf", lambda args: z3.SeqSort(z3.BitVecSort(8)))
 sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort(args[0])))
 
+sym.set_bool_type(m.get_type("bool"))
+
 m.redefine_term('gmap_lookup', {
   'what': 'expr:lambda',
   'argnames': ['unused0', 'unused1'],

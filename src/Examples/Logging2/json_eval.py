@@ -16,6 +16,7 @@ class Module(object):
             'argtypes': c['argtypes'],
           }
       elif d['what'] == 'decl:term':
+        d['value'] = rename_binders(d['value'], {})
         self.decls[d['name']] = d
       elif d['what'] == 'decl:type':
         self.types[d['name']] = d['value']
@@ -66,6 +67,9 @@ class Context(object):
 
   def reduce(self, expr):
     while True:
+      if type(expr) != dict:
+        return expr
+
       if expr['what'] == 'expr:apply':
         f = self.reduce(expr['func'])
         if f['what'] == 'expr:lambda':
@@ -78,6 +82,11 @@ class Context(object):
           }
           if len(expr['args']) == 0:
             expr = expr['func']
+          continue
+
+      if expr['what'] == 'expr:lambda':
+        if len(expr['argnames']) == 0:
+          expr = expr['body']
           continue
 
       if expr['what'] == 'expr:coerce':
@@ -111,6 +120,10 @@ class Context(object):
           }
           expr = res
           continue
+
+      if expr['what'] == 'expr:let':
+        expr = subst_what(expr['body'], 'expr:rel', expr['name'], expr['nameval'])
+        continue
 
       ## No reductions possible
       return expr
@@ -148,3 +161,95 @@ def apply(lam, argval):
     res = res['body']
 
   return res
+
+def rename_binders(expr, namemap):
+  if expr['what'] == 'expr:lambda':
+    newnamemap = {k: v for k, v in namemap.items()}
+    newargnames = []
+    for argname in expr['argnames']:
+      n = anon_binder(argname)
+      newargnames.append(n)
+      newnamemap[argname] = n
+    return {
+      'what': expr['what'],
+      'argnames': newargnames,
+      'body': rename_binders(expr['body'], newnamemap),
+    }
+  elif expr['what'] == 'expr:let':
+    newnamemap = {k: v for k, v in namemap.items()}
+    n = anon_binder(expr['name'])
+    newnamemap[expr['name']] = n
+    return {
+      'what': expr['what'],
+      'name': n,
+      'nameval': rename_binders(expr['nameval'], namemap),
+      'body': rename_binders(expr['body'], newnamemap),
+    }
+  elif expr['what'] == 'expr:case':
+    newcases = []
+    for case in expr['cases']:
+      casenamemap = {k: v for k, v in namemap.items()}
+      pat = case['pat']
+      if pat['what'] == 'pat:constructor':
+        newargnames = []
+        for argname in pat['argnames']:
+          n = anon_binder(argname)
+          newargnames.append(n)
+          casenamemap[argname] = n
+        newpat = {
+          'what': pat['what'],
+          'name': pat['name'],
+          'argnames': newargnames,
+        }
+      elif pat['what'] == 'pat:wild':
+        newpat = pat
+      else:
+        raise Exception('unhandled pat', pat['what'])
+      newcase = {
+        'what': case['what'],
+        'pat': newpat,
+        'body': rename_binders(case['body'], casenamemap),
+      }
+      newcases.append(newcase)
+    return {
+      'what': expr['what'],
+      'expr': rename_binders(expr['expr'], namemap),
+      'cases': newcases,
+    }
+  elif expr['what'] == 'expr:constructor':
+    return {
+      'what': expr['what'],
+      'mod': expr['mod'],
+      'name': expr['name'],
+      'args': [rename_binders(a, namemap) for a in expr['args']],
+    }
+  elif expr['what'] == 'expr:apply':
+    return {
+      'what': expr['what'],
+      'args': [rename_binders(a, namemap) for a in expr['args']],
+      'func': rename_binders(expr['func'], namemap),
+    }
+  elif expr['what'] == 'expr:rel':
+    return {
+      'what': expr['what'],
+      'name': namemap[expr['name']],
+    }
+  elif expr['what'] == 'expr:global':
+    return expr
+  elif expr['what'] == 'expr:dummy':
+    return expr
+  elif expr['what'] == 'expr:axiom':
+    return expr
+  elif expr['what'] == 'expr:coerce':
+    return {
+      'what': expr['what'],
+      'value': rename_binders(expr['value'], namemap),
+    }
+  else:
+    raise Exception('unknown expr', expr['what'])
+
+anon_binder_ctr = 0
+def anon_binder(origname):
+  global anon_binder_ctr
+  anon_binder_ctr += 1
+  return "__anon_binder_%s_%d" % (origname, anon_binder_ctr)

@@ -6,6 +6,10 @@ class SymbolicJSON(object):
   def __init__(self, context):
     self.context = context
     self.base_types = {}
+    self.bool_sort = None
+
+  def set_bool_type(self, t):
+    self.bool_sort = self.z3_sort(t)
 
   def register_base_type(self, name, z3sort_lam):
     self.base_types[name] = z3sort_lam
@@ -48,11 +52,12 @@ class SymbolicJSON(object):
       raise Exception('unknown apply on', f['what'])
 
   def proc_case(self, expr, state):
+    print "Pattern-match:", expr
+    print "Matching before eval", expr['expr']
     state, victim = self.proc(expr['expr'], state)
+    print "Matching", victim
     resstate = None
     resvalue = None
-
-    print "Symbolic match victim", victim, victim.sort()
 
     for case in expr['cases']:
       pat = case['pat']
@@ -64,39 +69,63 @@ class SymbolicJSON(object):
           if argname == '_': continue
           val = victim.sort().accessor(cidx, idx)(victim)
           body = json_eval.subst_what(body, 'expr:rel', argname, val)
+        print "Pattern", patCondition
+        print "Pre-evaluated body", body
         patstate, patbody = self.proc(body, state)
+        print "After evaluation, body", patbody
         if resstate is None:
           resstate = patstate
           resvalue = patbody
         else:
-          print 'condition', patCondition
-          print 'patstate', patstate
-          print 'patbody', patbody
           resstate = z3.If(patCondition, patstate, resstate)
-          resvalue = z3.If(patCondition, patvalue, resvalue)
+          resvalue = z3.If(patCondition, patbody, resvalue)
       else:
         raise Exception('unknown pattern type', pat['what'])
 
-    print "Symbolic match result", resstate, resvalue
+    print "Match result", resvalue
     return resstate, resvalue
 
   def proc(self, procexpr, state):
-    if type(procexpr) != dict:
-      return state, procexpr
-
     procexpr = self.context.reduce(procexpr)
-    if procexpr['what'] == 'expr:apply':
-      return self.proc_apply(procexpr, state)
-    elif procexpr['what'] == 'expr:case':
-      return self.proc_case(procexpr, state)
-    elif procexpr['what'] == 'expr:constructor':
-      mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
-      c = mod.get_constructor(name)
-      if c['typename'] == 'proc':
-        return self.proc_constructor_proc(procexpr, state)
-      return self.proc_constructor_other(procexpr, state)
-    else:
+
+    while True:
+      if type(procexpr) != dict:
+        return state, procexpr
+
+      if procexpr['what'] == 'expr:apply':
+        state, procexpr = self.proc_apply(procexpr, state)
+        continue
+
+      if procexpr['what'] == 'expr:case':
+        state, procexpr = self.proc_case(procexpr, state)
+        continue
+
+      if procexpr['what'] == 'expr:constructor':
+        mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
+        c = mod.get_constructor(name)
+        if c['typename'] == 'proc':
+          state, procexpr = self.proc_constructor_proc(procexpr, state)
+          continue
+
+        state, procexpr = self.proc_constructor_other(procexpr, state)
+        continue
+
+      print procexpr
       raise Exception("proc() on unexpected thing", procexpr['what'])
+
+  def proc_constructor_other(self, procexpr, state):
+    mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
+    c = mod.get_constructor(name)
+    t = mod.get_type(c['typename'])
+    sort = self.z3_sort(t)
+    cid = constructor_by_name(sort, name)
+
+    cargs = []
+    for arg in procexpr['args']:
+      state, carg = self.proc(arg, state)
+      cargs.append(carg)
+
+    return state, sort.constructor(cid)(*cargs)
 
   def proc_constructor_proc(self, procexpr, state):
     if procexpr['name'] == 'Bind':
@@ -111,7 +140,6 @@ class SymbolicJSON(object):
       }
       return self.proc(p1, state0)
     elif procexpr['name'] == 'Ret':
-      print "Ret:", procexpr['args'][0]
       retval = self.context.reduce(procexpr['args'][0])
       return state, retval
     elif procexpr['name'] == 'Call':
@@ -121,6 +149,8 @@ class SymbolicJSON(object):
 
       if callop['name'] == 'Reads':
         return state, state
+      elif callop['name'] == 'SymBool':
+        return state, z3.Const(anon(), self.bool_sort)
       else:
         raise Exception("unexpected callop constructor", callop['name'])
     else:
@@ -131,3 +161,9 @@ def constructor_by_name(sort, cname):
     if sort.constructor(i).name() == cname:
       return i
   raise Exception("Unknown constructor", sort, cname)
+
+anonctr = 0
+def anon():
+  global anonctr
+  anonctr += 1
+  return "anon%d" % anonctr
