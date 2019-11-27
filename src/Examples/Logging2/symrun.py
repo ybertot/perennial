@@ -40,6 +40,10 @@ m.redefine_term('gmap_lookup', {
     'id': 'gmap_lookup',
   },
 })
+m.redefine_term('len_buf', {
+  'what': 'expr:special',
+  'id': 'len_buf',
+})
 
 stateSort = sym.z3_sort(stateType)
 s0 = z3.Const('s0', stateSort)

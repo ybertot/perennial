@@ -29,6 +29,8 @@ class SymbolicJSON(object):
     if base_lam is not None:
       return base_lam(typeexpr['args'])
 
+    print "z3_sort()", typeexpr
+
     datatype = z3.Datatype(str(typeexpr['name']))
     for c in typeexpr['constructors']:
       cname = str(c['name'])
@@ -46,20 +48,21 @@ class SymbolicJSON(object):
         state, k = self.proc(args[0], state)
         state, m = self.proc(args[1], state)
         return state, m[k]
+      elif f['id'] == 'len_buf':
+        state, buf = self.proc(args[0], state)
+        return state, z3.Length(buf)
       else:
         raise Exception('unknown special function', f['id'])
     else:
+      print expr
       raise Exception('unknown apply on', f['what'])
 
   def proc_case(self, expr, state):
-    print "Pattern-match:", expr
-    print "Matching before eval", expr['expr']
     state, victim = self.proc(expr['expr'], state)
-    print "Matching", victim
     resstate = None
     resvalue = None
 
-    for case in expr['cases']:
+    for case in expr['cases'][::-1]:
       pat = case['pat']
       if pat['what'] == 'pat:constructor':
         body = case['body']
@@ -69,20 +72,20 @@ class SymbolicJSON(object):
           if argname == '_': continue
           val = victim.sort().accessor(cidx, idx)(victim)
           body = json_eval.subst_what(body, 'expr:rel', argname, val)
-        print "Pattern", patCondition
-        print "Pre-evaluated body", body
         patstate, patbody = self.proc(body, state)
-        print "After evaluation, body", patbody
         if resstate is None:
           resstate = patstate
           resvalue = patbody
         else:
           resstate = z3.If(patCondition, patstate, resstate)
           resvalue = z3.If(patCondition, patbody, resvalue)
+      elif pat['what'] == 'pat:wild':
+        if resstate is not None:
+          raise Exception('wildcard not the last pattern')
+        resstate, resvalue = self.proc(case['body'], state)
       else:
         raise Exception('unknown pattern type', pat['what'])
 
-    print "Match result", resvalue
     return resstate, resvalue
 
   def proc(self, procexpr, state):
@@ -114,6 +117,7 @@ class SymbolicJSON(object):
       raise Exception("proc() on unexpected thing", procexpr['what'])
 
   def proc_constructor_other(self, procexpr, state):
+    print "CONSTRUCTOR OTHER", procexpr
     mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
     c = mod.get_constructor(name)
     t = mod.get_type(c['typename'])
