@@ -102,7 +102,7 @@ class Context(object):
         mod, name = self.scope_name(expr['name'], expr['mod'])
         res = mod.get_type(name)
         res = {k: v for k, v in res.items()}
-        res['args'] = res.get('args', []) + expr['args']
+        res['args'] = res.get('args', []) + expr.get('args', [])
         expr = res
         continue
 
@@ -213,12 +213,14 @@ def rename_binders(expr, namemap):
       newcases.append(newcase)
     return {
       'what': expr['what'],
+      'type': expr['type'],
       'expr': rename_binders(expr['expr'], namemap),
       'cases': newcases,
     }
   elif expr['what'] == 'expr:constructor':
     return {
       'what': expr['what'],
+      'type': expr['type'],
       'mod': expr['mod'],
       'name': expr['name'],
       'args': [rename_binders(a, namemap) for a in expr['args']],

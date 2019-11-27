@@ -320,6 +320,7 @@ Module NFS3.
   .
 
   Record inode_meta := {
+    inode_meta_nlink : uint32;
     inode_meta_mode : uint32;
     inode_meta_uid : uint32;
     inode_meta_gid : uint32;
@@ -331,7 +332,8 @@ Module NFS3.
 
   Global Instance eta_inode_meta : Settable _ :=
     settable! Build_inode_meta
-      < inode_meta_mode;
+      < inode_meta_nlink;
+        inode_meta_mode;
         inode_meta_uid;
         inode_meta_gid;
         inode_meta_fileid;
@@ -367,7 +369,7 @@ Module NFS3.
     settable! Build_State
       < fhs; verf; clock >.
 
-  Definition inode_attrs (i : inode_state) (nlink : uint32) : fattr :=
+  Definition inode_attrs (i : inode_state) : fattr :=
     let m := inode_state_meta i in
     Build_fattr
       ( match (inode_state_type i) with
@@ -380,7 +382,7 @@ Module NFS3.
         | Ififo => NF3FIFO
         end )
       (inode_meta_mode m)
-      nlink
+      (inode_meta_nlink m)
       (inode_meta_uid m)
       (inode_meta_gid m)
       ( match (inode_state_type i) with
@@ -452,6 +454,7 @@ Module NFS3.
     Definition null_step : spec_proc unit :=
       pure tt.
 
+(*
     Definition count_links_dir (count_fh : fh) (dir_fh : fh) : nat :=
       if (decide (count_fh = dir_fh)) then 1 else 0.
 
@@ -464,6 +467,7 @@ Module NFS3.
         add_up (fmap (count_links_dir fh) d)
       | _ => 0
       end.
+*)
 
     Definition get_fh {A T} (f : fh) (a : A) `(rx : inode_state -> spec_proc (res A T)) : spec_proc (res A T) :=
       i <- reads (fun s => s.(fhs) !! f);
@@ -480,9 +484,14 @@ Module NFS3.
     Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
                                  (at level 54, right associativity, only parsing).
 
+(*
     Definition inode_attr (f : fh) (i : inode_state) : spec_proc fattr :=
       nlink <- reads (fun s => add_up (fmap (count_links f) (fmap latest s.(fhs))));
       pure (inode_attrs i nlink).
+*)
+
+    Definition inode_attr (f : fh) (i : inode_state) : spec_proc fattr :=
+      pure (inode_attrs i).
 
     Definition getattr_step (f : fh) : spec_proc (res unit fattr) :=
       i <~- get_fh f tt;
@@ -495,6 +504,14 @@ Check getattr_step.
 Require Import Extraction.
 Extraction Language JSON.
 Recursive Extraction getattr_step.
+
+Definition z (P : nat -> nat) (i : nat) := P i.
+Definition f1 (i : nat) := i+1.
+Definition f2 (P : nat -> nat) := fun i => i+(z P 2).
+
+Theorem x : f2 (f2 f1) 5 = 1.
+  unfold f1.
+  unfold f2 at 2.
 
     Definition check_ctime_guard {A T} (i : inode_state) (ctime_guard : option time)
                                        (a : A) (rx : unit -> relation State State (res A T)) :=

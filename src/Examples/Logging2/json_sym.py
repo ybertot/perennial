@@ -29,8 +29,6 @@ class SymbolicJSON(object):
     if base_lam is not None:
       return base_lam(typeexpr['args'])
 
-    print "z3_sort()", typeexpr
-
     datatype = z3.Datatype(str(typeexpr['name']))
     for c in typeexpr['constructors']:
       cname = str(c['name'])
@@ -117,12 +115,13 @@ class SymbolicJSON(object):
       raise Exception("proc() on unexpected thing", procexpr['what'])
 
   def proc_constructor_other(self, procexpr, state):
-    print "CONSTRUCTOR OTHER", procexpr
-    mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
-    c = mod.get_constructor(name)
-    t = mod.get_type(c['typename'])
+    print "Other constructor:", procexpr
+    t = procexpr['type']
+    if t['name'] == 'res':
+      t['args'][0] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'unit'}
+      t['args'][1] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'fattr'}
     sort = self.z3_sort(t)
-    cid = constructor_by_name(sort, name)
+    cid = constructor_by_name(sort, procexpr['name'])
 
     cargs = []
     for arg in procexpr['args']:
