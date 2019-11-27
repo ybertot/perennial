@@ -7,56 +7,66 @@ Import uPred.
 
 Section crash_adequacy.
 Context `{!irisG Λ Σ}.
+Implicit Types s : stuckness.
+Implicit Types k : nat.
 Implicit Types e : expr Λ.
 Implicit Types P Q : iProp Σ.
 Implicit Types Φ : val Λ → iProp Σ.
 Implicit Types Φs : list (val Λ → iProp Σ).
 
-Notation wptp s t := ([∗ list] ef ∈ t, WPC ef @ s; ⊤; ∅ {{ fork_post }} {{ True }})%I.
+Notation wptp s k t := ([∗ list] ef ∈ t, WPC ef @ s; k; ⊤; ∅ {{ fork_post }} {{ True }})%I.
 
-Lemma wpc_step s e1 σ1 κ κs e2 σ2 efs m Φ Φc :
+Lemma wpc_step s k e1 σ1 κ κs e2 σ2 efs m Φ Φc :
   prim_step e1 σ1 κ e2 σ2 efs →
-  state_interp σ1 (κ ++ κs) m -∗ WPC e1 @ s; ⊤; ∅ {{ Φ }} {{ Φc }} ={⊤,∅}▷=∗
+  state_interp σ1 (κ ++ κs) m -∗ WPC e1 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc }} -∗
+  |={⊤,⊤}_(2 * (S (S k)))=>
   state_interp σ2 κs (length efs + m) ∗
-  WPC e2 @ s; ⊤; ∅ {{ Φ }} {{ Φc }} ∗
-  wptp s efs.
+  WPC e2 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc }} ∗
+  wptp s k efs.
 Proof.
   rewrite {1}wpc_unfold /wpc_pre. iIntros (?) "Hσ H".
   rewrite (val_stuck e1 σ1 κ e2 σ2 efs) //.
   iDestruct "H" as "(H&_)".
-  iMod ("H" $! σ1 with "Hσ") as "(_ & H)".
+  replace (2 * S (S k)) with (S (S k) + S (S k)) by lia.
+  rewrite Nat_iter_add Nat_iter_S.
+  iMod ("H" $! σ1 with "Hσ") as "H".
+  do 4 iModIntro. iApply (step_fupdN_wand with "H").
+  iIntros "(H&_)". rewrite Nat_iter_S.
+  iMod "H" as "(_ & H)".
   iMod ("H" $! e2 σ2 efs with "[//]") as "H".
-  by iIntros "!> !>".
+  iIntros "!> !>". by iMod "H".
 Qed.
 
-Lemma wptp_step s e1 t1 t2 κ κs σ1 σ2 Φ Φc :
+Lemma wptp_step s k e1 t1 t2 κ κs σ1 σ2 Φ Φc :
   step (e1 :: t1,σ1) κ (t2, σ2) →
-  state_interp σ1 (κ ++ κs) (length t1) -∗ WPC e1 @ s; ⊤; ∅ {{ Φ }} {{ Φc }}-∗ wptp s t1 ==∗
+  state_interp σ1 (κ ++ κs) (length t1) -∗ WPC e1 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc }}-∗ wptp s k t1 ==∗
   ∃ e2 t2', ⌜t2 = e2 :: t2'⌝ ∗
-  |={⊤,∅}▷=> state_interp σ2 κs (pred (length t2)) ∗ WPC e2 @ s; ⊤; ∅ {{ Φ }} {{ Φc}}  ∗ wptp s t2'.
+  |={⊤,⊤}_(2 * (S (S k)))=> state_interp σ2 κs (pred (length t2)) ∗ WPC e2 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc}} ∗ wptp s k t2'.
 Proof.
   iIntros (Hstep) "Hσ He Ht".
   destruct Hstep as [e1' σ1' e2' σ2' efs [|? t1'] t2' ?? Hstep]; simplify_eq/=.
   - iExists e2', (t2' ++ efs). iModIntro. iSplitR; first by eauto.
     iMod (wpc_step with "Hσ He") as "H"; first done.
-    iIntros "!> !>". iMod "H" as "(Hσ & He2 & Hefs)".
+    iApply (step_fupdN_wand with "H"). iModIntro. iIntros "H".
+    iMod "H" as "(Hσ & He2 & Hefs)".
     iIntros "!>". rewrite Nat.add_comm app_length. iFrame.
   - iExists e, (t1' ++ e2' :: t2' ++ efs); iSplitR; first eauto.
-    iFrame "He". iDestruct "Ht" as "(Ht1 & He1 & Ht2)".
+    iDestruct "Ht" as "(Ht1 & He1 & Ht2)".
     iModIntro. iMod (wpc_step with "Hσ He1") as "H"; first done.
-    iIntros "!> !>". iMod "H" as "(Hσ & He2 & Hefs)". iIntros "!>".
-    rewrite !app_length /= !app_length.
+    iApply (step_fupdN_wand with "H"). iModIntro. iIntros "H".
+    iMod "H" as "(Hσ & He2 & Hefs)". iIntros "!>".
+    iFrame "He". rewrite !app_length /= !app_length.
     replace (length t1' + S (length t2' + length efs))
       with (length efs + (length t1' + S (length t2'))) by omega. iFrame.
 Qed.
 
-Lemma wptp_steps s n e1 t1 κs κs' t2 σ1 σ2 Φ Φc :
+Lemma wptp_steps s k n e1 t1 κs κs' t2 σ1 σ2 Φ Φc :
   nsteps n (e1 :: t1, σ1) κs (t2, σ2) →
-  state_interp σ1 (κs ++ κs') (length t1) -∗ WPC e1 @ s; ⊤; ∅ {{ Φ }} {{ Φc }} -∗ wptp s t1
-  ={⊤,∅}▷=∗^n ∃ e2 t2',
+  state_interp σ1 (κs ++ κs') (length t1) -∗ WPC e1 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc }} -∗ wptp s k t1 -∗
+  |={⊤,⊤}_(2 * (S (S k)))=>^n (∃ e2 t2',
     ⌜t2 = e2 :: t2'⌝ ∗
     state_interp σ2 κs' (pred (length t2)) ∗
-    WPC e2 @ s; ⊤; ∅ {{ Φ }} {{ Φc }} ∗ wptp s t2'.
+    WPC e2 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc }} ∗ wptp s k t2').
 Proof.
   revert e1 t1 κs κs' t2 σ1 σ2; simpl.
   induction n as [|n IH]=> e1 t1 κs κs' t2 σ1 σ2 /=.
@@ -64,25 +74,33 @@ Proof.
   iIntros (Hsteps) "Hσ He Ht". inversion_clear Hsteps as [|?? [t1' σ1']].
   rewrite -(assoc_L (++)).
   iMod (wptp_step with "Hσ He Ht") as (e1' t1'' ?) ">H"; first eauto; simplify_eq.
-  iIntros "!> !>". iMod "H" as "(Hσ & He & Ht)". iModIntro.
+  iApply (step_fupdN_wand with "H"). iModIntro. iIntros "H".
+  iMod "H" as "(Hσ & He & Ht)". iIntros "!>".
   by iApply (IH with "Hσ He Ht").
 Qed.
 
-Lemma wpc_safe κs m e σ Φ Φc :
+Lemma wpc_safe k κs m e σ Φ Φc :
   state_interp σ κs m -∗
-  WPC e {{ Φ }} {{ Φc }} ={⊤}=∗ ⌜is_Some (to_val e) ∨ reducible e σ⌝.
+  WPC e @ k {{ Φ }} {{ Φc }} ={⊤}=∗ ▷^(S (S k))
+  ⌜is_Some (to_val e) ∨ reducible e σ⌝.
 Proof.
   rewrite wpc_unfold /wpc_pre. iIntros "Hσ (H&_)".
   destruct (to_val e) as [v|] eqn:?; first by eauto.
-  iSpecialize ("H" $! σ [] κs with "Hσ"). rewrite sep_elim_l.
-  iMod (fupd_plain_mask with "H") as %?; eauto.
+  iSpecialize ("H" $! σ [] κs with "Hσ").
+  iMod (step_fupdN_inner_plain with "[H]") as "H".
+  2: { iMod "H". iApply (step_fupdN_wand with "H").
+       iModIntro. iIntros "(H&_)". iMod "H" as "(H&_)".
+       iApply "H". }
+  { apply _. }
+  iModIntro; eauto.
+  repeat iNext; iDestruct "H" as %?; eauto.
 Qed.
 
-Lemma wptp_strong_adequacy Φ Φc κs' s n e1 t1 κs t2 σ1 σ2 :
+Lemma wptp_strong_adequacy Φ Φc k κs' s n e1 t1 κs t2 σ1 σ2 :
   nsteps n (e1 :: t1, σ1) κs (t2, σ2) →
   state_interp σ1 (κs ++ κs') (length t1) -∗
-  WPC e1 @ s; ⊤; ∅ {{ Φ }} {{ Φc }} -∗
-  wptp s t1 ={⊤,∅}▷=∗^(S n) (∃ e2 t2',
+  WPC e1 @ s; k; ⊤; ∅ {{ Φ }} {{ Φc }} -∗
+  wptp s k t1 -∗ |={⊤,⊤}_(2 * (S (S k)))=>^(S n) (∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
     ⌜ ∀ e2, s = NotStuck → e2 ∈ t2 → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝ ∗
     state_interp σ2 κs' (length t2') ∗
@@ -91,17 +109,22 @@ Lemma wptp_strong_adequacy Φ Φc κs' s n e1 t1 κs t2 σ1 σ2 :
 Proof.
   iIntros (Hstep) "Hσ He Ht". rewrite Nat_iter_S_r.
   iDestruct (wptp_steps with "Hσ He Ht") as "Hwp"; first done.
-  iApply (step_fupdN_wand with "Hwp").
+  iApply (step_fupdN_innerN_wand with "Hwp"); auto.
   iDestruct 1 as (e2' t2' ?) "(Hσ & Hwp & Ht)"; simplify_eq/=.
   iMod (fupd_plain_keep_l ⊤
-    ⌜ ∀ e2, s = NotStuck → e2 ∈ (e2' :: t2') → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝%I
-    (state_interp σ2 κs' (length t2') ∗ WPC e2' @ s; ⊤; ∅ {{ v, Φ v }} {{ Φc }} ∗ wptp s t2')%I
+    (▷^(S (S k)) ⌜ ∀ e2, s = NotStuck → e2 ∈ (e2' :: t2') → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝)%I
+    (state_interp σ2 κs' (length t2') ∗ WPC e2' @ s; k; ⊤; ∅ {{ v, Φ v }} {{ Φc }} ∗ wptp s k t2')%I
     with "[$Hσ $Hwp $Ht]") as "(Hsafe&Hσ&Hwp&Hvs)".
   { iIntros "(Hσ & Hwp & Ht)" (e' -> He').
     apply elem_of_cons in He' as [<-|(t1''&t2''&->)%elem_of_list_split].
     - iMod (wpc_safe with "Hσ Hwp") as "$"; auto.
     - iDestruct "Ht" as "(_ & He' & _)". by iMod (wpc_safe with "Hσ He'"). }
-  iApply step_fupd_fupd. iApply step_fupd_intro; first done. iNext.
+  iApply step_fupd_fupd. iApply step_fupd_intro; first done.
+  iMod (fupd_intro_mask' _ ∅) as "Hclo". auto.
+  do 5 (iModIntro). iMod "Hclo".
+  iApply step_fupdN_inner_fupd.
+  iApply (step_fupdN_inner_later); auto.
+  iNext.
   iExists _, _. iSplitL ""; first done. iFrame "Hsafe Hσ".
   iSplitL "Hwp".
   - destruct (to_val e2') as [v2|] eqn:He2'; last done.
@@ -109,8 +132,8 @@ Proof.
   - clear Hstep. iInduction t2' as [|e t2'] "IH"; csimpl; first by iFrame.
     iDestruct "Hvs" as "[Hv Hvs]". destruct (to_val e) as [v|] eqn:He.
     + apply of_to_val in He as <-. iMod (wpc_value_inv' with "Hv") as "$".
-      by iApply "IH".
-    + by iApply "IH".
+      by iApply ("IH" with "[$]").
+    + by iApply ("IH" with "[$]").
 Qed.
 
 Lemma wptp_strong_crash_adequacy Φ Φc κs' s n e1 t1 κs t2 σ1 σ2 :
