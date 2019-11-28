@@ -137,6 +137,26 @@ Proof using HAff.
   by iApply "HPQ".
 Qed.
 
+Lemma step_fupdN_innerN_wand' E1 E2 k n (P Q: PROP):
+  (|={E1,E2}_k=>^n P) -∗
+  (P -∗ Q) -∗
+  |={E1,E2}_k=>^n Q.
+Proof using HAff.
+  iIntros "HP HPQ". iInduction n as [| n] "IH".
+  - rewrite //=. by iApply "HPQ".
+  - rewrite //=. iApply (step_fupdN_inner_wand' with "HP"); eauto.
+    iIntros; by iApply ("IH" with "[$] [$]").
+Qed.
+
+Lemma step_fupdN_innerN_S_fupd E1 E2 k n (P: PROP):
+  (|={E1,E2}_k=>^(S n) |={E2}=> P) -∗
+  (|={E1,E2}_k=>^(S n) P).
+Proof using HAff.
+  rewrite !Nat_iter_S_r.
+  iIntros "H". iApply (step_fupdN_innerN_wand' with "H").
+  iApply step_fupdN_inner_fupd.
+Qed.
+
 Lemma step_fupdN_inner_plus E1 E2 k1 k2 (P: PROP):
   (|={E1,∅}=> |={∅,∅}▷=>^k1 |={∅, E1}=> |={E1,∅}=> |={∅,∅}▷=>^k2 |={∅,E2}=> P)
   ⊢ (|={E1,∅}=> |={∅,∅}▷=>^(k1 + k2) |={∅,E2}=> P)%I.
@@ -155,6 +175,46 @@ Proof.
   induction n => //=.
   - apply _.
   - intros ? P Q ->. eauto.
+Qed.
+
+Lemma step_fupdN_inner_plain' `{BP: BiPlainly PROP} `{@BiFUpdPlainly PROP H BP}
+      (k: nat) (P: PROP) :
+  Plain P →
+  ((|={⊤, ⊤}_k=> P) -∗
+  |={⊤}=> ▷^(S k) P)%I.
+Proof using HAff.
+  iIntros (HPlain).
+  iInduction k as [| k] "IH" forall (P HPlain).
+  - rewrite //=. iIntros "H". do 2 iMod "H". eauto.
+  - iIntros "H".
+    iApply (fupd_plain_mask _ ∅).
+    iMod "H".
+    iDestruct (step_fupdN_wand _ _ _ _ (|={∅}=> P)%I with "H []") as "H".
+    { iIntros "H". iMod "H". iApply fupd_mask_weaken; eauto. }
+    rewrite -step_fupdN_S_fupd.
+    iMod (step_fupdN_plain with "H") as "H".
+    iModIntro. rewrite -!later_laterN !laterN_later.
+    iNext. iNext. by iMod "H".
+Qed.
+
+Lemma step_fupdN_innerN_plain `{BP: BiPlainly PROP} `{@BiFUpdPlainly PROP H BP}
+      (k n: nat) (P: PROP) :
+  Plain P →
+  ((|={⊤, ⊤}_k=>^n P) -∗
+  |={⊤}=> ▷^(n * (S k)) P)%I.
+Proof using HAff.
+  iIntros (HPlain).
+  iInduction n as [| n] "IH" forall (P HPlain).
+  - rewrite //=. eauto.
+  - iIntros "H".
+    rewrite Nat_iter_S.
+    iDestruct (step_fupdN_inner_wand with "H []") as "H";
+      [ reflexivity | reflexivity | |].
+    { iApply "IH"; eauto. }
+    rewrite step_fupdN_inner_fupd.
+    iMod (step_fupdN_inner_plain' with "H") as "H".
+    iModIntro. replace (S n * S k) with (S k + (n * S k)) by lia.
+    rewrite laterN_plus; eauto.
 Qed.
 
 End step_fupdN.

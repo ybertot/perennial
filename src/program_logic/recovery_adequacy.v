@@ -269,42 +269,56 @@ Implicit Types Φc : invG Σ → pbundleG T Σ → val Λ → iProp Σ.
 Implicit Types v : val Λ.
 Implicit Types e : expr Λ.
 
-Notation wptp s k t := ([∗ list] ef ∈ t, WPC ef @ s; ⊤; k; ∅ {{ fork_post }} {{ True }})%I.
+Notation wptp s k t := ([∗ list] ef ∈ t, WPC ef @ s; k; ⊤; ∅ {{ fork_post }} {{ True }})%I.
 
-Fixpoint step_fupdN_fresh (ns: list nat) Hi0 t0 (P: invG Σ → pbundleG T Σ → iProp Σ) :=
+Fixpoint step_fupdN_fresh k (ns: list nat) Hi0 t0 (P: invG Σ → pbundleG T Σ → iProp Σ) :=
   match ns with
   | [] => P Hi0 t0
   | (n :: ns) =>
-    (|={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷
-     ∀ Hi', (∃ t' : pbundleG T Σ, step_fupdN_fresh ns Hi' t' P))%I
+    (|={⊤, ⊤}_k=>^(S n) |={⊤, ∅}_k=> ▷
+     ∀ Hi', (∃ t' : pbundleG T Σ, step_fupdN_fresh k ns Hi' t' P))%I
   end.
 
-Lemma step_fupdN_fresh_snoc (ns: list nat) n Hi0 t0 Q:
-  step_fupdN_fresh (ns ++ [n]) Hi0 t0 Q ≡
-  step_fupdN_fresh (ns) Hi0 t0
-    (λ Hi _, |={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ ∀ Hi', ∃ t', Q Hi' t')%I.
+Lemma step_fupdN_fresh_snoc k (ns: list nat) n Hi0 t0 Q:
+  step_fupdN_fresh k (ns ++ [n]) Hi0 t0 Q ≡
+  step_fupdN_fresh k (ns) Hi0 t0
+    (λ Hi _, |={⊤, ⊤}_k=>^(S n) |={⊤, ∅}_k=> ▷ ∀ Hi', ∃ t', Q Hi' t')%I.
 Proof.
   apply (anti_symm (⊢)%I).
   - revert Hi0 t0 Q.
-    induction ns => ??? //=. do 3 f_equiv.
-    apply step_fupdN_mono.
-    do 2 f_equiv. do 2 (f_equiv => ?).
-    rewrite IHns. eauto.
+    induction ns => ??? //=. do 1 f_equiv.
+    apply step_fupdN_mono. apply fupd_mono.
+    iIntros "H".
+    iApply (step_fupdN_innerN_wand with "H"); auto.
+    iIntros "H".
+    iApply (step_fupdN_inner_wand' with "H"); auto.
+    iIntros "H". iNext. iIntros.
+    iDestruct ("H" $! _) as (?) "H".
+    iExists _. by iApply IHns.
   - revert Hi0 t0 Q.
-    induction ns => ??? //=. do 3 f_equiv.
-    apply step_fupdN_mono.
-    do 2 f_equiv. do 2 (f_equiv => ?).
-    rewrite IHns. eauto.
+    induction ns => ??? //=. do 1 f_equiv.
+    apply step_fupdN_mono. apply fupd_mono.
+    iIntros "H".
+    iApply (step_fupdN_innerN_wand with "H"); auto.
+    iIntros "H".
+    iApply (step_fupdN_inner_wand' with "H"); auto.
+    iIntros "H". iNext. iIntros.
+    iDestruct ("H" $! _) as (?) "H".
+    iExists _. by iApply IHns.
 Qed.
 
-Lemma step_fupdN_fresh_pattern_wand {H: invG Σ} n (Q Q': iProp Σ):
-  (|={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ Q) -∗ (Q -∗ Q') -∗
-  (|={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ Q').
+Lemma step_fupdN_fresh_pattern_wand {H: invG Σ} k n (Q Q': iProp Σ):
+  (|={⊤, ⊤}_k=>^(S n) |={⊤, ∅}_k=> ▷ Q) -∗ (Q -∗ Q') -∗
+  (|={⊤, ⊤}_k=>^(S n) |={⊤, ∅}_k=> ▷ Q').
 Proof.
   iIntros "H Hwand". simpl.
   iApply (step_fupdN_wand with "H").
-  iNext. iIntros "H".
-  iMod "H". iModIntro. iNext.
+  iIntros "H". iMod "H". iModIntro.
+  iApply (step_fupdN_innerN_wand with "H"); auto.
+  iIntros "H".
+  iApply (step_fupdN_inner_wand' with "H"); auto.
+  iIntros "H".
+  iNext.
   by iApply "Hwand".
 Qed.
 
@@ -320,9 +334,24 @@ Proof.
   iMod "H". iModIntro. iNext. rewrite -later_laterN laterN_later. iNext. by iMod "H".
 Qed.
 
-Lemma step_fupdN_fresh_wand (ns: list nat) Hi0 t0 Q Q':
-  step_fupdN_fresh (ns) Hi0 t0 Q -∗ (∀ Hinv t, Q Hinv t -∗ Q' Hinv t)
-  -∗ step_fupdN_fresh ns Hi0 t0 Q'.
+Lemma step_fupdN_fresh_pattern_plain' {H: invG Σ} k n (Q: iProp Σ) `{!Plain Q}:
+  (|={⊤, ⊤}_k=>^(S n) |={⊤, ∅}_k=> ▷ Q) -∗
+  (|={⊤}=> ▷^(S (S n) * (S (S k))) Q).
+Proof.
+  iIntros "H".
+  iDestruct (step_fupdN_innerN_wand with "H []") as "H"; auto.
+  { iApply step_fupdN_inner_plain. }
+  rewrite step_fupdN_innerN_S_fupd.
+  iMod (step_fupdN_innerN_plain with "H") as "H".
+  iModIntro.
+  replace (S (S n) * (S (S k))) with (S n * (S (S k)) + S (S k)) by lia.
+  rewrite laterN_plus. iApply (laterN_le (S n * S k)); first by lia.
+  iNext. rewrite -laterN_later => //=.
+Qed.
+
+Lemma step_fupdN_fresh_wand k (ns: list nat) Hi0 t0 Q Q':
+  step_fupdN_fresh k (ns) Hi0 t0 Q -∗ (∀ Hinv t, Q Hinv t -∗ Q' Hinv t)
+  -∗ step_fupdN_fresh k ns Hi0 t0 Q'.
 Proof.
   revert Hi0 t0.
   induction ns => ??.
@@ -334,55 +363,55 @@ Proof.
     iExists _. iApply (IHns with "H"). eauto.
 Qed.
 
-Fixpoint fresh_later_count (ns: list nat) :=
+Fixpoint fresh_later_count k (ns: list nat) :=
   match ns with
-  | [] => 2
-  | n :: ns' => (S (S n)) + fresh_later_count ns'
+  | [] => (S (S k))
+  | n :: ns' => (S (S n) * (S (S k))) + fresh_later_count k ns'
   end.
 
-Lemma step_fupdN_fresh_plain `{!invPreG Σ} P `{!Plain P} ns n:
-  (∀ Hinv', |={⊤}=> ∃ t, step_fupdN_fresh ns Hinv' t
-                  (λ _ _, |={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> P)) -∗
-  ▷^(fresh_later_count ns + n) P.
+Lemma step_fupdN_fresh_plain `{!invPreG Σ} P `{!Plain P} k ns n:
+  (∀ Hinv', |={⊤}=> ∃ t, step_fupdN_fresh k ns Hinv' t
+                  (λ _ _, |={⊤, ⊤}_k=>^(S n) |={⊤, ∅}=> P)) -∗
+  ▷^(fresh_later_count k ns + S (S k + n * (S (S k)))) P.
 Proof.
   iIntros "H".
   iInduction ns as [| n' ns] "IH".
   - rewrite /step_fupdN_fresh.
-    iApply (bupd_plain (▷^((S (S n))) P)%I); try (iPureIntro; apply _).
+    iApply (bupd_plain (▷^(_) P)%I); try (iPureIntro; apply _).
     iMod wsat_alloc as (Hinv) "(Hw&HE)".
     iSpecialize ("H" $! Hinv).
     rewrite {1}uPred_fupd_eq {1}/uPred_fupd_def.
     iMod ("H" with "[$]") as "[>Hw [>HE >H]]".
     iDestruct ("H") as (_) "H".
-    iDestruct (step_fupdN_fresh_pattern_plain _ (P)%I with "[H]") as "H".
-    iApply (step_fupdN_wand with "H").
-    { iIntros "H". iMod "H". iModIntro. by iNext. }
+    iDestruct (step_fupdN_fresh_pattern_plain' _ _ (P)%I with "[H]") as "H".
+    iApply (step_fupdN_innerN_wand with "H"); try reflexivity.
+    { iIntros "H". iMod "H". iApply step_fupdN_inner_later; auto. }
     rewrite {1}uPred_fupd_eq {1}/uPred_fupd_def.
-    by iMod ("H" with "[$]") as "[Hw [HE >$]]".
+    iMod ("H" with "[$]") as "[Hw [HE >$]]"; eauto.
   - iMod wsat_alloc as (Hinv) "(Hw&HE)".
     iSpecialize ("H" $! Hinv).
     rewrite {1}uPred_fupd_eq {1}/uPred_fupd_def.
     iMod ("H" with "[$]") as "[>Hw [>HE >H]]".
     iDestruct "H" as (t) "H".
     rewrite /step_fupdN_fresh -/step_fupdN_fresh.
-    iDestruct (step_fupdN_fresh_pattern_wand  _ _
-                 (▷^(fresh_later_count ns + n) P)
+    iDestruct (step_fupdN_fresh_pattern_wand  _ _ _
+                  (▷^(fresh_later_count k ns + _) P)
                  with "H [IH]") as "H".
     { iIntros "H". iApply "IH". iIntros. iModIntro. iApply "H". }
-    iDestruct (step_fupdN_fresh_pattern_plain with "H") as "H".
+    iDestruct (step_fupdN_fresh_pattern_plain' with "H") as "H".
     rewrite {1}uPred_fupd_eq {1}/uPred_fupd_def.
     iMod ("H" with "[$]") as "[Hw [HE >H]]".
-    simpl.
-    by rewrite ?laterN_plus.
+    simpl. rewrite ?laterN_plus. iApply "H".
 Qed.
 
-Lemma step_fupdN_fresh_soundness `{!invPreG Σ} (φ : Prop) ns n:
-  (∀ Hinv : invG Σ, (|={⊤}=> (∃ t0, step_fupdN_fresh ns Hinv t0
-                             (λ _ _, |={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ ⌜φ⌝)))%I) →
+(* XXX this probably needs to be tweaked. *)
+Lemma step_fupdN_fresh_soundness `{!invPreG Σ} (φ : Prop) k ns n:
+  (∀ Hinv : invG Σ, (|={⊤}=> (∃ t0, step_fupdN_fresh k ns Hinv t0
+                             (λ _ _, |={⊤, ⊤}_k=>^(S n) |={⊤, ∅}=> ▷ ⌜φ⌝)))%I) →
   φ.
 Proof.
   intros Hiter.
-  apply (soundness (M:=iResUR Σ) _  (fresh_later_count ns + n + 1)); simpl.
+  eapply (soundness (M:=iResUR Σ) _  (fresh_later_count k ns + _ + 1)); simpl.
   rewrite laterN_plus.
   iApply step_fupdN_fresh_plain. iIntros (Hinv). iApply Hiter.
 Qed.
@@ -394,13 +423,13 @@ Notation "P ={ E }=∗_ t Q" := (P -∗ |={E}=>_(t) Q)%I
  (at level 99) : bi_scope.
 *)
 
-Lemma wptp_recv_strong_normal_adequacy Φ Φr κs' s Hi t n ns r1 e1 t1 κs t2 σ1 σ2 :
+Lemma wptp_recv_strong_normal_adequacy Φ Φr κs' s k Hi t n ns r1 e1 t1 κs t2 σ1 σ2 :
   nrsteps (CS := CS) r1 (ns ++ [n]) (e1 :: t1, σ1) κs (t2, σ2) Normal →
   state_interp σ1 (κs ++ κs') (length t1) -∗
-  wpr s Hi t ⊤ e1 r1 Φ Φr -∗
-  wptp s t1 -∗ step_fupdN_fresh ns Hi t (λ Hi' t',
+  wpr s k Hi t ⊤ e1 r1 Φ Φr -∗
+  wptp s k t1 -∗ step_fupdN_fresh (2 * (S (S k))) ns Hi t (λ Hi' t',
     ⌜ Hi' = Hi ∧ t' = t ⌝ ∗
-    (|={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ ∃ e2 t2',
+    (|={⊤, ⊤}_(2 * (S (S k)))=>^(S n) |={⊤, ∅}=> ▷ ∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
     ⌜ ∀ e2, s = NotStuck → e2 ∈ t2 → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝ ∗
     state_interp σ2 κs' (length t2') ∗
@@ -418,17 +447,17 @@ Proof.
   rewrite /step_fupdN_fresh.
   rewrite perennial_invG.
   iSplitL ""; first by eauto.
-  iApply (step_fupdN_wand with "H").
+  iApply (step_fupdN_innerN_wand with "H"); auto.
   iIntros. iApply fupd_mask_weaken; first by set_solver+.
   iNext. eauto.
 Qed.
 
-Lemma wptp_recv_strong_crash_adequacy Φ Φr κs' s Hi t ns n r1 e1 t1 κs t2 σ1 σ2 :
+Lemma wptp_recv_strong_crash_adequacy Φ Φr κs' s k Hi t ns n r1 e1 t1 κs t2 σ1 σ2 :
   nrsteps (CS := CS) r1 (ns ++ [n]) (e1 :: t1, σ1) κs (t2, σ2) Crashed →
   state_interp σ1 (κs ++ κs') (length t1) -∗
-  wpr s Hi t ⊤ e1 r1 Φ Φr -∗
-  wptp s t1 -∗ step_fupdN_fresh ns Hi t (λ Hi' t',
-    (|={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ ∃ e2 t2',
+  wpr s k Hi t ⊤ e1 r1 Φ Φr -∗
+  wptp s k t1 -∗ step_fupdN_fresh (2 * (S (S k))) ns Hi t (λ Hi' t',
+    (|={⊤, ⊤}_(2 * (S (S k)))=>^(S n) |={⊤, ∅}=> ▷ ∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
     ⌜ ∀ e2, s = NotStuck → e2 ∈ t2 → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝ ∗
     state_interp σ2 κs' (length t2') ∗
@@ -447,12 +476,19 @@ Proof.
   inversion_clear Hsteps as [|?? [t1' σ1'] ????? s0].
   rewrite {1}/step_fupdN_fresh -/step_fupdN_fresh.
   destruct ρ2 as (?&σ2_pre_crash).
-  iApply (step_fupdN_wand with "[-]").
+  iApply (step_fupdN_innerN_wand with "[-]"); try reflexivity.
   { rewrite -assoc wpr_unfold /wpr_pre.
     iPoseProof (@wptp_strong_crash_adequacy with "[$] [$]") as "H"; eauto.
     rewrite perennial_invG. by iApply "H".
   }
-  iIntros "H". iMod "H" as (e2 t2' ?) "(H&Hσ)".
+  iIntros "H".
+  rewrite -step_fupdN_inner_fupd.
+  iApply (step_fupdN_inner_wand' with "H").
+  { reflexivity. }
+  { reflexivity. }
+  { lia. }
+  iIntros "H".
+  iDestruct "H" as (e2 t2' ?) "(H&Hσ)".
   iMod ("H" with "[//] Hσ") as "H". iModIntro. iNext.
   destruct s0.
   - iIntros (Hi'). iSpecialize ("H" $! Hi').
@@ -468,12 +504,12 @@ Proof.
     iApply "H".
 Qed.
 
-Lemma wptp_recv_strong_adequacy Φ Φr κs' s Hi t ns n r1 e1 t1 κs t2 σ1 σ2 stat :
+Lemma wptp_recv_strong_adequacy Φ Φr κs' s k Hi t ns n r1 e1 t1 κs t2 σ1 σ2 stat :
   nrsteps (CS := CS) r1 (ns ++ [n]) (e1 :: t1, σ1) κs (t2, σ2) stat →
   state_interp σ1 (κs ++ κs') (length t1) -∗
-  wpr s Hi t ⊤ e1 r1 Φ Φr -∗
-  wptp s t1 -∗ step_fupdN_fresh ns Hi t (λ Hi' t',
-    (|={⊤, ∅}▷=>^(S n) |={⊤, ∅}=> ▷ ∃ e2 t2',
+  wpr s k Hi t ⊤ e1 r1 Φ Φr -∗
+  wptp s k t1 -∗ step_fupdN_fresh (2 * (S (S k))) ns Hi t (λ Hi' t',
+    (|={⊤, ⊤}_(2 * (S (S k)))=>^(S n) |={⊤, ∅}=> ▷ ∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
     ⌜ ∀ e2, s = NotStuck → e2 ∈ t2 → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝ ∗
     state_interp σ2 κs' (length t2') ∗
@@ -489,7 +525,7 @@ Proof.
     iApply (step_fupdN_fresh_wand with "H").
     iIntros (??) "H".
     iDestruct "H" as ((?&?)) "H". subst.
-    iApply (step_fupdN_wand with "H").
+    iApply (step_fupdN_innerN_wand with "H"); auto.
     iIntros ">H !> !> ".
     iDestruct "H" as (????) "(H&?&?)". iExists _, _.
     repeat (iSplitL ""; try iFrame; eauto).
@@ -526,7 +562,7 @@ Proof.
   - constructor; naive_solver.
 Qed.
 
-Corollary wp_recv_adequacy Σ Λ CS (T: ofeT) `{!invPreG Σ} s e r σ φ φr :
+Corollary wp_recv_adequacy Σ Λ CS (T: ofeT) `{!invPreG Σ} s k e r σ φ φr :
   (∀ `{Hinv : !invG Σ} κs,
      (|={⊤}=> ∃ (t: pbundleG T Σ)
          (stateI : pbundleG T Σ→ state Λ → list (observation Λ) → iProp Σ)
@@ -537,14 +573,14 @@ Corollary wp_recv_adequacy Σ Λ CS (T: ofeT) `{!invPreG Σ} s e r σ φ φr :
                IrisG Λ Σ Hi (λ σ κs _, stateI t σ κs)
                     (fork_post t)) Hpf
                in
-       stateI t σ κs ∗ wpr s Hinv t ⊤ e r (λ v, ⌜φ v⌝) (λ _ _ v, ⌜φr v⌝))%I) →
+       stateI t σ κs ∗ wpr s k Hinv t ⊤ e r (λ v, ⌜φ v⌝) (λ _ _ v, ⌜φr v⌝))%I) →
   recv_adequate (CS := CS) s e r σ (λ v _, φ v) (λ v _, φr v) .
 Proof.
   intros Hwp.
   apply recv_adequate_alt.
   intros t2 σ2 stat [n [κs H]]%erased_rsteps_nrsteps.
   destruct (nrsteps_snoc _ _ _ _ _ _ H) as (ns'&n'&->).
-  eapply (step_fupdN_fresh_soundness _ ns' n')=> Hinv.
+  eapply (step_fupdN_fresh_soundness _ (2 * (S (S k))) ns' n')=> Hinv.
   iMod (Hwp Hinv κs) as (t stateI Hfork_post Hpf) "(Hw&H)".
   iModIntro. iExists _.
   iDestruct (wptp_recv_strong_adequacy
@@ -556,7 +592,7 @@ Proof.
   { rewrite app_nil_r. eauto. }
   iApply (step_fupdN_fresh_wand with "H").
   iIntros (??) "H".
-  iApply (step_fupdN_mono with "H").
+  iApply (step_fupdN_innerN_wand with "H"); auto.
   iIntros ">H !> !> ".
   iDestruct "H" as (v2 ???) "(_&Hv&Hnstuck)".
   iSplitR ""; last done.
