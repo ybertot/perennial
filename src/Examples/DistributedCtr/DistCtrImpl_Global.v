@@ -56,13 +56,11 @@ Section proof.
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
 
   Definition global_inv_unlocked (optv1 optv2: option Z) (γ1 γ2 γ3 γ4: gname) (lk1 lk2 : val): iProp Σ :=
-    is_lock LockN γ3 lk1 (node_lock_inv γ1)
-    ∗ is_lock LockN γ4 lk2 (node_lock_inv γ2)
+    is_lock LockN γ3 lk1 (node_lock_inv γ1) ∗ is_lock LockN γ4 lk2 (node_lock_inv γ2)
     ∗ (∃ n, (node_val_inv n optv1 γ1) ∗ (node_val_inv n optv2 γ2)).
 
   Definition global_inv_locked (optv1 optv2: option Z) (γ1 γ2 : gname): iProp Σ := 
-      node_lock_inv γ1
-    ∗ node_lock_inv γ2
+      node_lock_inv γ1 ∗ node_lock_inv γ2
     ∗ (∃ n, (node_val_inv n optv1 γ1) ∗ (node_val_inv n optv2 γ2)).
   (* Notes: loc = kind of like a Coq literal number, LitV (LitLoc loc) is an actual value in the language *)
 
