@@ -229,7 +229,7 @@ Definition wpc_pre `{!irisG Λ Σ} (s : stuckness) (k: nat)
    | None => ∀ σ1 κ κs n,
       state_interp σ1 (κ ++ κs) n ={E1,∅}=∗ (|={∅, ∅}▷=>^(S k)
         ((|={∅}=> ⌜if s is NotStuck then reducible e1 σ1 else True⌝ ∗
-        ∀ e2 σ2 efs, ⌜prim_step e1 σ1 κ e2 σ2 efs⌝ ={∅,∅,E1}▷=∗ |={E1, ∅}=> |={∅, ∅}▷=>^(S k) |={∅, E1}=>
+        ∀ e2 σ2 efs, ⌜prim_step e1 σ1 κ e2 σ2 efs⌝ -∗ |={∅,∅}_(S k)=> |={∅,∅,E1}▷=> |={E1, E1}_(S k)=>
           (state_interp σ2 κs (length efs + n) ∗
           wpc E1 E2 e2 Φ Φc ∗
           [∗ list] i ↦ ef ∈ efs, wpc ⊤ ∅ ef fork_post True))))
@@ -308,7 +308,7 @@ Proof.
   is very slow here *)
   do 3 (apply step_fupdN_ne || f_contractive || f_equiv); auto; last first.
   { repeat (f_contractive || f_equiv). auto. }
-  do 27 (apply step_fupdN_ne || f_contractive || f_equiv).
+  do 30 (apply step_fupdN_ne || f_contractive || f_equiv).
   eapply IH; eauto.
   - intros v. eapply dist_le; eauto.
   - eapply dist_le; eauto.
@@ -341,8 +341,9 @@ Proof.
     iSplitR.
     { destruct s; last done. eauto using reducible_no_obs_reducible. }
     iIntros (e2 σ2 efs) "Hstep". iMod ("H" with "Hstep") as "H".
-    iModIntro. iNext. iMod ("H") as "(Hσ & H & Hfork)". iFrame. iModIntro.
-    iApply step_fupdN_inner_later; auto. do 2 iNext.
+    iApply step_fupdN_inner_later; first by reflexivity.
+    do 2 iNext. iModIntro. iNext. iMod ("H") as "(Hσ & H & Hfork)". iFrame. iModIntro.
+    iApply step_fupdN_inner_later; first by set_solver+. do 2 iNext.
     iFrame. iSplitL "H".
     { by iApply "IH". }
     iApply (@big_sepL_impl with "Hfork").
@@ -377,10 +378,15 @@ Proof.
     iDestruct "H" as "H". iMod "H" as "(%&H)".
     iModIntro.
     iSplit; [by destruct s1, s2|]. iIntros (e2 σ2 efs Hstep).
-    iMod ("H" with "[//]") as "H". iIntros "!> !>".
-    iMod "H". iMod "Hclo" as "_". iModIntro.
-    iApply (step_fupdN_inner_wand with "H"); auto.
+    iMod ("H" with "[//]") as "H".
+    iApply (step_fupdN_le (S k1)); eauto.
     { lia. }
+    iApply (step_fupdN_wand with "H"). iModIntro. iIntros "H".
+    iIntros "!>".
+    iMod "H". iMod "H". iIntros "!>". iNext. iMod "H". iMod "Hclo" as "_". iModIntro.
+    iApply (step_fupdN_le (S k1)); eauto.
+    { lia. }
+    iApply (step_fupdN_inner_wand with "H"); auto.
     iIntros "(Hσ & H & Hefs)". iFrame.
     iSplitR "Hefs".
     ** iApply ("IH" with "[] [] H [HΦ]"); auto.
@@ -399,7 +405,7 @@ Proof.
     iDestruct "HΦ" as "(_&HΦ)".
     iMod "Hclo".
     iEval (rewrite -step_fupdN_inner_fupd).
-    iMod ("HΦ" with "[$]") as "HΦ". 
+    iMod ("HΦ" with "[$]") as "HΦ".
     iApply (step_fupdN_wand with "HΦ"). iModIntro; eauto.
 Qed.
 
@@ -531,11 +537,13 @@ Proof.
     iMod (fupd_intro_mask' _ (E1 ∩ E2)) as "Hclo'"; first by set_solver+.
     iMod "H" as "[$ H]".
     iModIntro. iIntros (e2 σ2 efs Hstep).
+    iModIntro. iApply step_fupdN_later; first auto.
+    do 3 iModIntro.
     iMod ("H" with "[//]") as "H". iIntros "!>!>".
     iMod "H" as "(Hσ & H & Hefs)".
     iMod "Hclo'" as "_".
     iModIntro.
-    iApply step_fupdN_inner_later; first auto.
+    iApply step_fupdN_inner_later; first by set_solver+.
     do 2 iNext.
     * rewrite wpc_unfold wp_unfold /wpc_pre /wp_pre.
       destruct (to_val e2) as [v2|] eqn:He2.
@@ -582,10 +590,12 @@ Proof.
     unfold reducible in *. naive_solver eauto using fill_step. }
   iIntros (e2 σ2 efs Hstep).
   destruct (fill_step_inv e σ1 κ e2 σ2 efs) as (e2'&->&?); auto.
-  iMod ("H" $! e2' σ2 efs with "[//]") as "H".
-  iIntros "!>!>". iMod "H". iModIntro.
+  iSpecialize ("H" $! e2' σ2 efs with "[//]").
   iApply (step_fupdN_inner_wand with "H"); try auto.
-  iIntros "(Hσ & H & Hefs)".
+  iIntros "H".
+  iMod "H". iModIntro. iNext. iMod "H". iModIntro.
+  iMod "H". iModIntro.
+  iApply (step_fupdN_wand with "H"). iIntros "H". iMod "H" as "(Hσ&H&Hefs)".
   iFrame "Hσ Hefs". by iApply "IH".
 Qed.
 
@@ -608,8 +618,10 @@ Proof.
     { destruct s; eauto using reducible_fill. }
     iIntros (e2 σ2 efs Hstep).
     iMod ("H" $! (K e2) σ2 efs with "[]") as "H"; [by eauto using fill_step|].
-    iIntros "!>!>". iMod "H". iModIntro.
-
+    iModIntro. iApply (step_fupdN_wand with "H"). iIntros "H".
+    iMod "H". iModIntro.
+    iMod "H". do 2 iModIntro.
+    iMod "H". iModIntro.
     iApply (step_fupdN_inner_wand with "H"); auto.
     iIntros "(Hσ & H & Hefs)".
     iFrame "Hσ Hefs". by iApply "IH".
@@ -639,9 +651,12 @@ Proof.
   iMod ("H" with "Hσ") as "H". iModIntro.
   iApply step_fupdN_later; first auto. do 2 iNext.
   iModIntro; iDestruct "H" as "(H&_)". iDestruct "H" as "($&H)".
-  iIntros. iMod ("H" with "[//]") as "H". iModIntro. iNext.
-  iMod "H". iModIntro. iApply step_fupdN_inner_later; first auto.
-  do 2 iNext. eauto.
+  iIntros.
+  iApply step_fupdN_later; first auto.
+  iMod ("H" with "[//]") as "H". iModIntro.
+  do 5 iModIntro.
+  iMod "H". iApply step_fupdN_inner_later; first auto.
+  iModIntro. do 2 iNext. eauto.
 Qed.
 
 (*
