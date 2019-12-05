@@ -24,8 +24,8 @@ Definition kill_node: val :=
 Section proof.
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
 
-  Definition node_val_inv (n : Z) (optv: option Z) (γ : gname): iProp Σ := 
-      ⌜ optv = None ⌝ ∨ (⌜optv = Some n⌝ ∗ own γ (◯ (Excl' n))).
+  Definition node_val_inv (node: loc) (n : Z) (optv: option Z) (γ : gname): iProp Σ := 
+      ((⌜ optv = None ⌝ ∗ node ↦ NONEV) ∨ (⌜optv = Some n⌝ ∗ node ↦ SOMEV #n)) ∗ own γ (◯ (Excl' n)).
 
   Definition node_lock_inv (γ: gname) : iProp Σ :=
     (∃ n, own γ (● (Excl' n)))%I.
@@ -33,9 +33,9 @@ Section proof.
   Lemma alloc_node_spec : 
     {{{ True%I }}}
       alloc_node #()
-      {{{ r1 lk γ γ1 , RET PairV r1 lk;
+      {{{ r1 lk γ γ1 , RET PairV #r1 lk;
           is_lock LockN γ lk (node_lock_inv γ1) ∗
-          node_val_inv 0 (Some 0) γ1
+          node_val_inv r1 0 (Some 0) γ1
     }}}.
   Proof.
     iIntros (Φ) "_ HPost".
@@ -52,25 +52,23 @@ Section proof.
     wp_pures.
     iApply "HPost". 
     iFrame; auto.
-    unfold node_val_inv; iRight; iFrame; auto.
   Qed.
 
   Lemma update_node_some_spec : ∀ (n: Z) γ1 node,
       {{{
-           node ↦ SOMEV #n
-           ∗ node_lock_inv γ1
-           ∗ node_val_inv n (Some n) γ1
+           node_lock_inv γ1
+           ∗ node_val_inv node n (Some n) γ1
     }}}
       update_node #node
     {{{ RET #1;
-          node ↦ SOMEV #(n+1)
-          ∗ node_lock_inv γ1
-          ∗ node_val_inv (n+1) (Some (n+1)) γ1
+          node_lock_inv γ1
+          ∗ node_val_inv node (n+1) (Some (n+1)) γ1
     }}}.
   Proof.
-    iIntros (n γ1 node Φ) "(Hnode & Hlkinv & Hnodeinv) HPost".
+    iIntros (n γ1 node Φ) "(Hlkinv & Hnodeinv) HPost".
     unfold node_val_inv.
-    iDestruct "Hnodeinv" as "[H | [H Hown]]"; iDestruct "H" as %H. inversion H. 
+    iDestruct "Hnodeinv" as "([(H & Halive) | (H & Halive)] & Hown)".
+    iDestruct "H" as %H. inversion H. 
     unfold update_node.
     unfold node_lock_inv.
     iDestruct "Hlkinv" as (n') "Hlkinv".
@@ -80,28 +78,26 @@ Section proof.
     wp_pures.
     wp_store.
     iApply "HPost". 
-    iFrame; auto.
     iSplitL "Hγ1●".
     iExists (n+1); auto.
-    iRight; iSplit; auto.
+    iFrame; auto.
   Qed.
 
   Lemma update_node_none_spec : ∀ (n: Z) γ1 node,
       {{{
-           node ↦ NONEV
-           ∗ node_lock_inv γ1
-           ∗ node_val_inv n None γ1
+           node_lock_inv γ1
+           ∗ node_val_inv node n None γ1
     }}}
       update_node #node
     {{{ RET #0;
-          node ↦ NONEV
-          ∗ node_lock_inv γ1
-          ∗ (∃ n, node_val_inv n None γ1)
+          node_lock_inv γ1
+          ∗ (∃ n, node_val_inv node n None γ1)
     }}}.
   Proof.
-    iIntros (n γ1 node Φ) "(Hnode & Hlkinv & Hnodeinv) HPost".
+    iIntros (n γ1 node Φ) "(Hlkinv & Hnodeinv) HPost".
     unfold node_val_inv.
-    iDestruct "Hnodeinv" as "[H | [H Hown]]"; iDestruct "H" as %H; inversion H. 
+    iDestruct "Hnodeinv" as "([(H & Halive) | (H & Halive)] & Hown)";
+    iDestruct "H" as %H; inversion H. 
     unfold update_node.
     unfold node_lock_inv.
     iDestruct "Hlkinv" as (n') "Hlkinv".
@@ -109,8 +105,7 @@ Section proof.
     wp_load.
     wp_pures.
     iApply "HPost".
-    iSplitL "Hnode"; auto.
     iSplitL "Hlkinv". iExists n'; auto.
-    unfold node_val_inv. iExists n. iLeft; auto.
+    unfold node_val_inv. iExists n. iFrame; auto. 
   Qed.
 End proof.
