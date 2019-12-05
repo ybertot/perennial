@@ -13,7 +13,7 @@ Definition wpc_pre `{!irisG Λ Σ} `{crashG Σ} (s : stuckness) (k: nat)
     (wpc : coPset -d> coPset -d> expr Λ -d> (val Λ -d> iPropO Σ) -d> iPropO Σ -d> iPropO Σ) :
     coPset -d> coPset -d> expr Λ -d> (val Λ -d> iPropO Σ) -d> iPropO Σ -d> iPropO Σ := λ E1 E2 e1 Φ Φc,
   (match to_val e1 with
-   | Some v => |={E1}=> Φ v
+   | Some v => NC ={E1}=∗ Φ v ∗ NC
    | None => ∀ σ1 κ κs n,
       state_interp σ1 (κ ++ κs) n -∗ NC ={E1,∅}=∗ (|={∅, ∅}▷=>^(S k)
         ((|={∅}=> ⌜if s is NotStuck then reducible e1 σ1 else True⌝ ∗
@@ -95,8 +95,9 @@ Proof.
   (* FIXME: figure out a way to properly automate this proof *)
   (* FIXME: reflexivity, as being called many times by f_equiv and f_contractive
   is very slow here *)
-  do 4 (apply step_fupdN_ne || f_contractive || f_equiv); auto; last first.
-  { f_equiv. f_equiv. apply step_fupdN_ne. f_equiv. eauto. }
+  do 4 (apply step_fupdN_ne || f_contractive || f_equiv); auto.
+  { f_equiv. f_equiv. }
+  2: { f_equiv. f_equiv. apply step_fupdN_ne. f_equiv. eauto. }
   do 30 (apply step_fupdN_ne || f_contractive || f_equiv).
   eapply IH; eauto.
   - intros v. eapply dist_le; eauto.
@@ -123,6 +124,7 @@ Proof.
     iMod (fupd_intro_mask' _ ∅) as "Hclo"; first by set_solver+.
     iApply step_fupdN_inner_later; auto.
   - destruct (to_val e) as [v|]=>//.
+    { iIntros; iFrame. }
     iIntros (σ1 κ κs n) "Hσ".
     iMod (fupd_intro_mask' _ ∅) as "Hclo"; first by set_solver+.
     iIntros "HNC".
@@ -157,8 +159,9 @@ Proof.
     {
       iDestruct "HΦ" as "(HΦ&_)". iDestruct "H" as "(H&_)".
       iMod (fupd_intro_mask' _ E1) as "Hclo"; first by auto.
-      iMod "H". iMod "Hclo" as "_".
-      iMod ("HΦ" with "[$]"). eauto.
+      iIntros.
+      iMod ("H" with "[$]") as "(?&?)". iMod "Hclo" as "_".
+      iMod ("HΦ" with "[$]"). iFrame. eauto.
     }
     iIntros (σ1 κ κs n) "Hσ HNC".
     iMod (fupd_intro_mask' E2 E1) as "Hclo"; first done.
@@ -235,7 +238,7 @@ Proof.
     {
       iDestruct "H" as "(H&_)".
       iMod (fupd_intro_mask' _ E1) as "Hclo"; first by auto.
-      iMod "H". iMod "Hclo" as "_".
+      iIntros. iMod ("H" with "[$]"). iMod "Hclo" as "_".
       iModIntro; eauto.
     }
     iIntros (σ1 κ κs n) "Hσ HNC".
@@ -262,7 +265,7 @@ Proof.
     iSplitR "Hefs".
     ** iApply ("IH" with "[] H [HΦ]"); auto.
     ** iApply (big_sepL_impl with "Hefs"); iIntros "!#" (k ef _).
-       iIntros "H". eauto. iApply (wpc_strong_mono with "H"); eauto. 
+       iIntros "H". eauto. iApply (wpc_strong_mono with "H"); eauto.
        iSplit; eauto. iIntros. iApply step_fupdN_inner_later; auto; try set_solver+.
   - iDestruct "H" as "(_&H)". iIntros "#HC".
     iSpecialize ("H" with "[$]").
@@ -318,6 +321,7 @@ Lemma wpc_value s k E1 E2 Φ Φc v :
   (|={E1}=> Φ v) ∧ (|={E1}=> |={E2, ∅}=> Φc) ⊢ WPC of_val v @ s; k; E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
   rewrite wpc_unfold /wpc_pre to_of_val. iApply and_mono; auto.
+  { iIntros.  iFrame. }
   iIntros "H". iIntros "HC".
   iMod "H". iApply step_fupdN_inner_later; auto.
   do 2 iNext.
@@ -337,7 +341,7 @@ Proof.
 Qed.
 
 Lemma wpc_value_inv' s k E1 E2 Φ Φc v :
-  WPC of_val v @ s; k; E1; E2 {{ Φ }} {{ Φc }} ={E1}=∗ Φ v.
+  WPC of_val v @ s; k; E1; E2 {{ Φ }} {{ Φc }} -∗ NC ={E1}=∗ Φ v ∗ NC.
 Proof. rewrite wpc_unfold /wpc_pre to_of_val. iIntros "(?&_)"; auto. Qed.
 
 Lemma fupd_wpc s k E1 E2 e Φ Φc:
@@ -372,13 +376,13 @@ Qed.
    moving the ⌜ reducible e1 σ1 ⌝ in the definition of wpc_pre to be
    before the conjunction that occurs closest there. *)
 Lemma wpc_atomic s k E1 E2 e Φ Φc `{!Atomic StronglyAtomic e} :
-  (|={E2, ∅}=> Φc) ∧ WP e @ s; (E1 ∩ E2) {{ v, (|={E1}=> Φ v) ∧ |={E2, ∅}=> Φc }} ⊢
+  (|={E2, ∅}=> Φc) ∧ WP e @ s; E1 {{ v, (|={E1}=> Φ v) ∧ |={E2, ∅}=> Φc }} ⊢
   WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
   iIntros "H". rewrite !wpc_unfold !wp_unfold /wpc_pre /wp_pre.
   destruct (to_val e) as [v|] eqn:He.
   { iSplit.
-    - iDestruct "H" as "(_&H)".
+    - iDestruct "H" as "(_&H)". iIntros "HNC". iFrame.
       iMod (fupd_mask_mono with "H") as "($&_)"; first by set_solver+.
     - iDestruct "H" as "(H&_)".
       iIntros "HC". iApply step_fupdN_inner_later; auto. do 2 iNext.
@@ -395,29 +399,28 @@ Proof.
     iMod "Hclo".
     iDestruct "H" as "(_&H)".
     iSpecialize ("H" $! σ1 with "Hσ").
-    iMod (fupd_intro_mask' _ (E1 ∩ E2)) as "Hclo'"; first by set_solver+.
     iMod "H" as "[$ H]".
     iModIntro. iIntros (e2 σ2 efs Hstep).
     iModIntro. iApply step_fupdN_later; first auto.
     do 3 iModIntro.
     iMod ("H" with "[//]") as "H". iIntros "!>!>".
     iMod "H" as "(Hσ & H & Hefs)".
-    iMod "Hclo'" as "_".
     iModIntro.
     iApply step_fupdN_inner_later; first by set_solver+.
     do 2 iNext.
     * rewrite wpc_unfold wp_unfold /wpc_pre /wp_pre.
       destruct (to_val e2) as [v2|] eqn:He2.
-      ** iFrame. iSplitR "Hefs"; last first.
-         { iApply big_sepL_mono; last eauto. iIntros. by iApply wp_wpc. }
-         iSplit.
-         *** iMod (fupd_mask_mono with "H") as "($&_)"; first by set_solver+.
-         *** iMod (fupd_mask_mono with "H") as "(_&H)"; first by set_solver+.
-             iIntros "HC".
-             iApply step_fupdN_inner_later; auto. do 2 iNext.
-             iMod "H".
+      ** iFrame "Hσ". iSplitL "H". 
+         { iSplit.
+           * iIntros. iMod "H" as "(?&_)". iFrame.
+           * iIntros. iMod "H" as "(_&H)". iApply step_fupdN_inner_later; auto.
+             do 2 iNext.
              iMod (fupd_intro_mask' _ ∅) as "Hclo'"; first by set_solver+.
              iModIntro. iApply step_fupdN_later; eauto.
+             do 2 iNext. iMod "Hclo'". eauto.
+         }
+         iFrame.
+         iApply big_sepL_mono; last eauto. iIntros. by iApply wp_wpc.
       ** edestruct (atomic _ _ _ _ _ Hstep); congruence.
   }
   iDestruct "H" as "(H&_)".
@@ -438,10 +441,13 @@ Proof.
     apply of_to_val in He as <-.
     destruct (to_val (K (of_val v))).
     - iSplit.
-      * iDestruct "H" as "(H&_)". iMod "H" as "($&_)".
+      * iDestruct "H" as "(H&_)". iIntros.
+        iMod ("H" with "[$]") as "((H&_)&HNC)". iMod ("H" with "[$]"). eauto.
       * iDestruct "H" as "(_&$)".
     - iSplit.
-      * iDestruct "H" as "(H&_)". iMod "H" as "($&_)".
+      * iDestruct "H" as "(H&_)". iIntros.
+        iMod ("H" with "[$]") as "((H&_)&?)".
+        iMod ("H" with "[$] [$]") as "$". eauto.
       * iDestruct "H" as "(_&$)".
   }
   rewrite wpc_unfold /wpc_pre fill_not_val //.
@@ -470,7 +476,7 @@ Proof.
   iIntros "H". iLöb as "IH" forall (E1 E2 e Φ Φc). rewrite !wpc_unfold /wpc_pre.
   destruct (to_val e) as [v|] eqn:He.
   { apply of_to_val in He. rewrite <-He. rewrite !wpc_unfold /wpc_pre. iSplit.
-    - iModIntro. eauto.
+    - iIntros. iModIntro. iFrame.
     - iDestruct "H" as "(_&$)".
   }
   rewrite fill_not_val //.
