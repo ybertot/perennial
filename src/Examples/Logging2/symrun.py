@@ -8,6 +8,8 @@ import z3
 import nfs_trace
 import rfc1813
 
+# z3.set_param("smt.string_solver", "z3str3")
+
 with open('NFS3API.json') as f:
   code = f.read()
   j = json.loads(code)
@@ -58,10 +60,10 @@ m.redefine_term('u32_zero', {
   'what': 'expr:special',
   'id': 'u32_zero',
 })
-m.redefine_term('u64_zero', {
-  'what': 'expr:special',
-  'id': 'u64_zero',
-})
+# m.redefine_term('u64_zero', {
+#   'what': 'expr:special',
+#   'id': 'u64_zero',
+# })
 
 # stateSort = sym.z3_sort(stateType)
 # s0 = z3.Const('s0', stateSort)
@@ -97,6 +99,8 @@ def lift_ftype(t):
   ftypeSort = sym.z3_sort(m.get_type("ftype"))
   if t == rfc1813.const.NF3REG:
     return json_sym.constructor_by_name(ftypeSort, "NF3REG")()
+  elif t == rfc1813.const.NF3DIR:
+    return json_sym.constructor_by_name(ftypeSort, "NF3DIR")()
   else:
     raise Exception("unknown ftype", t)
 
@@ -134,6 +138,9 @@ def lift_fattr3(fattr3):
 stateSort = sym.z3_sort(stateType)
 current_state = z3.Const('s_init', stateSort)
 s = z3.Solver()
+s.set(**{"solver.smtlib2_log": "filename.smt2"})
+
+constraints = []
 
 trace = nfs_trace.call_reply_pairs("/tmp/nfs.pcap")
 for (proc, call, reply) in trace:
@@ -162,17 +169,21 @@ for (proc, call, reply) in trace:
       raise Exception("error not supported")
 
     spec_res = z3.simplify(spec_res)
+    next_state = z3.simplify(next_state)
 
-    print "SPEC_RES:"
-    print spec_res.sexpr()
+    # print "SPEC_RES:"
+    # print spec_res.sexpr()
 
-    print "REPLY_RES:"
-    print reply_res.sexpr()
+    # print "REPLY_RES:"
+    # print reply_res.sexpr()
 
-    s.add(spec_res == reply_res)
+    constraints.append(spec_res == reply_res)
   else:
     raise Exception("unknown proc", proc)
 
   current_state = next_state
 
+big_c = z3.And(constraints[0], constraints[1])
+print big_c.sexpr()
+s.add(big_c)
 print s.check()
