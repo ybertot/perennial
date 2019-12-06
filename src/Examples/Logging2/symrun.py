@@ -32,7 +32,14 @@ sym.register_base_type("gmap", lambda args: z3.ArraySort(sym.z3_sort(args[0]),
     'mod': m,
   })))
 sym.register_base_type("buf", lambda args: z3.SeqSort(z3.BitVecSort(8)))
-sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort(args[0])))
+# sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort(args[0])))
+# XXX hack: list is always of inode_state
+sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort({
+  'what': 'type:glob',
+  'name': 'inode_state',
+  'args': [],
+  'mod': m,
+})))
 sym.register_base_type("fh", lambda args: z3.StringSort())
 sym.register_base_type("uint32", lambda args: z3.BitVecSort(32))
 sym.register_base_type("uint64", lambda args: z3.BitVecSort(64))
@@ -43,6 +50,7 @@ sym.register_base_type("createverf", lambda args: z3.BitVecSort(64))
 sym.register_base_type("writeverf", lambda args: z3.BitVecSort(64))
 
 sym.set_bool_type(m.get_type("bool"))
+sym.set_sumbool_type(m.get_type("sumbool"))
 sym.set_unit_tt(sym.z3_sort(m.get_type("unit")).constructor(0)())
 
 m.redefine_term('gmap_lookup', {
@@ -53,18 +61,19 @@ m.redefine_term('gmap_lookup', {
     'id': 'gmap_lookup',
   },
 })
-m.redefine_term('len_buf', {
-  'what': 'expr:special',
-  'id': 'len_buf',
+m.redefine_term('map_insert', {
+  'what': 'expr:lambda',
+  'argnames': ['unused0'],
+  'body': {
+    'what': 'expr:special',
+    'id': 'map_insert',
+  },
 })
-m.redefine_term('u32_zero', {
-  'what': 'expr:special',
-  'id': 'u32_zero',
-})
-m.redefine_term('u64_zero', {
-  'what': 'expr:special',
-  'id': 'u64_zero',
-})
+for id in ('len_buf', 'resize_buf', 'u32_zero', 'u64_zero', 'uint64_gt', 'uint32_gt', 'uint32_eq', 'eqDec_time',):
+  m.redefine_term(id, {
+    'what': 'expr:special',
+    'id': id,
+  })
 
 # stateSort = sym.z3_sort(stateType)
 # s0 = z3.Const('s0', stateSort)
@@ -217,6 +226,7 @@ print s.check()
 ## symbolic nfs server: ask for satisfying assignment for new RPC call
 current_state = z3.Const('s_init', stateSort)
 
+print "SYMBOLIC NFS SERVER"
 if False:
   arg = z3.String("getattr_fh")
   getattr_step, _ = m.get_term("getattr_step")
@@ -248,6 +258,8 @@ else:
   })
 
 next_state, spec_res = sym.proc(step, current_state)
+spec_res = z3.simplify(spec_res)
+print "SETATTR SPEC_RES:", spec_res.sexpr()
 the_response = z3.Const('the_response', spec_res.sort())
 s.add(the_response == spec_res)
 

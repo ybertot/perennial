@@ -7,10 +7,14 @@ class SymbolicJSON(object):
     self.context = context
     self.base_types = {}
     self.bool_sort = None
+    self.sumbool_sort = None
     self.unit_tt = None
 
   def set_bool_type(self, t):
     self.bool_sort = self.z3_sort(t)
+
+  def set_sumbool_type(self, t):
+    self.sumbool_sort = self.z3_sort(t)
 
   def set_unit_tt(self, t):
     self.unit_tt = t
@@ -51,9 +55,31 @@ class SymbolicJSON(object):
         state, k = self.proc(args[0], state)
         state, m = self.proc(args[1], state)
         return state, m[k]
+      elif f['id'] == 'map_insert':
+        state, k = self.proc(args[0], state)
+        state, v = self.proc(args[1], state)
+        state, m = self.proc(args[2], state)
+
+        rangesort = m.range()
+        vsome = constructor_by_name(rangesort, "Some")(v)
+
+        return state, z3.Store(m, k, vsome)
       elif f['id'] == 'len_buf':
         state, buf = self.proc(args[0], state)
         return state, z3.Int2BV(z3.Length(buf), 64)
+      elif f['id'] == 'resize_buf':
+        state, newlen = self.proc(args[0], state)
+        state, buf = self.proc(args[1], state)
+        ## XXX should be of length newlen, not empty..
+        return state, z3.Empty(buf.sort())
+      elif f['id'] == 'uint64_gt':
+        state, a0 = self.proc(args[0], state)
+        state, a1 = self.proc(args[1], state)
+        return state, z3.If(a0 > a1, self.bool_sort.constructor(0)(), self.bool_sort.constructor(1)())
+      elif f['id'] == 'eqDec_time':
+        state, a0 = self.proc(args[0], state)
+        state, a1 = self.proc(args[1], state)
+        return state, z3.If(a0 == a1, self.sumbool_sort.constructor(0)(), self.sumbool_sort.constructor(1)())
       else:
         raise Exception('unknown special function', f['id'])
     else:
@@ -132,6 +158,18 @@ class SymbolicJSON(object):
 
   def proc_constructor_other(self, procexpr, state):
     t = procexpr['type']
+
+    if t['name'] == 'list':
+      ## What a hack: lists are always of inode_state
+      inode_state_sort = self.z3_sort({
+        'what': 'type:glob',
+        'mod': procexpr['mod'],
+        'args': [],
+        'name': 'inode_state',
+      })
+      if procexpr['name'] == 'Nil':
+        return state, z3.Empty(z3.SeqSort(inode_state_sort))
+
     if t['name'] == 'res':
       ## What a hack: guess the type arguments for `res`...
 

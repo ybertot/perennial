@@ -111,6 +111,17 @@ class Context(object):
         if len(args) > 0:
           arg = args[0]
           argname = expr['argnames'][0]
+
+          ## Another hack: what's the type?
+          if arg['what'] == 'type:varidx':
+            assert(expr['name'] == 'async')
+            arg = {
+              'what': 'type:glob',
+              'mod': expr['constructors'][0]['argtypes'][1]['mod'],
+              'name': 'inode_state',
+              'args': [],
+            }
+
           res = {
             'what': expr['what'],
             'constructors': subst_what(expr['constructors'], 'type:var', argname, arg),
