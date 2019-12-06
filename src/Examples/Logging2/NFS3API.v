@@ -60,6 +60,12 @@ Module NFS3.
   Axiom u32_zero : uint32.
   Axiom u64_zero : uint64.
 
+  Axiom uint32_gt : uint32 -> uint32 -> bool.
+  Axiom uint32_eq : uint32 -> uint32 -> bool.
+
+  Axiom uint64_gt : uint64 -> uint64 -> bool.
+  Axiom uint64_eq : uint64 -> uint64 -> bool.
+
   Definition fileid := uint64.
   Definition cookie := uint64.
 
@@ -167,7 +173,7 @@ Module NFS3.
   Parameter write_buf : buf -> nat -> buf -> buf.
   Parameter len_buf : buf -> uint64.
   Parameter empty_buf : buf.
-  Parameter resize_buf : nat -> buf -> buf. (* fill with zero if growing *)
+  Parameter resize_buf : uint64 -> buf -> buf. (* fill with zero if growing *)
 
   Record async `{Countable T} := {
     latest : T;
@@ -410,8 +416,9 @@ Module NFS3.
     Inductive SpecOp : Type -> Type :=
     | SymBool : SpecOp bool
     | SymFH : SpecOp fh
+    | SymU32 : SpecOp uint32
     | SymU64 : SpecOp uint64
-    | Unreachable : SpecOp unit
+    | Assert : bool -> SpecOp unit
     | Reads : SpecOp State
     | Puts : State -> SpecOp unit
     .
@@ -420,7 +427,9 @@ Module NFS3.
     Open Scope proc.
 
     Definition symBool := Call SymBool.
+    Definition symU32 := Call SymU32.
     Definition symU64 := Call SymU64.
+    Definition symAssert e := Call (Assert e).
     Definition reads {T : Type} (read_f : State -> T) :=
       s <- Call Reads;
       Ret (read_f s).
@@ -428,6 +437,11 @@ Module NFS3.
       s <- Call Reads;
       Call (Puts (put_f s)).
     Definition pure `(v : T) := @Ret SpecOp _ v.
+
+    Definition symTime :=
+      ts <- symU32;
+      tn <- symU32;
+      Ret (Build_time ts tn).
 
     Definition spec_proc := proc SpecOp.
 
@@ -514,41 +528,32 @@ Module NFS3.
       attrs <- inode_attrs i;
       pure (OK tt attrs).
 
-  End SymbolicStep.
 
-Check getattr_step.
-Require Import Extraction.
-Extraction Language JSON.
-Recursive Extraction getattr_step.
 
-Definition z (P : nat -> nat) (i : nat) := P i.
-Definition f1 (i : nat) := i+1.
-Definition f2 (P : nat -> nat) := fun i => i+(z P 2).
-
-Theorem x : f2 (f2 f1) 5 = 1.
-  unfold f1.
-  unfold f2 at 2.
 
     Definition check_ctime_guard {A T} (i : inode_state) (ctime_guard : option time)
-                                       (a : A) (rx : unit -> relation State State (res A T)) :=
+                                       (a : A) (rx : unit -> spec_proc (res A T)) :=
       match ctime_guard with
       | None => rx tt
       | Some ct =>
         if (decide (ct = i.(inode_state_meta).(inode_meta_ctime))) then
           rx tt
         else
-          pure (Err a ERR_NOT_SYNC)
+          Ret (Err a ERR_NOT_SYNC)
       end.
 
-    Definition time_ge (t t' : time) :=
-      t'.(time_sec) > t.(time_sec) \/
-      t'.(time_sec) = t.(time_sec) /\ t'.(time_nsec) >= t.(time_nsec).
+    Definition time_ge (t t' : time) : bool :=
+      orb (uint32_gt t'.(time_sec) t.(time_sec))
+          (andb (uint32_eq t'.(time_sec) t.(time_sec))
+                (orb (uint32_eq t'.(time_nsec) t.(time_nsec))
+                     (uint32_gt t'.(time_nsec) t.(time_nsec)))).
 
-    Definition get_time : relation State State time :=
+    Definition get_time : spec_proc time :=
       t <- reads (clock);
-      t' <- such_that (fun _ t' => time_ge t t');
+      t' <- symTime;
+      _ <- symAssert (time_ge t t');
       _ <- puts (set clock (constructor t'));
-      pure t'.
+      Ret t'.
 
     Definition set_attr_one {F} (i : inode_state) (now : time)
                                 (f : inode_meta -> F)
@@ -581,22 +586,25 @@ Theorem x : f2 (f2 f1) 5 = 1.
     Definition truncate {A T} (i : inode_state) (now : time)
                               (sattr_req : option uint64)
                               (a : A)
-                              (rx : inode_state -> relation State State (res A T)) :
-                              relation State State (res A T) :=
+                              (rx : inode_state -> spec_proc (res A T)) :
+                              spec_proc (res A T) :=
       match sattr_req with
       | None => rx i
       | Some len =>
         match i.(inode_state_type) with
         | Ifile buf cverf =>
-          (if (decide (len_buf buf < len)) then pure (Err a ERR_NOSPC) else none) +
-          rx (i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
-                <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>)
+          outOfSpace <- symBool;
+          if andb (uint64_gt len (len_buf buf)) outOfSpace then
+            pure (Err a ERR_NOSPC)
+          else
+            rx (i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
+                  <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>)
         | _ =>
           pure (Err a ERR_INVAL)
         end
       end.
 
-    Definition put_fh_sync (f : fh) (i : inode_state) : relation State State unit :=
+    Definition put_fh_sync (f : fh) (i : inode_state) : spec_proc unit :=
       puts (set fhs (fun x => <[f := sync i]> x)).
 
     Definition set_attr_nonlen (i : inode_state) (now : time) (a : sattr) : inode_state :=
@@ -607,7 +615,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
       let i := set_attr_time i now (f := inode_meta_mtime) a.(sattr_mtime) in
       i.
 
-    Definition setattr_step (f : fh) (a : sattr) (ctime_guard : option time) : relation State State (res wcc_data unit) :=
+    Definition setattr_step (f : fh) (a : sattr) (ctime_guard : option time) : spec_proc (res wcc_data unit) :=
       i <~- get_fh f wcc_data_none;
       let wcc_before := inode_wcc i in
       _ <~- check_ctime_guard i ctime_guard (Build_wcc_data (Some wcc_before) (Some wcc_before));
@@ -616,6 +624,23 @@ Theorem x : f2 (f2 f1) 5 = 1.
       let i := set_attr_nonlen i t a in
       _ <- put_fh_sync f i;
       pure (OK (Build_wcc_data (Some wcc_before) (Some (inode_wcc i))) tt).
+
+
+  End SymbolicStep.
+
+Check getattr_step.
+Check setattr_step.
+Require Import Extraction.
+Extraction Language JSON.
+Recursive Extraction getattr_step setattr_step.
+
+Definition z (P : nat -> nat) (i : nat) := P i.
+Definition f1 (i : nat) := i+1.
+Definition f2 (P : nat -> nat) := fun i => i+(z P 2).
+
+Theorem x : f2 (f2 f1) 5 = 1.
+  unfold f1.
+  unfold f2 at 2.
 
     Definition get_dir {A T} (i : inode_state) (a : A) (rx : gmap filename fh -> relation State State (res A T)) : relation State State (res A T) :=
       match i.(inode_state_type) with
