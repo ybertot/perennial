@@ -380,39 +380,6 @@ Module NFS3.
     settable! Build_State
       < fhs; verf; clock >.
 
-  Definition inode_attrs (i : inode_state) : fattr :=
-    let m := inode_state_meta i in
-    Build_fattr
-      ( match (inode_state_type i) with
-        | Ifile _ _ => NF3REG
-        | Idir _ => NF3DIR
-        | Iblk _ => NF3BLK
-        | Ichr _ => NF3CHR
-        | Isymlink _ => NF3LNK
-        | Isock => NF3SOCK
-        | Ififo => NF3FIFO
-        end )
-      (inode_meta_mode m)
-      (inode_meta_nlink m)
-      (inode_meta_uid m)
-      (inode_meta_gid m)
-      ( match (inode_state_type i) with
-        | Ifile b _ => len_buf b
-        | _ => u64_zero
-        end )
-      u64_zero
-      ( match (inode_state_type i) with
-        | Iblk mm => mm
-        | Ichr mm => mm
-        | _ => Build_major_minor u32_zero u32_zero
-        end )
-      u64_zero
-      (inode_meta_fileid m)
-      (inode_meta_atime m)
-      (inode_meta_mtime m)
-      (inode_meta_ctime m)
-    .
-
   Definition inode_wcc (i : inode_state) : wcc_attr :=
     let m := inode_state_meta i in
     Build_wcc_attr
@@ -443,6 +410,7 @@ Module NFS3.
     Inductive SpecOp : Type -> Type :=
     | SymBool : SpecOp bool
     | SymFH : SpecOp fh
+    | SymU64 : SpecOp uint64
     | Unreachable : SpecOp unit
     | Reads : SpecOp State
     | Puts : State -> SpecOp unit
@@ -452,6 +420,7 @@ Module NFS3.
     Open Scope proc.
 
     Definition symBool := Call SymBool.
+    Definition symU64 := Call SymU64.
     Definition reads {T : Type} (read_f : State -> T) :=
       s <- Call Reads;
       Ret (read_f s).
@@ -495,18 +464,53 @@ Module NFS3.
     Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
                                  (at level 54, right associativity, only parsing).
 
+    Definition inode_attrs (i : inode_state) : spec_proc fattr :=
+      used <- symU64;
+      fsid <- symU64;
+      let m := inode_state_meta i in
+      let res := Build_fattr
+        ( match (inode_state_type i) with
+          | Ifile _ _ => NF3REG
+          | Idir _ => NF3DIR
+          | Iblk _ => NF3BLK
+          | Ichr _ => NF3CHR
+          | Isymlink _ => NF3LNK
+          | Isock => NF3SOCK
+          | Ififo => NF3FIFO
+          end )
+        (inode_meta_mode m)
+        (inode_meta_nlink m)
+        (inode_meta_uid m)
+        (inode_meta_gid m)
+        ( match (inode_state_type i) with
+          | Ifile b _ => len_buf b
+          | _ => u64_zero
+          end )
+        used
+        ( match (inode_state_type i) with
+          | Iblk mm => mm
+          | Ichr mm => mm
+          | _ => Build_major_minor u32_zero u32_zero
+          end )
+        fsid
+        (inode_meta_fileid m)
+        (inode_meta_atime m)
+        (inode_meta_mtime m)
+        (inode_meta_ctime m) in
+      Ret res.
+
 (*
     Definition inode_attr (f : fh) (i : inode_state) : spec_proc fattr :=
       nlink <- reads (fun s => add_up (fmap (count_links f) (fmap latest s.(fhs))));
       pure (inode_attrs i nlink).
-*)
 
     Definition inode_attr (f : fh) (i : inode_state) : spec_proc fattr :=
       pure (inode_attrs i).
+*)
 
     Definition getattr_step (f : fh) : spec_proc (res unit fattr) :=
       i <~- get_fh f tt;
-      attrs <- inode_attr f i;
+      attrs <- inode_attrs i;
       pure (OK tt attrs).
 
   End SymbolicStep.
