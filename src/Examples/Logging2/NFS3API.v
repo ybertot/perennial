@@ -467,6 +467,7 @@ Module NFS3.
     Definition inode_attrs (i : inode_state) : spec_proc fattr :=
       used <- symU64;
       fsid <- symU64;
+      non_file_len <- symU64;
       let m := inode_state_meta i in
       let res := Build_fattr
         ( match (inode_state_type i) with
@@ -484,7 +485,7 @@ Module NFS3.
         (inode_meta_gid m)
         ( match (inode_state_type i) with
           | Ifile b _ => len_buf b
-          | _ => u64_zero
+          | _ => non_file_len
           end )
         used
         ( match (inode_state_type i) with

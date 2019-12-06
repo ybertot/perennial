@@ -1084,21 +1084,6 @@
       }
     },
     {
-      "what": "decl:term", "name": "u64_zero",
-      "type": {
-        "what": "type:glob", "name": "uint64", "args": [
-          
-        ]
-      },
-      "value": {
-        "what": "expr:lambda", "argnames": [
-          
-        ], "body": {
-          "what": "expr:axiom"
-        }
-      }
-    },
-    {
       "what": "decl:type", "name": "fileid", "argnames": [
         
       ], "value": {
@@ -2413,646 +2398,705 @@
                       "fsid"
                     ],
                     "body": {
-                      "what": "expr:let", "name": "m",
-                      "nameval": {
-                        "what": "expr:case",
-                        "type": {
-                          "what": "type:glob", "name": "inode_state",
-                          "args": [
-                            
-                          ]
-                        }, "expr": {
-                          "what": "expr:rel", "name": "i"
-                        },
-                        "cases": [
+                      "what": "expr:constructor",
+                      "type": {
+                        "what": "type:glob", "name": "proc",
+                        "args": [
                           {
-                            "what": "case",
-                            "pat": {
-                              "what": "pat:constructor",
-                              "name": "Build_inode_state",
-                              "argnames": [
-                                "inode_state_meta", "_"
-                              ]
-                            },
-                            "body": {
-                              "what": "expr:rel", "name": "inode_state_meta"
-                            }
-                          }
-                        ]
-                      },
-                      "body": {
-                        "what": "expr:let", "name": "res0",
-                        "nameval": {
-                          "what": "expr:constructor",
-                          "type": {
+                            "what": "type:glob", "name": "specOp",
+                            "args": [
+                              {
+                                "what": "type:unknown"
+                              }
+                            ]
+                          },
+                          {
                             "what": "type:glob", "name": "fattr",
                             "args": [
                               
                             ]
-                          }, "name": "Build_fattr",
-                          "args": [
-                            {
+                          }
+                        ]
+                      }, "name": "Bind",
+                      "args": [
+                        {
+                          "what": "expr:coerce",
+                          "value": {
+                            "what": "expr:global", "name": "symU64"
+                          }
+                        },
+                        {
+                          "what": "expr:lambda",
+                          "argnames": [
+                            "non_file_len"
+                          ],
+                          "body": {
+                            "what": "expr:let", "name": "m",
+                            "nameval": {
                               "what": "expr:case",
                               "type": {
-                                "what": "type:glob",
-                                "name": "inode_type_state", "args": [
+                                "what": "type:glob", "name": "inode_state",
+                                "args": [
                                   
                                 ]
+                              }, "expr": {
+                                "what": "expr:rel", "name": "i"
                               },
-                              "expr": {
-                                "what": "expr:case",
+                              "cases": [
+                                {
+                                  "what": "case",
+                                  "pat": {
+                                    "what": "pat:constructor",
+                                    "name": "Build_inode_state",
+                                    "argnames": [
+                                      "inode_state_meta", "_"
+                                    ]
+                                  },
+                                  "body": {
+                                    "what": "expr:rel",
+                                    "name": "inode_state_meta"
+                                  }
+                                }
+                              ]
+                            },
+                            "body": {
+                              "what": "expr:let", "name": "res0",
+                              "nameval": {
+                                "what": "expr:constructor",
                                 "type": {
-                                  "what": "type:glob", "name": "inode_state",
+                                  "what": "type:glob", "name": "fattr",
                                   "args": [
                                     
                                   ]
-                                },
-                                "expr": {
-                                  "what": "expr:rel", "name": "i"
-                                },
-                                "cases": [
+                                }, "name": "Build_fattr",
+                                "args": [
                                   {
-                                    "what": "case",
-                                    "pat": {
-                                      "what": "pat:constructor",
-                                      "name": "Build_inode_state",
-                                      "argnames": [
-                                        "_", "inode_state_type"
-                                      ]
-                                    },
-                                    "body": {
-                                      "what": "expr:rel",
-                                      "name": "inode_state_type"
-                                    }
-                                  }
-                                ]
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Ifile", "argnames": [
-                                      "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3REG", "args": [
-                                      
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Idir", "argnames": [
-                                      "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3DIR", "args": [
-                                      
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Iblk", "argnames": [
-                                      "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3BLK", "args": [
-                                      
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Ichr", "argnames": [
-                                      "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3CHR", "args": [
-                                      
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Isymlink", "argnames": [
-                                      "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3LNK", "args": [
-                                      
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Isock", "argnames": [
-                                      
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3SOCK", "args": [
-                                      
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Ififo", "argnames": [
-                                      
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
-                                    "type": {
-                                      "what": "type:glob", "name": "ftype",
-                                      "args": [
-                                        
-                                      ]
-                                    }, "name": "NF3FIFO", "args": [
-                                      
-                                    ]
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "inode_meta_mode", "_", "_", "_",
-                                      "_", "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_mode"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "inode_meta_nlink", "_", "_", "_", "_",
-                                      "_", "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_nlink"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "_", "inode_meta_uid", "_", "_",
-                                      "_", "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_uid"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "_", "_", "inode_meta_gid", "_",
-                                      "_", "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_gid"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob",
-                                "name": "inode_type_state", "args": [
-                                  
-                                ]
-                              },
-                              "expr": {
-                                "what": "expr:case",
-                                "type": {
-                                  "what": "type:glob", "name": "inode_state",
-                                  "args": [
-                                    
-                                  ]
-                                },
-                                "expr": {
-                                  "what": "expr:rel", "name": "i"
-                                },
-                                "cases": [
-                                  {
-                                    "what": "case",
-                                    "pat": {
-                                      "what": "pat:constructor",
-                                      "name": "Build_inode_state",
-                                      "argnames": [
-                                        "_", "inode_state_type"
-                                      ]
-                                    },
-                                    "body": {
-                                      "what": "expr:rel",
-                                      "name": "inode_state_type"
-                                    }
-                                  }
-                                ]
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Ifile", "argnames": [
-                                      "b", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:apply",
-                                    "func": {
-                                      "what": "expr:global",
-                                      "name": "len_buf"
-                                    },
-                                    "args": [
-                                      {
-                                        "what": "expr:rel", "name": "b"
-                                      }
-                                    ]
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:wild"
-                                  },
-                                  "body": {
-                                    "what": "expr:global", "name": "u64_zero"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:coerce",
-                              "value": {
-                                "what": "expr:rel", "name": "used"
-                              }
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob",
-                                "name": "inode_type_state", "args": [
-                                  
-                                ]
-                              },
-                              "expr": {
-                                "what": "expr:case",
-                                "type": {
-                                  "what": "type:glob", "name": "inode_state",
-                                  "args": [
-                                    
-                                  ]
-                                },
-                                "expr": {
-                                  "what": "expr:rel", "name": "i"
-                                },
-                                "cases": [
-                                  {
-                                    "what": "case",
-                                    "pat": {
-                                      "what": "pat:constructor",
-                                      "name": "Build_inode_state",
-                                      "argnames": [
-                                        "_", "inode_state_type"
-                                      ]
-                                    },
-                                    "body": {
-                                      "what": "expr:rel",
-                                      "name": "inode_state_type"
-                                    }
-                                  }
-                                ]
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Iblk", "argnames": [
-                                      "mm"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel", "name": "mm"
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Ichr", "argnames": [
-                                      "mm"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel", "name": "mm"
-                                  }
-                                },
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:wild"
-                                  },
-                                  "body": {
-                                    "what": "expr:constructor",
+                                    "what": "expr:case",
                                     "type": {
                                       "what": "type:glob",
-                                      "name": "major_minor", "args": [
+                                      "name": "inode_type_state",
+                                      "args": [
                                         
                                       ]
-                                    }, "name": "Build_major_minor",
-                                    "args": [
+                                    },
+                                    "expr": {
+                                      "what": "expr:case",
+                                      "type": {
+                                        "what": "type:glob",
+                                        "name": "inode_state", "args": [
+                                          
+                                        ]
+                                      },
+                                      "expr": {
+                                        "what": "expr:rel", "name": "i"
+                                      },
+                                      "cases": [
+                                        {
+                                          "what": "case",
+                                          "pat": {
+                                            "what": "pat:constructor",
+                                            "name": "Build_inode_state",
+                                            "argnames": [
+                                              "_", "inode_state_type"
+                                            ]
+                                          },
+                                          "body": {
+                                            "what": "expr:rel",
+                                            "name": "inode_state_type"
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "cases": [
                                       {
-                                        "what": "expr:global",
-                                        "name": "u32_zero"
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Ifile",
+                                          "argnames": [
+                                            "_", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3REG", "args": [
+                                            
+                                          ]
+                                        }
                                       },
                                       {
-                                        "what": "expr:global",
-                                        "name": "u32_zero"
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Idir", "argnames": [
+                                            "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3DIR", "args": [
+                                            
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Iblk", "argnames": [
+                                            "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3BLK", "args": [
+                                            
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Ichr", "argnames": [
+                                            "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3CHR", "args": [
+                                            
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Isymlink",
+                                          "argnames": [
+                                            "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3LNK", "args": [
+                                            
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Isock", "argnames": [
+                                            
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3SOCK", "args": [
+                                            
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Ififo", "argnames": [
+                                            
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "ftype", "args": [
+                                              
+                                            ]
+                                          }, "name": "NF3FIFO", "args": [
+                                            
+                                          ]
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "inode_meta_mode", "_", "_",
+                                            "_", "_", "_", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_mode"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "inode_meta_nlink", "_", "_",
+                                            "_", "_", "_", "_", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_nlink"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "_", "inode_meta_uid", "_",
+                                            "_", "_", "_", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_uid"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "_", "_", "inode_meta_gid",
+                                            "_", "_", "_", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_gid"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_type_state",
+                                      "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:case",
+                                      "type": {
+                                        "what": "type:glob",
+                                        "name": "inode_state", "args": [
+                                          
+                                        ]
+                                      },
+                                      "expr": {
+                                        "what": "expr:rel", "name": "i"
+                                      },
+                                      "cases": [
+                                        {
+                                          "what": "case",
+                                          "pat": {
+                                            "what": "pat:constructor",
+                                            "name": "Build_inode_state",
+                                            "argnames": [
+                                              "_", "inode_state_type"
+                                            ]
+                                          },
+                                          "body": {
+                                            "what": "expr:rel",
+                                            "name": "inode_state_type"
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Ifile",
+                                          "argnames": [
+                                            "b", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:apply",
+                                          "func": {
+                                            "what": "expr:global",
+                                            "name": "len_buf"
+                                          },
+                                          "args": [
+                                            {
+                                              "what": "expr:rel", "name": "b"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:wild"
+                                        },
+                                        "body": {
+                                          "what": "expr:coerce",
+                                          "value": {
+                                            "what": "expr:rel",
+                                            "name": "non_file_len"
+                                          }
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:coerce",
+                                    "value": {
+                                      "what": "expr:rel", "name": "used"
+                                    }
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_type_state",
+                                      "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:case",
+                                      "type": {
+                                        "what": "type:glob",
+                                        "name": "inode_state", "args": [
+                                          
+                                        ]
+                                      },
+                                      "expr": {
+                                        "what": "expr:rel", "name": "i"
+                                      },
+                                      "cases": [
+                                        {
+                                          "what": "case",
+                                          "pat": {
+                                            "what": "pat:constructor",
+                                            "name": "Build_inode_state",
+                                            "argnames": [
+                                              "_", "inode_state_type"
+                                            ]
+                                          },
+                                          "body": {
+                                            "what": "expr:rel",
+                                            "name": "inode_state_type"
+                                          }
+                                        }
+                                      ]
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Iblk",
+                                          "argnames": [
+                                            "mm"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel", "name": "mm"
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Ichr",
+                                          "argnames": [
+                                            "mm"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel", "name": "mm"
+                                        }
+                                      },
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:wild"
+                                        },
+                                        "body": {
+                                          "what": "expr:constructor",
+                                          "type": {
+                                            "what": "type:glob",
+                                            "name": "major_minor",
+                                            "args": [
+                                              
+                                            ]
+                                          }, "name": "Build_major_minor",
+                                          "args": [
+                                            {
+                                              "what": "expr:global",
+                                              "name": "u32_zero"
+                                            },
+                                            {
+                                              "what": "expr:global",
+                                              "name": "u32_zero"
+                                            }
+                                          ]
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:coerce",
+                                    "value": {
+                                      "what": "expr:rel", "name": "fsid"
+                                    }
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "_", "_", "_",
+                                            "inode_meta_fileid", "_", "_",
+                                            "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_fileid"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "_", "_", "_", "_",
+                                            "inode_meta_atime", "_", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_atime"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "_", "_", "_", "_", "_",
+                                            "inode_meta_mtime", "_"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_mtime"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "what": "expr:case",
+                                    "type": {
+                                      "what": "type:glob",
+                                      "name": "inode_meta", "args": [
+                                        
+                                      ]
+                                    },
+                                    "expr": {
+                                      "what": "expr:rel", "name": "m"
+                                    },
+                                    "cases": [
+                                      {
+                                        "what": "case",
+                                        "pat": {
+                                          "what": "pat:constructor",
+                                          "name": "Build_inode_meta",
+                                          "argnames": [
+                                            "_", "_", "_", "_", "_", "_",
+                                            "_", "inode_meta_ctime"
+                                          ]
+                                        },
+                                        "body": {
+                                          "what": "expr:rel",
+                                          "name": "inode_meta_ctime"
+                                        }
                                       }
                                     ]
                                   }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:coerce",
-                              "value": {
-                                "what": "expr:rel", "name": "fsid"
-                              }
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
                                 ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
                               },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "_", "_", "_",
-                                      "inode_meta_fileid", "_", "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_fileid"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "_", "_", "_", "_",
-                                      "inode_meta_atime", "_", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_atime"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "_", "_", "_", "_", "_",
-                                      "inode_meta_mtime", "_"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_mtime"
-                                  }
-                                }
-                              ]
-                            },
-                            {
-                              "what": "expr:case",
-                              "type": {
-                                "what": "type:glob", "name": "inode_meta",
-                                "args": [
-                                  
-                                ]
-                              }, "expr": {
-                                "what": "expr:rel", "name": "m"
-                              },
-                              "cases": [
-                                {
-                                  "what": "case",
-                                  "pat": {
-                                    "what": "pat:constructor",
-                                    "name": "Build_inode_meta",
-                                    "argnames": [
-                                      "_", "_", "_", "_", "_", "_", "_",
-                                      "inode_meta_ctime"
-                                    ]
-                                  },
-                                  "body": {
-                                    "what": "expr:rel",
-                                    "name": "inode_meta_ctime"
-                                  }
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        "body": {
-                          "what": "expr:constructor",
-                          "type": {
-                            "what": "type:glob", "name": "proc",
-                            "args": [
-                              {
-                                "what": "type:glob", "name": "specOp",
+                              "body": {
+                                "what": "expr:constructor",
+                                "type": {
+                                  "what": "type:glob", "name": "proc",
+                                  "args": [
+                                    {
+                                      "what": "type:glob", "name": "specOp",
+                                      "args": [
+                                        {
+                                          "what": "type:unknown"
+                                        }
+                                      ]
+                                    },
+                                    {
+                                      "what": "type:glob", "name": "fattr",
+                                      "args": [
+                                        
+                                      ]
+                                    }
+                                  ]
+                                }, "name": "Ret",
                                 "args": [
                                   {
-                                    "what": "type:unknown"
+                                    "what": "expr:rel", "name": "res0"
                                   }
                                 ]
-                              },
-                              {
-                                "what": "type:glob", "name": "fattr",
-                                "args": [
-                                  
-                                ]
                               }
-                            ]
-                          }, "name": "Ret",
-                          "args": [
-                            {
-                              "what": "expr:rel", "name": "res0"
                             }
-                          ]
+                          }
                         }
-                      }
+                      ]
                     }
                   }
                 ]
