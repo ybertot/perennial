@@ -64,7 +64,7 @@ class SymbolicJSON(object):
       pat = case['pat']
       if pat['what'] == 'pat:constructor':
         body = case['body']
-        cidx = constructor_by_name(victim.sort(), pat['name'])
+        cidx = constructor_idx_by_name(victim.sort(), pat['name'])
         patCondition = victim.sort().recognizer(cidx)(victim)
         for (idx, argname) in enumerate(pat['argnames']):
           if argname == '_': continue
@@ -130,7 +130,7 @@ class SymbolicJSON(object):
       t['args'][0] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'unit'}
       t['args'][1] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'fattr'}
     sort = self.z3_sort(t)
-    cid = constructor_by_name(sort, procexpr['name'])
+    cid = constructor_idx_by_name(sort, procexpr['name'])
 
     cargs = []
     for arg in procexpr['args']:
@@ -168,11 +168,14 @@ class SymbolicJSON(object):
     else:
       raise Exception("unexpected proc constructor", procexpr['name'])
 
-def constructor_by_name(sort, cname):
+def constructor_idx_by_name(sort, cname):
   for i in range(0, sort.num_constructors()):
     if sort.constructor(i).name() == cname:
       return i
   raise Exception("Unknown constructor", sort, cname)
+
+def constructor_by_name(sort, cname):
+  return sort.constructor(constructor_idx_by_name(sort, cname))
 
 anonctr = 0
 def anon():
