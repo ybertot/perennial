@@ -144,6 +144,7 @@ trace = nfs_trace.call_reply_pairs("/tmp/nfs.pcap")
 for (proc, call, reply) in trace:
   if proc == 1: #getattr
     arg = z3.StringVal(call.object.data)
+    LAST_FH = arg
     getattr_step, _ = m.get_term("getattr_step")
     step = jc.reduce({
       'what': 'expr:apply',
@@ -151,6 +152,7 @@ for (proc, call, reply) in trace:
       'func': getattr_step,
     })
     next_state, spec_res = sym.proc(step, current_state)
+    # next_state, badspec_res = sym.proc(step, current_state)
 
     # print "spec_res:", spec_res.sexpr()
     # print "trace reply:", reply
@@ -162,6 +164,11 @@ for (proc, call, reply) in trace:
       arg0 = arg0sort.constructor(0)()
       arg1 = lift_fattr3(reply.resok.obj_attributes)
       reply_res = rs.constructor(0)(arg0, arg1)
+
+      # arg1sort = rs.accessor(1, 1)(spec_res).sort()
+      # badarg1 = json_sym.constructor_by_name(arg1sort, "ERR_STALE")()
+      # badreply_res = rs.constructor(1)(arg0, badarg1)
+      # reply_res, badreply_res = badreply_res, reply_res
     else:
       reply_res = rs.constructor(1)
       raise Exception("error not supported")
@@ -177,9 +184,32 @@ for (proc, call, reply) in trace:
 
     s.add(spec_res == reply_res)
     print s.check()
+    
+    # s.add(badspec_res == badreply_res)
+    # print s.check()
   else:
     raise Exception("unknown proc", proc)
 
   current_state = next_state
 
 print s.check()
+
+
+## symbolic nfs server: ask for satisfying assignment for new RPC call
+arg = z3.String("getattr_fh")
+getattr_step, _ = m.get_term("getattr_step")
+step = jc.reduce({
+  'what': 'expr:apply',
+  'args': [arg],
+  'func': getattr_step,
+})
+next_state, spec_res = sym.proc(step, current_state)
+the_response = z3.Const('the_response', spec_res.sort())
+s.add(the_response == spec_res)
+
+while s.check() == z3.sat:
+  print "Synthetisizing response"
+  m = s.model()
+  this_response = m[the_response]
+  print this_response
+  s.add(the_response != this_response)
