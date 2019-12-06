@@ -140,8 +140,6 @@ current_state = z3.Const('s_init', stateSort)
 s = z3.Solver()
 s.set(**{"solver.smtlib2_log": "filename.smt2"})
 
-constraints = []
-
 trace = nfs_trace.call_reply_pairs("/tmp/nfs.pcap")
 for (proc, call, reply) in trace:
   if proc == 1: #getattr
@@ -177,13 +175,11 @@ for (proc, call, reply) in trace:
     # print "REPLY_RES:"
     # print reply_res.sexpr()
 
-    constraints.append(spec_res == reply_res)
+    s.add(spec_res == reply_res)
+    print s.check()
   else:
     raise Exception("unknown proc", proc)
 
   current_state = next_state
 
-big_c = z3.And(constraints[0], constraints[1])
-print big_c.sexpr()
-s.add(big_c)
 print s.check()

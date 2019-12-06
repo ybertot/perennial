@@ -117,6 +117,7 @@ class Context(object):
             'argnames': expr['argnames'][1:],
             'args': expr['args'][1:],
             'name': expr['name'],
+            'name_with_args': expr.get('name_with_args', expr['name']) + "_" + arg['name'],
           }
           expr = res
           continue

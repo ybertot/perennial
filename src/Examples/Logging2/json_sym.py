@@ -29,7 +29,8 @@ class SymbolicJSON(object):
     if base_lam is not None:
       return base_lam(typeexpr['args'])
 
-    datatype = z3.Datatype(str(typeexpr['name']))
+    z3name = typeexpr.get('name_with_args', typeexpr['name'])
+    datatype = z3.Datatype(str(z3name))
     for c in typeexpr['constructors']:
       cname = str(c['name'])
       datatype.declare(cname, *[(cname + '_%d' % idx, self.z3_sort(argtype))
