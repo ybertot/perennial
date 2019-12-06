@@ -17,6 +17,15 @@ def unpack_call(proc, nextdata):
   else:
     raise Exception("unpack_call:", proc)
 
+def unpack_reply(proc, nextdata):
+  unpacker = rfc1813.pack.protUnpacker(nextdata)
+  if proc == 3: #lookup
+    return unpacker.unpack_LOOKUP3res()
+  elif proc == 4: #access
+    return unpacker.unpack_ACCESS3res()
+  else:
+    raise Exception("unpack_call:", proc)
+
 pending_calls = {}
 
 with open('/tmp/nfs.pcap') as f:
@@ -49,15 +58,21 @@ with open('/tmp/nfs.pcap') as f:
     xid = rpc_msg.xid
     body = rpc_msg.body
 
-    nextdata = rfc1057unpacker.get_buffer()
-    print "nextdata:", len(nextdata)
-    print "nextdata:", nextdata.encode('hex')
+    nextdata = xdrdata[rfc1057unpacker.get_position():]
 
     if body.mtype == rfc1057.const.CALL:
-      call_args = unpack_call(body.cbody.proc, nextdata)
-      pending_calls[xid] = (body.cbody, call_args)
+      proc_args = unpack_call(body.cbody.proc, nextdata)
+      pending_calls[xid] = (body.cbody, proc_args)
       continue
 
-    call = pending_calls[xid]
-    reply = body.rbody
-    print "call", call, "reply", reply
+    if body.rbody.stat != rfc1057.const.MSG_ACCEPTED:
+      continue
+
+    areply = body.rbody.areply
+    if areply.reply_data.stat != rfc1057.const.SUCCESS:
+      continue
+
+    (cbody, proc_args) = pending_calls[xid]
+    proc_reply = unpack_reply(cbody.proc, nextdata)
+
+    print "proc", cbody.proc, "args", proc_args, "reply", proc_reply
