@@ -7,9 +7,13 @@ class SymbolicJSON(object):
     self.context = context
     self.base_types = {}
     self.bool_sort = None
+    self.unit_tt = None
 
   def set_bool_type(self, t):
     self.bool_sort = self.z3_sort(t)
+
+  def set_unit_tt(self, t):
+    self.unit_tt = t
 
   def register_base_type(self, name, z3sort_lam):
     self.base_types[name] = z3sort_lam
@@ -88,6 +92,7 @@ class SymbolicJSON(object):
     return resstate, resvalue
 
   def proc(self, procexpr, state):
+    procexpr0 = procexpr
     procexpr = self.context.reduce(procexpr)
 
     while True:
@@ -122,14 +127,23 @@ class SymbolicJSON(object):
         else:
           raise Exception("unknown special", procexpr['id'])
 
-      print procexpr
+      print procexpr0
       raise Exception("proc() on unexpected thing", procexpr['what'])
 
   def proc_constructor_other(self, procexpr, state):
     t = procexpr['type']
     if t['name'] == 'res':
-      t['args'][0] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'unit'}
-      t['args'][1] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'fattr'}
+      ## What a hack: guess the type arguments for `res`...
+
+      # print "RES ARG 0:", procexpr['args'][0]
+      # print "RES ARG 1:", procexpr['args'][1]
+
+      if procexpr['args'][0]['name'] == 'Tt':
+        t['args'][0] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'unit'}
+        t['args'][1] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'fattr'}
+      else:
+        t['args'][0] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'wcc_data'}
+        t['args'][1] = {'what': 'type:glob', 'mod': t['mod'], 'name': 'unit'}
     sort = self.z3_sort(t)
     cid = constructor_idx_by_name(sort, procexpr['name'])
 
@@ -164,8 +178,16 @@ class SymbolicJSON(object):
         return state, state
       elif callop['name'] == 'SymBool':
         return state, z3.Const(anon(), self.bool_sort)
+      elif callop['name'] == 'SymU32':
+        return state, z3.Const(anon(), z3.BitVecSort(32))
       elif callop['name'] == 'SymU64':
         return state, z3.Const(anon(), z3.BitVecSort(64))
+      elif callop['name'] == 'Assert':
+        # XXX how to add a solver constraint?
+        return state, self.unit_tt
+      elif callop['name'] == 'Puts':
+        _, newstate = self.proc(callop['args'][0], state)
+        return newstate, self.unit_tt
       else:
         raise Exception("unexpected callop constructor", callop['name'])
     else:

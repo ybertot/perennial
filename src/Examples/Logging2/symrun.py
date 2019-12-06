@@ -43,6 +43,7 @@ sym.register_base_type("createverf", lambda args: z3.BitVecSort(64))
 sym.register_base_type("writeverf", lambda args: z3.BitVecSort(64))
 
 sym.set_bool_type(m.get_type("bool"))
+sym.set_unit_tt(sym.z3_sort(m.get_type("unit")).constructor(0)())
 
 m.redefine_term('gmap_lookup', {
   'what': 'expr:lambda',
@@ -60,10 +61,10 @@ m.redefine_term('u32_zero', {
   'what': 'expr:special',
   'id': 'u32_zero',
 })
-# m.redefine_term('u64_zero', {
-#   'what': 'expr:special',
-#   'id': 'u64_zero',
-# })
+m.redefine_term('u64_zero', {
+  'what': 'expr:special',
+  'id': 'u64_zero',
+})
 
 # stateSort = sym.z3_sort(stateType)
 # s0 = z3.Const('s0', stateSort)
@@ -214,13 +215,38 @@ print s.check()
 
 
 ## symbolic nfs server: ask for satisfying assignment for new RPC call
-arg = z3.String("getattr_fh")
-getattr_step, _ = m.get_term("getattr_step")
-step = jc.reduce({
-  'what': 'expr:apply',
-  'args': [arg],
-  'func': getattr_step,
-})
+current_state = z3.Const('s_init', stateSort)
+
+if False:
+  arg = z3.String("getattr_fh")
+  getattr_step, _ = m.get_term("getattr_step")
+  step = jc.reduce({
+    'what': 'expr:apply',
+    'args': [arg],
+    'func': getattr_step,
+  })
+else:
+  arg0 = z3.String("setattr_fh")
+  arg1 = z3.Const("setattr_sattr", sym.z3_sort(m.get_type("sattr")))
+  option_time = {
+    "what": "type:glob",
+    "name": "option",
+    "mod": m,
+    "args": [{
+      "what": "type:glob",
+      "name": "time",
+      "mod": m,
+      "args": [],
+    }],
+  }
+  arg2 = z3.Const("setattr_ctime_guard", sym.z3_sort(option_time))
+  setattr_step, _ = m.get_term("setattr_step")
+  step = jc.reduce({
+    'what': 'expr:apply',
+    'args': [arg0, arg1, arg2],
+    'func': setattr_step,
+  })
+
 next_state, spec_res = sym.proc(step, current_state)
 the_response = z3.Const('the_response', spec_res.sort())
 s.add(the_response == spec_res)
