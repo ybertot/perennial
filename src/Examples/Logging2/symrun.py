@@ -161,6 +161,14 @@ for (proc, call, reply) in trace:
       reply_res = rs.constructor(1)
       raise Exception("error not supported")
 
+    spec_res = z3.simplify(spec_res)
+
+    print "SPEC_RES:"
+    print spec_res.sexpr()
+
+    print "REPLY_RES:"
+    print reply_res.sexpr()
+
     s.add(spec_res == reply_res)
   else:
     raise Exception("unknown proc", proc)
