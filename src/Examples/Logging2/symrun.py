@@ -5,6 +5,7 @@ import json
 import json_eval
 import json_sym
 import z3
+import nfs_trace
 
 with open('NFS3API.json') as f:
   code = f.read()
@@ -89,3 +90,7 @@ s = z3.Solver()
 s.add(res.sort().recognizer(1)(res))
 s.add(res.sort().accessor(1, 1)(res) == ERR_PERM)
 print 'Check:', s.check()
+
+trace = nfs_trace.call_reply_pairs("/tmp/nfs.pcap")
+for (proc, call, reply) in trace:
+  print proc, call, reply
