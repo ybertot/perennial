@@ -163,6 +163,8 @@ class SymbolicJSON(object):
         return state, state
       elif callop['name'] == 'SymBool':
         return state, z3.Const(anon(), self.bool_sort)
+      elif callop['name'] == 'SymU64':
+        return state, z3.Const(anon(), z3.BitVecSort(64))
       else:
         raise Exception("unexpected callop constructor", callop['name'])
     else:
