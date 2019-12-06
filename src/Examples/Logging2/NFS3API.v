@@ -608,11 +608,13 @@ Module NFS3.
       puts (set fhs (fun x => <[f := sync i]> x)).
 
     Definition set_attr_nonlen (i : inode_state) (now : time) (a : sattr) : inode_state :=
+(*
       let i := set_attr_one i now (f := inode_meta_mode) a.(sattr_mode) in
       let i := set_attr_one i now (f := inode_meta_uid) a.(sattr_uid) in
       let i := set_attr_one i now (f := inode_meta_gid) a.(sattr_gid) in
       let i := set_attr_time i now (f := inode_meta_atime) a.(sattr_atime) in
       let i := set_attr_time i now (f := inode_meta_mtime) a.(sattr_mtime) in
+*)
       i.
 
     Definition setattr_step (f : fh) (a : sattr) (ctime_guard : option time) : spec_proc (res wcc_data unit) :=
