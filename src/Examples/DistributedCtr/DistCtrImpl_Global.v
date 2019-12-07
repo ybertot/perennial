@@ -562,16 +562,30 @@ Section proof.
     iLeft; auto.
     iDestruct "Hnode1" as "[(H1 & Hnode1) | (H1 & Hnode1)]"; iDestruct "H1" as %H1'; inversion H1'; subst. iSplit; auto.
     iLeft; auto.
-    iDestruct "Hnode2" as "[(H2 & Hnode2) | (H2 & Hnode2)]"; iDestruct "H2" as %H2'; inversion H2'; subst. iSplit; auto.
+    iDestruct "Hnode2" as "[(H2 & Hnode2) | (H2 & Hnode2)]"; iDestruct "H2" as %H2'; inversion H2'; subst.
+    iSplit; auto.
 
-    iIntros "(Hnode1 & Hnode2 & Hγ1● & Hγ2● & Hinv)".
+    iIntros "(Hγ1● & Hγ2● & Hown)".
+    unfold global_inv_locked; unfold node_val_inv; unfold node_lock_inv.
+    iDestruct "Hown" as (n1) "(([(H1' & Hbar1) | (H1' & Hbar1)] & Hγ1◯) & [(H2' & Hbar2) | (H2' & Hbar2)] & Hγ2◯)";
+    iDestruct "Hγ1●" as (n3) "Hγ1●";
+    iDestruct "Hγ2●" as (n4) "Hγ2●";
+    iDestruct "H1'" as %H1'; inversion H1'; subst;
+    iDestruct "H2'" as %H2'; inversion H2'; subst.
+    iMod (ghost_var_update γ1 (0) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]";
+    iMod (ghost_var_update γ2 (0) with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
+    unfold node_lock_inv.
     wp_pures.
-    wp_apply (release_spec with "[Hlked2 Hlk2 Hγ2●]").
-    iFrame; auto.
+
+    wp_apply (release_spec with "[Hlked2 Hγ2● Hlk2]").
+    iFrame; iSplit; auto.
     iIntros; wp_pures.
-    wp_apply (release_spec with "[Hlked1 Hlk1 Hγ1●]").
-    iFrame; auto.
+    wp_apply (release_spec with "[Hlk1 Hγ1● Hlked1]").
+    iFrame; iSplit; auto.
     iIntros; wp_pures.
-    iApply "HPost". iFrame. iSplit; auto. 
+    iApply "HPost"; iSplit; auto; iFrame; iSplit; auto.
+    iExists 0; auto.
+    iFrame; auto.
+    iSplitL "Hbar1"; auto.
   Qed.
 End proof.
