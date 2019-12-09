@@ -168,7 +168,7 @@ def lift_fattr3(fattr3):
 s = z3.Solver()
 s.set(**{"solver.smtlib2_log": "filename.smt2"})
 
-trace = nfs_trace.call_reply_pairs("/tmp/nfs.pcap")
+trace = nfs_trace.call_reply_pairs("./nfs.pcap")
 for (proc, call, reply) in trace:
   if proc == 1: #getattr
     arg = z3.StringVal(call.object.data)

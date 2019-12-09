@@ -1,6 +1,6 @@
 ## mount localhost:/ /mnt/x -o vers=3
 ## tcpdump -w /tmp/nfs.pcap -s 1600 -i lo port 2049 
-## ls -ld /proc/self/fd/5 5< /mnt/x/etc/passwd
+## (ls -ld /proc/self/fd/5; ls -ld /proc/self/fd/5) 5< /mnt/x/etc/timezone
 ##
 ## git clone -b python2 https://github.com/hawk78/pyrpcgen.git
 
