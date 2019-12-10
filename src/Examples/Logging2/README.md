@@ -20,8 +20,8 @@ tcpdump -w /tmp/nfs.pcap -s 1600 -i lo port 2049
 
 ## Run the Symbolic NFS3API Interpreter 
 Install python packages (via pip for python2):
-    - z3-solver==4.8.7
-    - dpkt
+    * z3-solver==4.8.7
+    * dpkt
 
 Run the Coq/Gallina spec in `NFS3API.v`
 to extract to `NFS3API.json`

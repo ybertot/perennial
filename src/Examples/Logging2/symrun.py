@@ -77,26 +77,26 @@ for id in ('len_buf', 'resize_buf', 'u32_zero', 'u64_zero', 'uint64_gt', 'uint32
 
 # stateSort = sym.z3_sort(stateType)
 # s0 = z3.Const('s0', stateSort)
-# 
-# 
+#
+#
 # getattr_step, _ = m.get_term("getattr_step")
-# 
+#
 # arg = z3.String('fh')
-# 
+#
 # expr = {
 #   'what': 'expr:apply',
 #   'args': [arg],
 #   'func': getattr_step,
 # }
-# 
+#
 # getattr_step_fh = jc.reduce(expr)
-# 
+#
 # s1, res = sym.proc(getattr_step_fh, s0)
 # print s1
 # print res
-# 
+#
 # ERR_PERM = res.sort().accessor(1, 1)(res).sort().constructor(0)()
-# 
+#
 # s = z3.Solver()
 # # s.add(s0 != s1)
 # # s.add(res.sort().recognizer(0)(res))
@@ -212,7 +212,7 @@ for (proc, call, reply) in trace:
 
     s.add(spec_res == reply_res)
     print s.check()
-    
+
     # s.add(badspec_res == badreply_res)
     # print s.check()
   else:
