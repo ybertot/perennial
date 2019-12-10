@@ -9,40 +9,28 @@ Definition alloc_replicas : val := λ: "()",
   let: "backup" := alloc_node #() in
   Pair "master" "backup".
 
-Definition recover_replicas: val :=
-  λ: "node1" "node2",
-  match: !"node1" with
-    SOME "v1" => "node2" <- SOME "v1";;
-                         "v1"
-    | NONE => match: !"node2" with
-                SOME "v2" => "node1" <- SOME "v2";;
-                               "v2"
-              | NONE => "node1" <- SOME #0;;
-                                "node2" <- SOME #0;;
-                                #-1
-              end
-  end.
- 
-Definition get_replicas: val :=
+Definition recover_node : val :=
+  λ: "me" "other",
+  if: get_node_val "other" = Pair "v1" #1 then "me" <- SOME "v1"
+  else "me" <- SOME #0.
+
+Definition get_val: val :=
   λ: "node1" "node2" "lk1" "lk2",
   acquire "lk1";;
-  acquire "lk2";;
-  let: "r" := recover_replicas "node1" "node2" in
-  if: "r" < #(0)
-  then
-    release "lk2";;
+ if: get_node_val "node1" = Pair "v1" #1
+ then release "lk1";; "v1"
+ else
+   recover_node "node1" "node2"
     release "lk1";;
-    #0
-  else
-    release "lk2";;
-    release "lk1";;
-    "r".
+    if: get_node_val "node2" = Pair "v1" #1
+    then release "lk2";; "v1"
+    else release "lk2";; #(-1).
 
 Definition update_replicas: val :=
   λ: "node1" "node2" "lk1" "lk2",
   acquire "lk1";;
-  acquire "lk2";;
   let: "s1" := update_node "node1" in
+  acquire "lk2";;
   let: "s2" := update_node "node2" in
   if: (("s1" = #0) || ("s2" = #0)) then
     recover_replicas "node1" "node2";;

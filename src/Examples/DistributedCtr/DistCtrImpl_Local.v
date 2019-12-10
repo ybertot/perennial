@@ -10,12 +10,27 @@ Definition alloc_node: val := λ: "()",
   Pair "node" "lk".
 
 Definition update_node: val := 
-  λ: "node",
+  λ: "node" "lk",
+  acquire "lk";;
+  let: "r" := ref #0 in
   match: !"node" with
     SOME "v1" => "node" <- SOME ("v1" + #1);;
-                        #1
-  | NONE => #0
-  end.
+                        "r" <- #0
+  | NONE => "r" <- #(-1)
+  end;;
+  release "lk";;
+  !"r".
+
+Definition get_node_val: val :=
+  λ: "node" "lk",
+  acquire "lk";;
+  let: "r" := ref #0 in
+  match: !"node" with
+    SOME "v1" => !"r" <- Pair "v1" #1
+  | NONE => !"r" <- Pair #0 #0
+  end;;
+  release "lk";;
+  !"r".
 
 Definition kill_node: val :=
   λ: "node",
@@ -54,60 +69,79 @@ Section proof.
     iFrame; auto.
   Qed.
 
-  Lemma update_node_some_spec : ∀ (n: Z) γ1 node,
+  Lemma update_node_some_spec : ∀ (n: Z) γ1 node lk,
       {{{
-           node_lock_inv node false γ1
+          is_lock LockN γ1 lk (node_lock_inv node false γ1)
           ∗ node_own_inv node n γ1
     }}}
-      update_node #node
-    {{{ RET #1;
-          node_lock_inv node false γ1
+      update_node #node lk
+    {{{ RET #0;
+          is_lock LockN γ1 lk (node_lock_inv node false γ1)
           ∗ node_own_inv node (n+1) γ1
     }}}.
   Proof.
-    iIntros (n γ1 node Φ) "(Hlkinv & Hγ1◯) HPost".
+    iIntros (n γ1 node lk Φ) "(#Hlkinv & Hγ1◯) HPost".
     unfold node_lock_inv.
     unfold node_own_inv.
     unfold update_node.
     wp_pures.
 
-    iDestruct "Hlkinv" as (n') "(Hγ1● & [[H Halive] | [H Halive]])";
-    wp_load;
-    iDestruct "H" as %H. inversion H; subst.
+    wp_apply (acquire_spec with "Hlkinv").
     wp_pures.
+    iIntros "(Hlked & Hinv)".
+    iDestruct "Hinv" as (n') "(Hγ1● & [[H Halive] | [H Halive]])";
+    wp_pures;
+    iDestruct "H" as %H. inversion H; subst.
     iDestruct (ghost_var_agree with "Hγ1● Hγ1◯") as %->.
     iMod (ghost_var_update γ1 (n+1) with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]".
-    wp_store.
+    wp_alloc r as "Hr".
+    wp_let.
+    wp_load.
     wp_pures.
+    wp_store.
+    wp_store.
+    wp_apply (release_spec LockN γ1 lk (node_lock_inv node false γ1) with "[Hlkinv Hlked Hγ1● Halive]"); iFrame; auto.
+    iSplit; auto.
+    unfold node_lock_inv.
+    iExists (n+1). iFrame; auto.
+
+    iIntros. wp_pures. wp_load.
     iApply "HPost".
-    iSplitL "Hγ1● Halive"; auto.
-    iExists (n+1); auto. iFrame; auto.
+    iFrame; auto.
   Qed.
 
-  Lemma update_node_none_spec : ∀ (n: Z) γ1 node,
+  Lemma update_node_none_spec : ∀ (n: Z) γ1 node lk,
       {{{
-           node_lock_inv node true γ1
+          is_lock LockN γ1 lk (node_lock_inv node true γ1)
           ∗ node_own_inv node n γ1
     }}}
-      update_node #node
-    {{{ RET #0;
-        node_lock_inv node true γ1
-        ∗ ∃ n, node_own_inv node n γ1
+      update_node #node lk
+    {{{ RET #(-1);
+          is_lock LockN γ1 lk (node_lock_inv node true γ1)
+          ∗ node_own_inv node (n) γ1
     }}}.
   Proof.
-    iIntros (n γ1 node Φ) "(Hlkinv & Hγ1◯) HPost".
+    iIntros (n γ1 node lk Φ) "(#Hlkinv & Hγ1◯) HPost".
     unfold node_lock_inv.
     unfold node_own_inv.
     unfold update_node.
     wp_pures.
 
-    iDestruct "Hlkinv" as (n') "(Hγ1● & [[H Halive] | [H Halive]])";
-    wp_load;
-    iDestruct "H" as %H; unfold not in H; destruct H; auto.
+    wp_apply (acquire_spec with "Hlkinv").
     wp_pures.
+    iIntros "(Hlked & Hinv)".
+    iDestruct "Hinv" as (n') "(Hγ1● & [[H Halive] | [H Halive]])";
+    wp_pures;
+    iDestruct "H" as %H; destruct H; auto.
     iDestruct (ghost_var_agree with "Hγ1● Hγ1◯") as %->.
+    wp_alloc r as "Hr".
+    wp_let.
+    wp_load.
+    wp_pures.
+    wp_store.
+    wp_apply (release_spec LockN γ1 lk (node_lock_inv node true γ1) with "[Hlkinv Hlked Hγ1● Halive]"); iFrame; auto.
+    iIntros. wp_pures. wp_load.
     iApply "HPost".
-    iSplitL "Hγ1● Halive"; auto.
-    iExists (n); auto. iFrame; auto.
+    iFrame; auto.
   Qed.
 End proof.
