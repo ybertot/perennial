@@ -37,7 +37,7 @@ Definition get_replicas: val :=
     release "lk2";;
     release "lk1";;
     "r".
- 
+
 Definition update_replicas: val :=
   λ: "node1" "node2" "lk1" "lk2",
   acquire "lk1";;
@@ -51,6 +51,7 @@ Definition update_replicas: val :=
   else 
     release "lk2";;
     release "lk1".
+
 
 Section proof.
   Context `{!heapG Σ, !spawnG Σ, !lockG Σ, !inG Σ (authR (optionUR (exclR ZO)))}.
