@@ -529,8 +529,6 @@ Module NFS3.
       pure (OK tt attrs).
 
 
-
-
     Definition check_ctime_guard {A T} (i : inode_state) (ctime_guard : option time)
                                        (a : A) (rx : unit -> spec_proc (res A T)) :=
       match ctime_guard with
