@@ -4,7 +4,9 @@ From Perennial Require Import Examples.StatDb.Refinement.
 From Perennial Require Import Examples.AtomicPair.RefinementShadow.
 From Perennial Require Import Examples.AtomicPair.RefinementLog.
 (* From Perennial Require Import Examples.Logging.LogRefinement. *)
-(* From Perennial Require Import Examples.Logging2.RefinementLog2. *)
+From Perennial Require Import Examples.Logging2.RefinementLog2.
+From Perennial Require Import Examples.Logging2.RefinementAlloc.
+From Perennial Require Import Examples.Logging2.NFS3API.
 From Perennial Require Import Examples.ReplicatedDisk.ReplicatedDiskRefinement.
 From Perennial Require Import Examples.DistributedCtr.DistCtrImpl_Local.
 From Perennial Require Import Examples.DistributedCtr.DistCtrImpl_Global.
