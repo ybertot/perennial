@@ -90,172 +90,35 @@ Section proof.
 
     unfold get_node_val.
     wp_pures.
+    iIntros (ret) "(Hlked2 & Hγ12◯)".
+    unfold node_own_inv.
+    wp_let.
     wp_apply (acquire_spec); auto.
 
-    iIntros "(Hlked2 & Hinv)".
-    iDestruct "Hinv" as (n') "(Hγ2● & [Halive | Halive])";
-    wp_pures;
-    iDestruct (ghost_var_agree with "Hγ2● Hγ2◯") as %->.
-    {
-      iMod (ghost_var_update γ2 0 with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]".
-      wp_alloc v as "Hv";
-      wp_let;
-      wp_load;
-      wp_pures;
-      wp_store;
-      wp_apply (release_spec LockN γ4 lk2 (node_lock_inv node2 γ2) with "[Hlked2 Hislk2 Hγ2● Halive]"); auto.
-      iSplit; auto.
-      iFrame; auto.
+    iIntros "(Hlked1 & Hinv)".
+    wp_pures.
 
-      iIntros.
-      wp_pures.
-      wp_load.
-      wp_let.
-      wp_apply (acquire_spec); auto.
+    iDestruct "Hinv" as (n') "(Hγ1● & [Halive | Halive])";
+      [iMod (ghost_var_update γ1 ret with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"
+      |iMod (ghost_var_update γ1 ret with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"];
+      wp_pures; wp_store;
+    wp_apply (release_spec LockN γ3 lk1 (node_lock_inv node1 γ1) with "[Hlked1 Hislk1 Hγ1● Halive]"); auto.
+    iSplit; auto.
+    iFrame; auto.
+    iExists ret.
+    iFrame; auto.
 
-      iIntros "(Hlked1 & Hinv)".
-      wp_pures.
+    iIntros. wp_pures. iApply "Hpost".
+    repeat iSplit; auto.
+    iFrame; auto.
 
-      iDestruct "Hinv" as (n') "(Hγ1● & [Halive | Halive])";
-        [iMod (ghost_var_update γ1 0 with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"
-        |iMod (ghost_var_update γ1 0 with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"];
-        wp_pures; wp_store;
-      wp_apply (release_spec LockN γ3 lk1 (node_lock_inv node1 γ1) with "[Hlked1 Hislk1 Hγ1● Halive]"); auto.
-      iSplit; auto.
-      iFrame; auto.
-      iExists 0.
-      iFrame; auto.
+    iSplit; auto. iFrame; auto.
+    iExists ret; iFrame; auto.
 
-      iIntros. wp_pures. iApply "Hpost".
-      repeat iSplit; auto.
-      iFrame; auto.
-
-      iSplit; auto. iFrame; auto.
-      iExists 0; iFrame; auto.
-
-      iIntros. wp_pures.
-      iApply "Hpost".
-      repeat iSplit; auto.
-      iFrame; auto.
-    }
-    {
-      wp_alloc v as "Hv";
-      wp_let;
-      wp_load;
-      wp_pures;
-      wp_store;
-      wp_apply (release_spec LockN γ4 lk2 (node_lock_inv node2 γ2) with "[Hlked2 Hislk2 Hγ2● Halive]"); auto.
-      iSplit; auto.
-      iFrame; auto.
-
-      iIntros.
-      wp_pures.
-      iExists n. iFrame; auto.
-
-      iIntros. wp_pures. wp_load.
-      wp_let.
-      wp_apply (acquire_spec); auto.
-
-      iIntros "(Hlked1 & Hinv)".
-      wp_pures.
-      wp_store.
-
-      iDestruct "Hinv" as (n') "(Hγ1● & [Halive | Halive])";
-        [iMod (ghost_var_update γ1 0 with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"
-        |iMod (ghost_var_update γ1 0 with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"];
-        wp_pures; wp_store;
-      wp_apply (release_spec LockN γ3 lk1 (node_lock_inv node1 γ1) with "[Hlked1 Hislk1 Hγ1● Halive]"); auto.
-      iSplit; auto.
-      iFrame; auto.
-      iExists 0.
-      iFrame; auto.
-
-      iIntros. wp_pures. iApply "Hpost".
-      repeat iSplit; auto.
-      iFrame; auto.
-
-      iSplit; auto. iFrame; auto.
-      iExists 0; iFrame; auto.
-
-      iIntros. wp_pures.
-      iApply "Hpost".
-      repeat iSplit; auto.
-      iFrame; auto.
-
-      iApply "Hpost".
-      repeat iSplit; auto.
-      iFrame; auto.
-
-      iSplit; auto. iFrame; auto.
-      iExists 0; iFrame; auto.
-
-      iIntros. wp_pures.
-      iApply "Hpost".
-      repeat iSplit; auto.
-      iFrame; auto.
-    }
-  Qed.
-
-  Lemma recover_replicas_one_dead_spec : ∀ (n: Z) γ1 γ2 node1 node2,
-      {{{
-          ⌜ ~n < 0 ⌝
-
-          ∗ ((global_inv_locked node1 node2 None (Some n) γ1 γ2)
-             ∨ global_inv_locked node1 node2 (Some n) None γ1 γ2)
-     }}}
-      recover_replicas #node1 #node2
-    {{{ RET #n;
-          ⌜ ~n < 0 ⌝
-           ∗ global_inv_locked node1 node2 (Some (n)) (Some (n)) γ1 γ2
-     }}}.
-  Proof.
-    iIntros (n γ1 γ2 node1 node2 ϕ) "(Hnval & [(Hγ1● & Hγ2● & Hinv) | (Hγ1● & Hγ2● & Hinv)]) HPost";
-    unfold global_inv_locked; unfold node_val_inv; unfold node_lock_inv;
-    iDestruct "Hγ1●" as (nlk1) "Hγ1●";
-    iDestruct "Hγ2●" as (nlk2) "Hγ2●";
-    iDestruct "Hinv" as (n') "(([(H1 & Hblah1) | (H1 & Hnode1)] & Hγ1◯) & [(H2 & Hblah2) | (H2& Hnode2)] & Hγ2◯)";
-    iDestruct "H1" as %H1; inversion H1; subst;
-    iDestruct "H2" as %H2; inversion H2; subst;
-      [ iMod (ghost_var_update γ2 n' with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]" 
-        | iMod (ghost_var_update γ1 n' with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]"];
-    unfold recover_replicas;
-    wp_pures; wp_load; wp_pures;
-    [wp_load; wp_pures | ]; wp_store;
-      iApply "HPost"; iFrame;
-        unfold node_lock_inv.
-    iSplitL "Hγ1●"; auto.
-    iSplitL "Hγ2●"; auto.
-    iExists n'. iSplitL "Hγ1◯ Hblah1". iFrame; auto. iFrame; auto.
-    iSplitL "Hγ1●"; auto.
-    iSplitL "Hγ2●"; auto.
-    iExists n'. iSplitL "Hγ1◯ Hnode1". iFrame; auto. iFrame; auto.
-  Qed.
-
-  Lemma recover_replicas_both_dead_spec : ∀ (n: Z) γ1 γ2 node1 node2, 
-      {{{
-           global_inv_locked node1 node2 None None γ1 γ2
-    }}}
-      recover_replicas #node1 #node2
-    {{{ RET #(-1);
-           global_inv_locked node1 node2 (Some 0) (Some 0) γ1 γ2
-    }}}.
-  Proof.
-    iIntros (n γ1 γ2 node1 node2 ϕ) "(Hγ1● & Hγ2● & Hinv) HPost".
-    unfold global_inv_locked; unfold node_val_inv; unfold node_lock_inv;
-    iDestruct "Hγ1●" as (nlk1) "Hγ1●";
-    iDestruct "Hγ2●" as (nlk2) "Hγ2●";
-    iDestruct "Hinv" as (n') "(([(H1 & Hblah1) | (H1 & Hnode1)] & Hγ1◯) & [(H2 & Hblah2) | (H2& Hnode2)] & Hγ2◯)";
-    iDestruct "H1" as %H1; inversion H1; subst;
-      iDestruct "H2" as %H2; inversion H2; subst;
-      iMod (ghost_var_update γ2 0 with "Hγ2● Hγ2◯") as "[Hγ2● Hγ2◯]";
-      iMod (ghost_var_update γ1 0 with "Hγ1● Hγ1◯") as "[Hγ1● Hγ1◯]".
-    unfold recover_replicas.
-    wp_pures. wp_load; wp_pures. wp_load; wp_pures.
-    wp_store; wp_store.
-    iApply "HPost". iFrame.
-    iSplitL "Hγ1●"; auto.
-    iSplitL "Hγ2●"; auto.
-    iExists 0; iSplitL "Hγ1◯ Hblah1"; iFrame; auto.
+    iIntros. wp_pures.
+    iApply "Hpost".
+    repeat iSplit; auto.
+    iFrame; auto.
   Qed.
 
   Lemma get_replicas_one_alive_spec : ∀ (n: Z) γ1 γ2 γ3 γ4 lk1 lk2 node1 node2,
