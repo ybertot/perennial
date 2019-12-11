@@ -70,18 +70,18 @@ Section proof.
     iFrame; auto.
   Qed.
 
-  Lemma get_node_val_spec : ∀ (n: Z) γ1 node lk,
+  Lemma get_node_val_spec : ∀ (n: Z) γ γ1 node lk,
    {{{
-          is_lock LockN γ1 lk (node_lock_inv node γ1)
+          is_lock LockN γ lk (node_lock_inv node γ1)
           ∗ node_own_inv node n γ1
     }}}
       get_node_val #node lk
     {{{ ret, RET #ret;
-          is_lock LockN γ1 lk (node_lock_inv node γ1)
+          is_lock LockN γ lk (node_lock_inv node γ1)
           ∗ node_own_inv node ret γ1
     }}}.
   Proof.
-    iIntros (n γ1 node lk Φ) "(#Hlkinv & Hγ1◯) HPost".
+    iIntros (n γ γ1 node lk Φ) "(#Hlkinv & Hγ1◯) HPost".
     unfold node_lock_inv.
     unfold node_own_inv.
     unfold get_node_val.
@@ -99,7 +99,7 @@ Section proof.
     wp_let;
     wp_load;
     wp_pures; wp_store;
-    wp_apply (release_spec LockN γ1 lk (node_lock_inv node γ1) with "[Hlkinv Hlked Hγ1● Halive]"); iFrame; auto;
+    wp_apply (release_spec LockN γ lk (node_lock_inv node γ1) with "[Hlkinv Hlked Hγ1● Halive]"); iFrame; auto;
     iIntros; wp_pures; [wp_load | | wp_load].
     iApply "HPost".
     iFrame; auto.
@@ -109,19 +109,19 @@ Section proof.
     iFrame; auto.
   Qed.
 
-  Lemma update_node_spec : ∀ (n: Z) γ1 node lk,
+  Lemma update_node_spec : ∀ (n: Z) γ γ1 node lk,
     {{{
-          is_lock LockN γ1 lk (node_lock_inv node γ1)
+          is_lock LockN γ lk (node_lock_inv node γ1)
           ∗ node_own_inv node n γ1
     }}}
       update_node #node lk
     {{{ ret, RET ret;
-          is_lock LockN γ1 lk (node_lock_inv node γ1)
+          is_lock LockN γ lk (node_lock_inv node γ1)
           ∗ ((⌜ret = #0⌝ ∧ node_own_inv node (n+1) γ1) ∨
              (⌜ret = #(-1)⌝ ∧ node_own_inv node 0 γ1))
     }}}.
   Proof.
-    iIntros (n γ1 node lk Φ) "(#Hlkinv & Hγ1◯) HPost".
+    iIntros (n γ γ1 node lk Φ) "(#Hlkinv & Hγ1◯) HPost".
     unfold node_lock_inv.
     unfold node_own_inv.
     unfold update_node.
@@ -140,10 +140,11 @@ Section proof.
     wp_load;
     wp_pures;
     [ | wp_store]; wp_store;
-    wp_apply (release_spec LockN γ1 lk (node_lock_inv node γ1) with "[Hlkinv Hlked Hγ1● Halive]"); iFrame; auto;
+    wp_apply (release_spec LockN γ lk (node_lock_inv node γ1) with "[Hlkinv Hlked Hγ1● Halive]"); iFrame; auto;
     iIntros; wp_pures; [wp_load | | wp_load].
     iApply "HPost".
     iFrame; auto.
+
     unfold node_lock_inv. iSplit; auto.
     iExists (n+1); iFrame; auto.
     iApply "HPost".
