@@ -430,13 +430,12 @@ Module NFS3.
     Definition symU32 := Call SymU32.
     Definition symU64 := Call SymU64.
     Definition symAssert e := Call (Assert e).
-    Definition reads {T : Type} (read_f : State -> T) :=
+    Definition reads_ret {T : Type} (read_f : State -> T) :=
       s <- Call Reads;
       Ret (read_f s).
-    Definition puts (put_f : State -> State) :=
+    Definition puts_ret (put_f : State -> State) :=
       s <- Call Reads;
       Call (Puts (put_f s)).
-    Definition pure `(v : T) := @Ret SpecOp _ v.
 
     Definition symTime :=
       ts <- symU32;
@@ -445,9 +444,27 @@ Module NFS3.
 
     Definition spec_proc := proc SpecOp.
 
-    Definition null_step : spec_proc unit :=
-      pure tt.
+    Definition spec_rel T (op: SpecOp T) : relation State State T :=
+      match op in SpecOp T return relation State State T with
+      | SymBool => such_that (fun State (_ : bool) => True)
+      | SymFH  => such_that (fun State (_ : fh) => True)
+      | SymU32  => such_that (fun State (_ : uint32) => True)
+      | SymU64  => such_that (fun State (_ : uint64) => True)
+      | Assert b => if b then pure tt else error
+      | Reads => reads (fun s => s)
+      | Puts s => puts (fun _ => s)
+      end.
 
+    Fixpoint exec_step T (p: spec_proc T) : relation State State T :=
+      match p with
+      | Ret v => pure v
+      | Bind p1 p2 => and_then (exec_step p1) (fun x => (exec_step (p2 x)))
+      | Call op => spec_rel op
+      | _ => error
+      end.
+
+    Definition null_step : spec_proc unit :=
+      Ret tt.
 (*
     Definition count_links_dir (count_fh : fh) (dir_fh : fh) : nat :=
       if (decide (count_fh = dir_fh)) then 1 else 0.
@@ -462,9 +479,8 @@ Module NFS3.
       | _ => 0
       end.
 *)
-
     Definition get_fh {A T} (f : fh) (a : A) `(rx : inode_state -> spec_proc (res A T)) : spec_proc (res A T) :=
-      i <- reads (fun s => s.(fhs) !! f);
+      i <- reads_ret (fun s => s.(fhs) !! f);
       match i with
       | None =>
         z <- symBool;
@@ -516,18 +532,17 @@ Module NFS3.
 
 (*
     Definition inode_attr (f : fh) (i : inode_state) : spec_proc fattr :=
-      nlink <- reads (fun s => add_up (fmap (count_links f) (fmap latest s.(fhs))));
-      pure (inode_attrs i nlink).
+      nlink <- reads_ret (fun s => add_up (fmap (count_links f) (fmap latest s.(fhs))));
+      Ret (inode_attrs i nlink).
 
     Definition inode_attr (f : fh) (i : inode_state) : spec_proc fattr :=
-      pure (inode_attrs i).
+      Ret (inode_attrs i).
 *)
 
     Definition getattr_step (f : fh) : spec_proc (res unit fattr) :=
       i <~- get_fh f tt;
       attrs <- inode_attrs i;
-      pure (OK tt attrs).
-
+      Ret (OK tt attrs).
 
     Definition check_ctime_guard {A T} (i : inode_state) (ctime_guard : option time)
                                        (a : A) (rx : unit -> spec_proc (res A T)) :=
@@ -547,10 +562,10 @@ Module NFS3.
                      (uint32_gt t'.(time_nsec) t.(time_nsec)))).
 
     Definition get_time : spec_proc time :=
-      t <- reads (clock);
+      t <- reads_ret (clock);
       t' <- symTime;
       _ <- symAssert (time_ge t t');
-      _ <- puts (set clock (constructor t'));
+      _ <- puts_ret (set clock (constructor t'));
       Ret t'.
 
     Definition set_attr_one {F} (i : inode_state) (now : time)
@@ -593,17 +608,17 @@ Module NFS3.
         | Ifile buf cverf =>
           outOfSpace <- symBool;
           if andb (uint64_gt len (len_buf buf)) outOfSpace then
-            pure (Err a ERR_NOSPC)
+            Ret (Err a ERR_NOSPC)
           else
             rx (i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
                   <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>)
         | _ =>
-          pure (Err a ERR_INVAL)
+          Ret (Err a ERR_INVAL)
         end
       end.
 
     Definition put_fh_sync (f : fh) (i : inode_state) : spec_proc unit :=
-      puts (set fhs (fun x => <[f := sync i]> x)).
+      puts_ret (set fhs (fun x => <[f := sync i]> x)).
 
     Definition set_attr_nonlen (i : inode_state) (now : time) (a : sattr) : inode_state :=
 (*
@@ -623,10 +638,28 @@ Module NFS3.
       i <~- truncate i t a.(sattr_size) (Build_wcc_data (Some wcc_before) (Some wcc_before));
       let i := set_attr_nonlen i t a in
       _ <- put_fh_sync f i;
-      pure (OK (Build_wcc_data (Some wcc_before) (Some (inode_wcc i))) tt).
-
-
+      Ret (OK (Build_wcc_data (Some wcc_before) (Some (inode_wcc i))) tt).
   End SymbolicStep.
+
+  Definition nfs3step : OpSemantics Op State :=
+    fun T (op : Op T) =>
+          match op with
+          | NULL => exec_step null_step
+          | GETATTR h => exec_step (getattr_step h)
+          | _ => error
+          end.
+
+  Definition dynamics : Dynamics Op State :=
+    {| step := nfs3step;
+       crash_step := pure tt; (*XXX TODO*)
+       finish_step := pure tt;
+    |}.
+
+  Lemma getattr_ok_noerr (s: State) (f: fh) a1 a2 e1 e2:
+  exists s1 s2, (dynamics.(step) (GETATTR f)) s1 (Val s2 (Err a2 e2))
+  -> (dynamics.(step) (GETATTR f)) s (Val s1 (Err a1 e1)).
+    Proof.
+  Admitted.
 
 Check getattr_step.
 Check setattr_step.
@@ -634,6 +667,7 @@ Require Import Extraction.
 Extraction Language JSON.
 Recursive Extraction getattr_step setattr_step.
 
+(*
 Definition z (P : nat -> nat) (i : nat) := P i.
 Definition f1 (i : nat) := i+1.
 Definition f2 (P : nat -> nat) := fun i => i+(z P 2).
@@ -645,7 +679,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
     Definition get_dir {A T} (i : inode_state) (a : A) (rx : gmap filename fh -> relation State State (res A T)) : relation State State (res A T) :=
       match i.(inode_state_type) with
       | Idir dmap => rx dmap
-      | _ => pure (Err a ERR_NOTDIR)
+      | _ => Ret (Err a ERR_NOTDIR)
       end.
 
     Definition lookup_step (a : dirop) : relation State State (res2 post_op_attr fh post_op_attr) :=
@@ -653,28 +687,28 @@ Theorem x : f2 (f2 f1) 5 = 1.
       dattr <- inode_attr a.(dirop_dir) d;
       dm <~- get_dir d (Some dattr);
       match dm !! a.(dirop_fn) with
-      | None => pure (Err (Some dattr) ERR_NOENT)
+      | None => Ret (Err (Some dattr) ERR_NOENT)
       | Some ffh =>
-        i <- reads (fun s => s.(fhs) !! ffh);
+        i <- reads_ret (fun s => s.(fhs) !! ffh);
         match i with
-        | None => pure (OK2 (Some dattr) ffh None)
+        | None => Ret (OK2 (Some dattr) ffh None)
         | Some i =>
           iattr <- inode_attr ffh (latest i);
-          pure (OK2 (Some dattr) ffh (Some iattr))
+          Ret (OK2 (Some dattr) ffh (Some iattr))
         end
       end.
 
     Definition access_step (f : fh) (a : uint32) : relation State State (res post_op_attr uint32) :=
       i <~- get_fh f None;
       iattr <- inode_attr f i;
-      pure (OK (Some iattr) a).
+      Ret (OK (Some iattr) a).
 
     Definition readlink_step (f : fh) : relation State State (res post_op_attr string) :=
       i <~- get_fh f None;
       iattr <- inode_attr f i;
       match i.(inode_state_type) with
-      | Isymlink data => pure (OK (Some iattr) data)
-      | _ => pure (Err (Some iattr) ERR_INVAL)
+      | Isymlink data => Ret (OK (Some iattr) data)
+      | _ => Ret (Err (Some iattr) ERR_INVAL)
       end.
 
     (* XXX we are ignoring atime on read (and every other operation).
@@ -687,16 +721,16 @@ Theorem x : f2 (f2 f1) 5 = 1.
       | Ifile buf _ =>
         let res := read_buf buf off count in
         let eof := if decide (off + count < len_buf buf) then false else true in
-        pure (OK2 (Some iattr) eof res)
-      | _ => pure (Err (Some iattr) ERR_INVAL)
+        Ret (OK2 (Some iattr) eof res)
+      | _ => Ret (Err (Some iattr) ERR_INVAL)
       end.
 
     Definition put_fh_async (f : fh) (i : inode_state) : relation State State unit :=
-      ia <- reads (fun s => s.(fhs) !! f);
+      ia <- reads_ret (fun s => s.(fhs) !! f);
       match ia with
-      | None => pure tt
+      | None => Ret tt
       | Some ia =>
-        puts (set fhs (fun x => <[f := async_put i ia]> x))
+        puts_ret (set fhs (fun x => <[f := async_put i ia]> x))
       end.
 
     Definition write_step (f : fh) (off : uint64) (s : stable) (data : buf) : relation State State (res wcc_data write_ok) :=
@@ -705,9 +739,9 @@ Theorem x : f2 (f2 f1) 5 = 1.
       match i.(inode_state_type) with
       | Ifile buf cverf =>
         t <- get_time;
-        wverf <- reads verf;
+        wverf <- reads_ret verf;
         let buf' := write_buf buf off data in
-        (if (decide (len_buf buf < len_buf buf')) then pure (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_NOSPC) else none) +
+        (if (decide (len_buf buf < len_buf buf')) then Ret (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_NOSPC) else none) +
         let i' := i <| inode_state_type := Ifile buf' cverf |>
                     <| inode_state_meta ::= set inode_meta_mtime (constructor t) |> in
         let wcc := Build_wcc_data (Some (inode_wcc i)) (Some (inode_wcc i')) in
@@ -715,18 +749,18 @@ Theorem x : f2 (f2 f1) 5 = 1.
         match s with
         | UNSTABLE =>
           _ <- put_fh_async f i';
-          pure (OK wcc wok)
+          Ret (OK wcc wok)
         | _ =>
           _ <- put_fh_sync f i';
-          pure (OK wcc wok)
+          Ret (OK wcc wok)
         end
-      | _ => pure (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_INVAL)
+      | _ => Ret (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_INVAL)
       end.
 
     Definition new_inode_meta : relation State State inode_meta :=
       now <- get_time;
       fid <- such_that (fun s fid => ~∃ f i, s.(fhs) !! f = Some i /\ i.(latest).(inode_state_meta).(inode_meta_fileid) = fid);
-      pure (Build_inode_meta
+      Ret (Build_inode_meta
         420 (* mode 0644 *)
         0 (* uid *)
         0 (* gid *)
@@ -739,27 +773,27 @@ Theorem x : f2 (f2 f1) 5 = 1.
       now <- get_time;
       let dirmeta := dirmeta <| inode_meta_mtime := now |> in
       let dm := <[a.(dirop_fn) := f]> dm in
-      puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
+      puts_ret (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
 
     Definition dir_unlink (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State unit :=
       now <- get_time;
       let dirmeta := dirmeta <| inode_meta_mtime := now |> in
       let dm := delete a.(dirop_fn) dm in
-      puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
+      puts_ret (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
 
     Definition create_unchecked_step (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
       f <- match dm !! a.(dirop_fn) with
-           | Some curfh => pure curfh
+           | Some curfh => Ret curfh
            | None =>
              f <- such_that (fun s f => f ∉ dom (gset fh) s.(fhs));
              m <- new_inode_meta;
-             _ <- puts (set fhs (insert f (sync (Build_inode_state m (Ifile empty_buf 0)))));
+             _ <- puts_ret (set fhs (insert f (sync (Build_inode_state m (Ifile empty_buf 0)))));
              _ <- dir_link a dirmeta dm f;
-             pure f
+             Ret f
            end;
-      i <- reads (fun s => s.(fhs) !! f);
+      i <- reads_ret (fun s => s.(fhs) !! f);
       match i with
-      | None => pure (Err tt ERR_SERVERFAULT)
+      | None => Ret (Err tt ERR_SERVERFAULT)
       | Some i =>
         now <- get_time;
         let i := i.(latest) in
@@ -776,12 +810,12 @@ Theorem x : f2 (f2 f1) 5 = 1.
         let i := set_attr_nonlen i now attr in
         _ <- put_fh_sync f i;
         iattr <- inode_attr f i;
-        pure (OK2 tt (Some f) (Some iattr))
+        Ret (OK2 tt (Some f) (Some iattr))
       end.
 
     Definition create_guarded_step (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
       match dm !! a.(dirop_fn) with
-      | Some curfh => pure (Err tt ERR_EXIST)
+      | Some curfh => Ret (Err tt ERR_EXIST)
       | None =>
         f <- such_that (fun s f => f ∉ dom (gset fh) s.(fhs));
         m <- new_inode_meta;
@@ -794,25 +828,25 @@ Theorem x : f2 (f2 f1) 5 = 1.
         _ <- put_fh_sync f i;
         _ <- dir_link a dirmeta dm f;
         iattr <- inode_attr f i;
-        pure (OK2 tt (Some f) (Some iattr))
+        Ret (OK2 tt (Some f) (Some iattr))
       end.
 
     Definition create_exclusive_step (a : dirop) (cverf : createverf) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
       match dm !! a.(dirop_fn) with
       | Some curfh =>
-        i <- reads (fun s => s.(fhs) !! curfh);
+        i <- reads_ret (fun s => s.(fhs) !! curfh);
         match i with
-        | None => pure (Err tt ERR_SERVERFAULT)
+        | None => Ret (Err tt ERR_SERVERFAULT)
         | Some i => let i := i.(latest) in
           match i.(inode_state_type) with
           | Ifile _ v =>
             if (decide (v = cverf)) then
               iattr <- inode_attr curfh i;
-              pure (OK2 tt (Some curfh) (Some iattr))
+              Ret (OK2 tt (Some curfh) (Some iattr))
             else
-              pure (Err tt ERR_EXIST)
+              Ret (Err tt ERR_EXIST)
           | _ =>
-            pure (Err tt ERR_EXIST)
+            Ret (Err tt ERR_EXIST)
           end
         end
       | None =>
@@ -822,7 +856,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
         _ <- put_fh_sync f i;
         _ <- dir_link a dirmeta dm f;
         iattr <- inode_attr f i;
-        pure (OK2 tt (Some f) (Some iattr))
+        Ret (OK2 tt (Some f) (Some iattr))
       end.
 
     Definition create_like_core (a : dirop) (core : inode_meta -> gmap filename fh -> relation State State (res2 unit post_op_fh post_op_attr)) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
@@ -830,19 +864,19 @@ Theorem x : f2 (f2 f1) 5 = 1.
 
       let wcc_before := Some (inode_wcc d) in
       let wcc_ro := Build_wcc_data wcc_before wcc_before in
-      pure (Err wcc_ro ERR_NOSPC) + (
+      Ret (Err wcc_ro ERR_NOSPC) + (
 
       dm <~- get_dir d wcc_ro;
       r <- core d.(inode_state_meta) dm;
 
-      d_after <- reads (fun s => s.(fhs) !! a.(dirop_dir));
+      d_after <- reads_ret (fun s => s.(fhs) !! a.(dirop_dir));
       let wcc_after := match d_after with
                        | None => None
                        | Some d_after => Some (inode_wcc d_after.(latest))
                        end in
       let wcc := Build_wcc_data wcc_before wcc_after in
 
-      pure (match r with
+      Ret (match r with
             | Err _ e => Err wcc e
             | OK _ v => OK wcc v
             end)).
@@ -857,7 +891,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
 
     Definition mkdir_core (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
       match dm !! a.(dirop_fn) with
-      | Some curfh => pure (Err tt ERR_EXIST)
+      | Some curfh => Ret (Err tt ERR_EXIST)
       | None =>
         h <- such_that (fun s h => h ∉ dom (gset fh) s.(fhs));
         m <- new_inode_meta;
@@ -870,7 +904,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
         _ <- put_fh_sync h i;
         _ <- dir_link a dirmeta dm h;
         iattr <- inode_attr h i;
-        pure (OK2 tt (Some h) (Some iattr))
+        Ret (OK2 tt (Some h) (Some iattr))
       end.
 
     Definition mkdir_step (a : dirop) (attr : sattr) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
@@ -878,7 +912,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
 
     Definition symlink_core (a : dirop) (attr : sattr) (data : filename) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
       match dm !! a.(dirop_fn) with
-      | Some curfh => pure (Err tt ERR_EXIST)
+      | Some curfh => Ret (Err tt ERR_EXIST)
       | None =>
         h <- such_that (fun s h => h ∉ dom (gset fh) s.(fhs));
         m <- new_inode_meta;
@@ -888,7 +922,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
         _ <- put_fh_sync h i;
         _ <- dir_link a dirmeta dm h;
         iattr <- inode_attr h i;
-        pure (OK2 tt (Some h) (Some iattr))
+        Ret (OK2 tt (Some h) (Some iattr))
       end.
 
     Definition symlink_step (a : dirop) (attr : sattr) (data : filename) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
@@ -896,7 +930,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
 
     Definition mknod_core (a : dirop) (attr : sattr) (ft : mknod_type) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res2 unit post_op_fh post_op_attr) :=
       match dm !! a.(dirop_fn) with
-      | Some curfh => pure (Err tt ERR_EXIST)
+      | Some curfh => Ret (Err tt ERR_EXIST)
       | None =>
         h <- such_that (fun s h => h ∉ dom (gset fh) s.(fhs));
         m <- new_inode_meta;
@@ -912,7 +946,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
         _ <- put_fh_sync h i;
         _ <- dir_link a dirmeta dm h;
         iattr <- inode_attr h i;
-        pure (OK2 tt (Some h) (Some iattr))
+        Ret (OK2 tt (Some h) (Some iattr))
       end.
 
     Definition mknod_step (a : dirop) (ft : mknod_type) (attr : sattr) : relation State State (res2 wcc_data post_op_fh post_op_attr) :=
@@ -927,36 +961,36 @@ Theorem x : f2 (f2 f1) 5 = 1.
       dm <~- get_dir d wcc_ro;
       r <- core d.(inode_state_meta) dm;
 
-      d_after <- reads (fun s => s.(fhs) !! a.(dirop_dir));
+      d_after <- reads_ret (fun s => s.(fhs) !! a.(dirop_dir));
       let wcc_after := match d_after with
                        | None => None
                        | Some d_after => Some (inode_wcc d_after.(latest))
                        end in
       let wcc := Build_wcc_data wcc_before wcc_after in
 
-      pure (match r with
+      Ret (match r with
             | Err _ e => Err wcc e
             | OK _ v => OK wcc v
             end).
 
     Definition gc_fh (h : fh) : relation State State unit :=
-      nlink <- reads (fun s => add_up (fmap (count_links h) (fmap latest s.(fhs))));
-      if (decide (nlink = 0)) then puts (set fhs (delete h)) else pure tt.
+      nlink <- reads_ret (fun s => add_up (fmap (count_links h) (fmap latest s.(fhs))));
+      if (decide (nlink = 0)) then puts_ret (set fhs (delete h)) else Ret tt.
 
     Definition remove_core (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res unit unit) :=
       match dm !! a.(dirop_fn) with
-      | None => pure (Err tt ERR_NOENT)
+      | None => Ret (Err tt ERR_NOENT)
       | Some curfh =>
-        i <- reads (fun s => s.(fhs) !! curfh);
+        i <- reads_ret (fun s => s.(fhs) !! curfh);
         match i with
-        | None => pure (Err tt ERR_SERVERFAULT)
+        | None => Ret (Err tt ERR_SERVERFAULT)
         | Some i => let i := i.(latest) in
           match i.(inode_state_type) with
-          | Idir _ => pure (Err tt ERR_INVAL) (* XXX oddly, not allowed in RFC1813?? *)
+          | Idir _ => Ret (Err tt ERR_INVAL) (* XXX oddly, not allowed in RFC1813?? *)
           | _ =>
             _ <- dir_unlink a dirmeta dm;
             _ <- gc_fh curfh;
-            pure (OK tt tt)
+            Ret (OK tt tt)
           end
         end
       end.
@@ -965,14 +999,14 @@ Theorem x : f2 (f2 f1) 5 = 1.
       remove_like_core a (remove_core a).
 
     Definition rmdir_core (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res unit unit) :=
-      if (decide (a.(dirop_fn) = ".")) then pure (Err tt ERR_INVAL) else
-      if (decide (a.(dirop_fn) = "..")) then pure (Err tt ERR_INVAL) else
+      if (decide (a.(dirop_fn) = ".")) then Ret (Err tt ERR_INVAL) else
+      if (decide (a.(dirop_fn) = "..")) then Ret (Err tt ERR_INVAL) else
       match dm !! a.(dirop_fn) with
-      | None => pure (Err tt ERR_NOENT)
+      | None => Ret (Err tt ERR_NOENT)
       | Some curfh =>
-        i <- reads (fun s => s.(fhs) !! curfh);
+        i <- reads_ret (fun s => s.(fhs) !! curfh);
         match i with
-        | None => pure (Err tt ERR_SERVERFAULT)
+        | None => Ret (Err tt ERR_SERVERFAULT)
         | Some i => let i := i.(latest) in
           match i.(inode_state_type) with
           | Idir m =>
@@ -980,10 +1014,10 @@ Theorem x : f2 (f2 f1) 5 = 1.
             if (decide (size names = 2)) then
               _ <- dir_unlink a dirmeta dm;
               _ <- gc_fh curfh;
-              pure (OK tt tt)
+              Ret (OK tt tt)
             else
-              pure (Err tt ERR_NOTEMPTY)
-          | _ => pure (Err tt ERR_NOTDIR)
+              Ret (Err tt ERR_NOTEMPTY)
+          | _ => Ret (Err tt ERR_NOTDIR)
           end
         end
       end.
@@ -992,22 +1026,22 @@ Theorem x : f2 (f2 f1) 5 = 1.
       remove_like_core a (rmdir_core a).
 
     Definition rename_core (from to : dirop) (from_dirmeta to_dirmeta : inode_meta) (from_dm to_dm : gmap filename fh) : relation State State (res unit unit) :=
-      pure (Err tt ERR_NOSPC) +
-      if (decide (from.(dirop_fn) = ".")) then pure (Err tt ERR_INVAL) else
-      if (decide (from.(dirop_fn) = "..")) then pure (Err tt ERR_INVAL) else
-      if (decide (to.(dirop_fn) = ".")) then pure (Err tt ERR_INVAL) else
-      if (decide (to.(dirop_fn) = "..")) then pure (Err tt ERR_INVAL) else
+      Ret (Err tt ERR_NOSPC) +
+      if (decide (from.(dirop_fn) = ".")) then Ret (Err tt ERR_INVAL) else
+      if (decide (from.(dirop_fn) = "..")) then Ret (Err tt ERR_INVAL) else
+      if (decide (to.(dirop_fn) = ".")) then Ret (Err tt ERR_INVAL) else
+      if (decide (to.(dirop_fn) = "..")) then Ret (Err tt ERR_INVAL) else
       match from_dm !! from.(dirop_fn) with
-      | None => pure (Err tt ERR_NOENT)
+      | None => Ret (Err tt ERR_NOENT)
       | Some src_h =>
         match to_dm !! to.(dirop_fn) with
         | None =>
           _ <- dir_link to to_dirmeta to_dm src_h;
           _ <- dir_unlink from from_dirmeta from_dm;
-          pure (OK tt tt)
+          Ret (OK tt tt)
         | Some dst_h =>
-          src_i <- reads (fun s => s.(fhs) !! src_h);
-          dst_i <- reads (fun s => s.(fhs) !! dst_h);
+          src_i <- reads_ret (fun s => s.(fhs) !! src_h);
+          dst_i <- reads_ret (fun s => s.(fhs) !! dst_h);
           match src_i, dst_i with
           | Some src_i, Some dst_i =>
             let src_i := src_i.(latest) in
@@ -1021,19 +1055,19 @@ Theorem x : f2 (f2 f1) 5 = 1.
                 _ <- dir_unlink from from_dirmeta from_dm;
                 _ <- dir_link to to_dirmeta to_dm src_h;
                 _ <- gc_fh dst_h;
-                pure (OK tt tt)
+                Ret (OK tt tt)
               else
-                pure (Err tt ERR_EXIST)
-            | Idir _, _ => pure (Err tt ERR_EXIST)
-            | _, Idir _ => pure (Err tt ERR_EXIST)
+                Ret (Err tt ERR_EXIST)
+            | Idir _, _ => Ret (Err tt ERR_EXIST)
+            | _, Idir _ => Ret (Err tt ERR_EXIST)
             | _, _ =>
               _ <- dir_unlink to to_dirmeta to_dm;
               _ <- dir_unlink from from_dirmeta from_dm;
               _ <- dir_link to to_dirmeta to_dm src_h;
               _ <- gc_fh dst_h;
-              pure (OK tt tt)
+              Ret (OK tt tt)
             end
-          | _, _ => pure (Err tt ERR_SERVERFAULT)
+          | _, _ => Ret (Err tt ERR_SERVERFAULT)
           end
         end
       end.
@@ -1055,8 +1089,8 @@ Theorem x : f2 (f2 f1) 5 = 1.
 
       r <- rename_core from to from_d.(inode_state_meta) to_d.(inode_state_meta) from_dm to_dm;
 
-      from_d_after <- reads (fun s => s.(fhs) !! from.(dirop_dir));
-      to_d_after <- reads (fun s => s.(fhs) !! to.(dirop_dir));
+      from_d_after <- reads_ret (fun s => s.(fhs) !! from.(dirop_dir));
+      to_d_after <- reads_ret (fun s => s.(fhs) !! to.(dirop_dir));
       let wcc_from_after := match from_d_after with
                             | None => None
                             | Some from_d_after => Some (inode_wcc from_d_after.(latest))
@@ -1068,22 +1102,22 @@ Theorem x : f2 (f2 f1) 5 = 1.
       let wcc := ( Build_wcc_data wcc_from_before wcc_from_after,
                    Build_wcc_data wcc_to_before wcc_to_after ) in
 
-      pure (match r with
+      Ret (match r with
             | Err _ e => Err wcc e
             | OK _ v => OK wcc v
             end).
 
     Definition link_core (link : dirop) (h : fh) (i : inode_state) (dirmeta : inode_meta) (dm : gmap filename fh) : relation State State (res unit unit) :=
-      pure (Err tt ERR_NOSPC) +
+      Ret (Err tt ERR_NOSPC) +
       match i.(inode_state_type) with
-      | Idir _ => pure (Err tt ERR_INVAL)
+      | Idir _ => Ret (Err tt ERR_INVAL)
       | _ =>
         match dm !! link.(dirop_fn) with
         | None =>
           _ <- dir_link link dirmeta dm h;
-          pure (OK tt tt)
+          Ret (OK tt tt)
         | Some curfh =>
-          pure (Err tt ERR_EXIST)
+          Ret (Err tt ERR_EXIST)
         end
       end.
 
@@ -1097,7 +1131,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
       dm <~- get_dir d wcc_ro;
       r <- link_core link h i d.(inode_state_meta) dm;
 
-      d_after <- reads (fun s => s.(fhs) !! link.(dirop_dir));
+      d_after <- reads_ret (fun s => s.(fhs) !! link.(dirop_dir));
       let wcc_after := match d_after with
                        | None => None
                        | Some d_after => Some (inode_wcc d_after.(latest))
@@ -1105,16 +1139,16 @@ Theorem x : f2 (f2 f1) 5 = 1.
       iattr_after <- inode_attr h i;
       let wcc := (Build_wcc_data wcc_before wcc_after, Some iattr_after) in
 
-      pure (match r with
+      Ret (match r with
             | Err _ e => Err wcc e
             | OK _ v => OK wcc v
             end).
 
     Definition readdir_step (h : fh) (c : cookie) (cv : cookieverf) (count : uint32) : relation State State (res post_op_attr readdir_ok) :=
-      pure (Err None ERR_NOTSUPP).
+      Ret (Err None ERR_NOTSUPP).
 
     Definition readdirplus_step (h : fh) (c : cookie) (cv : cookieverf) (dircount : uint32) (maxcount : uint32) : relation State State (res post_op_attr readdirplus_ok) :=
-      pure (Err None ERR_NOTSUPP).
+      Ret (Err None ERR_NOTSUPP).
 
     Definition fsstat_step (h : fh) : relation State State (res post_op_attr fsstat_ok) :=
       i <~- get_fh h None;
@@ -1124,7 +1158,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
         st.(fsstat_ok_abytes) <= st.(fsstat_ok_fbytes) /\
         st.(fsstat_ok_ffiles) <= st.(fsstat_ok_tfiles) /\
         st.(fsstat_ok_afiles) <= st.(fsstat_ok_ffiles));
-      pure (OK (Some iattr) st).
+      Ret (OK (Some iattr) st).
 
     Definition fsinfo_step (h : fh) : relation State State (res post_op_attr fsinfo_ok) :=
       i <~- get_fh h None;
@@ -1135,7 +1169,7 @@ Theorem x : f2 (f2 f1) 5 = 1.
         info.(fsinfo_ok_properties_symlink) = true /\
         info.(fsinfo_ok_properties_homogeneous) = true /\
         info.(fsinfo_ok_properties_cansettime) = true);
-      pure (OK (Some iattr) info).
+      Ret (OK (Some iattr) info).
 
     Definition pathconf_step (h : fh) : relation State State (res post_op_attr pathconf_ok) :=
       i <~- get_fh h None;
@@ -1144,18 +1178,18 @@ Theorem x : f2 (f2 f1) 5 = 1.
         pc.(pathconf_ok_no_trunc) = true /\
         pc.(pathconf_ok_case_insensitive) = false /\
         pc.(pathconf_ok_case_preserving) = true);
-      pure (OK (Some iattr) pc).
+      Ret (OK (Some iattr) pc).
 
     Definition commit_step (h : fh) (off : uint64) (count : uint32) : relation State State (res wcc_data writeverf) :=
       i <~- get_fh h wcc_data_none;
       let wcc_before := inode_wcc i in
       let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
-      wverf <- reads verf;
+      wverf <- reads_ret verf;
       match i.(inode_state_type) with
       | Ifile buf cverf =>
         _ <- put_fh_sync h i;
-        pure (OK wcc wverf)
-      | _ => pure (OK wcc wverf)
+        Ret (OK wcc wverf)
+      | _ => Ret (OK wcc wverf)
       end.
 
   Definition nfs_crash_step : relation State State unit :=
@@ -1163,15 +1197,15 @@ Theorem x : f2 (f2 f1) 5 = 1.
       forall fh, inode_crash_opt (s.(fhs) !! fh) (s'.(fhs) !! fh) /\
       s'.(verf) > s.(verf) /\
       time_ge s.(clock) s'.(clock));
-    _ <- puts (fun _ => s');
-    pure tt.
+    _ <- puts_ret (fun _ => s');
+    Ret tt.
 
   Definition nfs_finish_step : relation State State unit :=
-    _ <- puts (fun s =>
+    _ <- puts_ret (fun s =>
       let s := s <| fhs ::= fmap inode_finish |> in
       let s := s <| verf ::= fun x => plus x 1 |> in
       s);
-    pure tt.
+    Ret tt.
 
   Definition nfs3step : OpSemantics Op State :=
     fun T (op : Op T) =>
@@ -1262,6 +1296,5 @@ Theorem x : f2 (f2 f1) 5 = 1.
        crash_non_err := crash_non_err_ok;
        finish_non_err := finish_non_err_ok;
        initP := fun s => s = ∅ |}.
-*)
-
+*)*)
 End NFS3.
