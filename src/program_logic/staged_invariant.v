@@ -13,6 +13,13 @@ Definition NC_tok : crashR := Cinl (Excl ()).
 Definition C_tok : crashR := Cinr (to_agree ()).
 
 Class crashG Σ := { crash_inG :> inG Σ crashR; crash_name : gname }.
+Class crashPreG Σ := { crash_inPreG :> inG Σ crashR }.
+
+Definition crashΣ : gFunctors :=
+    #[GFunctor (csumR (exclR unitO) (agreeR unitO))].
+
+Instance subG_crashG {Σ} : subG crashΣ Σ → crashPreG Σ.
+Proof. solve_inG. Qed.
 
 Definition NC_def `{crashG Σ} := own crash_name NC_tok.
 Definition NC_aux `{crashG Σ} : seal NC_def. by eexists. Qed.
@@ -20,6 +27,15 @@ Definition NC `{crashG Σ} := NC_aux.(unseal).
 Definition C_def `{crashG Σ} := own crash_name C_tok.
 Definition C_aux `{crashG Σ} : seal C_def. by eexists. Qed.
 Definition C `{crashG Σ} := C_aux.(unseal).
+
+Lemma NC_alloc `{!crashPreG Σ} : (|==> ∃ _ : crashG Σ, NC)%I.
+Proof.
+  iIntros.
+  iMod (own_alloc (Cinl (Excl ()))) as (γ) "H".
+  { econstructor. }
+  iExists {| crash_name := γ |}.
+  rewrite /NC NC_aux.(seal_eq). by iFrame.
+Qed.
 
 Class stagedG (Σ : gFunctors) : Set := WsatG {
   staging_saved_inG :> savedPropG Σ;
