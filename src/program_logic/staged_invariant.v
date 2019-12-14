@@ -21,7 +21,6 @@ Definition C_def `{crashG Σ} := own crash_name C_tok.
 Definition C_aux `{crashG Σ} : seal C_def. by eexists. Qed.
 Definition C `{crashG Σ} := C_aux.(unseal).
 
-
 Class stagedG (Σ : gFunctors) : Set := WsatG {
   staging_saved_inG :> savedPropG Σ;
   staging_auth_inG :> inG Σ (authR (optionUR (exclR (prodO gnameO gnameO))));
@@ -58,6 +57,23 @@ Proof. rewrite /C C_aux.(seal_eq). apply _. Qed.
 
 Global Instance NC_timeless : Timeless NC.
 Proof. rewrite /NC NC_aux.(seal_eq). apply _. Qed.
+
+Lemma NC_C: NC -∗ C -∗ False.
+Proof.
+ rewrite /C C_aux.(seal_eq).
+ rewrite /NC NC_aux.(seal_eq).
+  iIntros "H H'".
+  { by iDestruct (own_valid_2 with "H H'") as %?. }
+Qed.
+
+Lemma NC_upd_C: NC ==∗ C.
+Proof.
+ rewrite /C C_aux.(seal_eq).
+ rewrite /NC NC_aux.(seal_eq).
+ iIntros "H". iMod (own_update with "H") as "$".
+ { by apply cmra_update_exclusive. }
+ done.
+Qed.
 
 Global Instance staged_contractive N k E E' γ γ' : Contractive (staged_inv N k E E' γ γ').
 Proof.
