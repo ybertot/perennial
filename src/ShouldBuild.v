@@ -12,6 +12,7 @@ From Perennial Require Import Examples.DistributedCtr.DistCtrImpl_Local.
 From Perennial Require Import Examples.DistributedCtr.DistCtrImpl_Global.
 From Perennial Require Import Examples.DistributedCtr.Helpers.
 From Perennial Require Import Examples.solutions.ex_04_parallel_add.
+From Perennial Require Import program_logic.refinement.
 
 (* mailboat proof *)
 From Perennial Require Import Examples.MailServer.MailRefinement.
