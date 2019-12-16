@@ -655,11 +655,79 @@ Module NFS3.
        finish_step := pure tt;
     |}.
 
-  Lemma getattr_ok_noerr (s: State) (f: fh) a1 a2 e1 e2:
-  exists s1 s2, (dynamics.(step) (GETATTR f)) s1 (Val s2 (Err a2 e2))
-  -> (dynamics.(step) (GETATTR f)) s (Val s1 (Err a1 e1)).
-    Proof.
-  Admitted.
+  Lemma getattr_always_err (s: State) (f: fh) a2 e2 s1 s2 ret1 ret2 :
+    (dynamics.(step) (GETATTR f)) s (Val s1 ret1)->
+    (dynamics.(step) (GETATTR f)) s1 (Val s2 ret2) ->
+    ret2 = (Err a2 e2) ->
+    exists a1 e1, ret1 = (Err a1 e1).
+  Proof.
+    intros. subst. simpl in *.
+    destruct H as [ret_fh1 [s_fh1 [[ret_rds1 [s_rds1 [Hrds1 Hfh1]]] Hexec1]]].
+    destruct H0 as [ret_fh2 [s_fh2 [[ret_rds2 [s_rds2 [Hrds2 Hfh2]]] Hexec2]]].
+    assert (s = s2).
+    {
+      destruct ret_fh2 eqn:Hret2;
+      destruct ret_fh1 eqn:Hret1;
+      inversion Hexec1; subst;
+      destruct H as [s_inode [Hinode Hret]];
+      unfold reads in *; subst;
+      inversion Hrds1; unfold pure in Hfh1; inversion Hfh1;
+      inversion Hrds2; inversion Hfh2; subst.
+
+      1,3: inversion Hret; subst;
+      inversion Hinode;
+      destruct H as [s_sym [Hsym Hfattr]];
+      inversion Hsym; subst;
+      simpl in Hfattr;
+      destruct Hfattr as [ret1 [s' [Hsym' [ret2 [s2' [Hrelated Hpure]]]]]];
+      inversion Hpure; inversion Hrelated; inversion Hsym'; subst.
+
+      all: inversion Hexec2; subst;
+      destruct H as [s_inode' [Hinode' Hret']].
+
+      1,3: inversion Hret'; subst.
+
+      all: inversion Hinode';subst.
+      - destruct x; inversion Hret'; subst; auto.
+      - inversion Hinode; subst. destruct x; inversion Hret; subst; auto.
+        destruct x0; inversion Hret'; subst; auto.
+        destruct x0; inversion Hret'; subst; auto.
+    }
+    rewrite <- H in *.
+    destruct ret_fh2 eqn:Hret2.
+    - (* second getattr returned ok *)
+      inversion Hexec2; subst.
+      destruct H0 as [s' [Hinode Hret]].
+      unfold exec_step in Hret.
+      unfold pure in Hret.
+      inversion Hret.
+    - (* second getattr returned err *)
+      destruct ret_fh1 eqn:Hret1.
+      * (* first getattr returned ok *)
+        unfold pure in Hfh1.
+        inversion Hfh2; inversion Hfh1.
+        subst.
+        unfold reads in *; subst;
+        inversion Hrds1; unfold pure in Hfh1; inversion Hfh1;
+        inversion Hrds2; inversion Hfh2; subst.
+        inversion Hexec1; subst.
+        destruct H as [s [Hinode Hret]].
+        unfold exec_step in Hret.
+        unfold pure in Hret.
+        inversion Hret; subst.
+        inversion Hinode;
+        destruct H as [s_sym [Hsym Hfattr]];
+        inversion Hsym; subst;
+        simpl in Hfattr;
+        destruct Hfattr as [ret1 [s' [Hsym' [ret2 [s2' [Hrelated Hpure]]]]]].
+        inversion Hpure; inversion Hrelated; inversion Hsym'; subst.
+        rewrite -> H2 in *.
+        discriminate.
+      * (* first getattr returned none *)
+        inversion Hexec1; subst.
+        destruct H0 as [s [Hinode Hret]].
+        destruct x; unfold exec_step in Hret; inversion Hret; eauto.
+  Qed.
 
 Check getattr_step.
 Check setattr_step.
