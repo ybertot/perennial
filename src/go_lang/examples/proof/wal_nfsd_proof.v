@@ -410,6 +410,126 @@ Proof.
   len.
 Admitted.
 
+Theorem wp_forSlice (I: u64 -> iProp Σ) stk E1 s vs (body: val) :
+  (∀ (i: u64) (x: val),
+      {{{ I i ∗ ⌜int.val i < int.val s.(Slice.sz)⌝ ∗
+                ⌜vs !! int.nat i = Some x⌝ }}}
+        body #i x @ stk; E1
+      {{{ RET #(); I (word.add i (U64 1)) }}}) -∗
+    {{{ I (U64 0) ∗ is_slice s vs }}}
+      forSlice body (slice_val s) @ stk; E1
+    {{{ RET #(); I s.(Slice.sz) ∗ is_slice s vs }}}.
+Proof.
+  iIntros "#Hind".
+  iIntros (Φ) "!> [Hi0 Hs] HΦ".
+  rewrite /forSlice.
+  wp_pures.
+  wp_apply wp_slice_len.
+  wp_pures.
+  remember 0 as z.
+  iRename "Hi0" into "Hiz".
+  assert (0 <= z <= int.val s.(Slice.sz)) by word.
+  iDestruct (is_slice_sz with "Hs") as %Hslen.
+  clear Heqz; generalize dependent z.
+  intros z Hzrange.
+  assert (int.val (U64 z) = z) by (rewrite /U64; word).
+  (iLöb as "IH" forall (z Hzrange H)).
+  wp_if_destruct.
+  - wp_pures.
+    destruct (list_lookup_Z_lt vs z) as [xz Hlookup]; first word.
+    wp_apply (wp_SliceGet with "[$Hs] [HΦ Hiz]").
+    { replace (int.val z); eauto. }
+    { iIntros "!> Hs".
+      wp_pures.
+      wp_apply ("Hind" with "[Hiz]").
+      + iFrame.
+        iPureIntro.
+        split; try lia.
+        replace (int.nat z) with (Z.to_nat z) by lia; auto.
+      + iIntros "Hiz1".
+        wp_pures.
+        assert (int.val (z + 1) = int.val z + 1) by word.
+        replace (word.add z 1) with (U64 (z + 1)); last first.
+        { apply word.unsigned_inj.
+          word. }
+        iSpecialize ("IH" $! (z+1) with "[] []").
+        { iPureIntro; word. }
+        { iPureIntro; word. }
+        wp_apply ("IH" with "[$] [$] [$]"). }
+  - assert (z = int.val s.(Slice.sz)) by lia; subst z.
+    replace (U64 (int.val s.(Slice.sz))) with s.(Slice.sz); last first.
+    { rewrite /U64 word.of_Z_unsigned //. }
+    iApply ("HΦ" with "[$]").
+Qed.
+
+Opaque forSlice.
+
+Theorem wp_Enc__PutInts stk E encptr os elen vs xss (xs : list u64) :
+  {{{ ptsto_enc encptr os elen vs ∗
+      is_slice xss ((fun (x : u64) => #x) <$> xs) ∗
+      ⌜encode_length vs + 8 * length xs <= elen⌝ }}}
+    enc__PutInts #encptr (slice_val xss) @ stk; E
+  {{{ RET #(); ptsto_enc encptr os elen (vs ++ (EncUInt64 <$> xs)) }}}.
+Proof.
+  iIntros (Φ) "(Hencp&Hxss&%) HΦ".
+  rewrite /enc__PutInts.
+
+  rewrite /is_slice.
+  iDestruct "Hxss" as "[Hxss %]".
+
+  wp_pures.
+
+  iApply (wp_forSlice
+    (fun i => (ptsto_enc encptr os elen (vs ++ (EncUInt64 <$> (firstn (int.nat i) xs))))%I)
+    with "[] [Hencp Hxss] [HΦ]").
+
+  2: {
+    rewrite firstn_O /= app_nil_r.
+    iFrame.
+
+    iPureIntro. auto.
+  }
+
+  2: {
+    iNext.
+    iIntros "[Hencp Hxss]".
+    iApply "HΦ".
+
+    rewrite /is_slice.
+    iDestruct "Hxss" as "[Hxss %]".
+    rewrite -H0.
+    rewrite fmap_length.
+    rewrite firstn_all.
+    iFrame.
+  }
+
+  rewrite fmap_length in H0.
+
+  iIntros.
+  iIntros (Φ') "!> (Hencp&%&%) H".
+  wp_steps.
+
+  destruct (list_lookup_Z_lt xs (int.val i)) as [xs0_z Hlookup_xs0]; first word.
+  rewrite list_lookup_fmap in H2.
+  rewrite Hlookup_xs0 in H2.
+  simpl in H2.
+  inversion H2; subst.
+
+  iApply (wp_Enc__PutInt with "[Hencp] [H]").
+  { iFrame. iPureIntro.
+    rewrite encode_length_ok.
+    rewrite encode_length_ok in H.
+    rewrite encode_app.
+    rewrite app_length.
+    admit.
+  }
+
+  iNext.
+  iIntros "H0".
+  iApply "H".
+  admit.
+Admitted.
+
 Instance word_inhabited width (word: Interface.word width) : Inhabited word.
 Proof.
   constructor.
@@ -456,33 +576,38 @@ Proof.
   iFrame.
 Qed.
 
-(*
-Theorem enc_finish enc os elen vs :
-  is_enc enc os elen vs -∗
+Theorem enc_finish enc os vs :
+  is_enc enc os 4096 vs -∗
     ( ∃ extra,
       mapsto_block os.(Slice.ptr) 1 (list_to_block $ encode vs ++ extra) ∗
-      ⌜int.val os.(Slice.sz) = elen⌝ ∗
-      ⌜(encode_length vs + length extra)%Z = elen⌝ ).
+      ⌜int.val os.(Slice.sz) = 4096⌝ ∗
+      ⌜(encode_length vs + length extra)%Z = 4096⌝ ).
 Proof.
   iIntros "Henc".
-  iDestruct "Henc" as "(%&%&%&Hslice&Hfree)".
+  iDestruct "Henc" as "(%&%&%&%&Hslice&Hfree)".
   iDestruct "Hfree" as (free) "(Hfree&%)".
   iExists free.
-  
-  wp_call.
-  iDestruct "Henc" as "(%&Hoff&Henc&Hfree)".
-  iDestruct "Hfree" as (free) "(Hfree&%)".
-  iDestruct (array_app with "[$Henc Hfree]") as "Hblock".
-  { iFramePtsTo by len. }
-  rewrite -fmap_app.
-  iApply "HΦ".
+
   iSplit.
-  { iApply (array_to_block with "Hblock").
-    len. }
-  rewrite encode_length_ok.
-  len.
+  {
+    iApply array_to_block.
+    { len. }
+    rewrite H2.
+    iDestruct (array_app with "[$Hslice Hfree]") as "Hslice".
+    { iFramePtsTo by len. }
+    rewrite -fmap_app.
+    iFrame.
+  }
+
+  iPureIntro; intuition.
+  {
+    rewrite H2 in H. len.
+  }
+  {
+    rewrite encode_length_ok.
+    len.
+  }
 Qed.
-*)
 
 Definition is_dec (dec: DecM.t) os (dlen : nat) vs: iProp Σ :=
   ⌜int.val dec.(DecM.s).(Slice.sz) = dlen⌝ ∗
@@ -762,14 +887,19 @@ Proof.
     by iApply array_to_block_array.
 Qed.
 
-(* XXX checkpoint to here *)
-
-Theorem wp_mkHdr stk E (sz disk_sz:u64) :
-  {{{ True }}}
-    Log__mkHdr (#sz, #disk_sz)%V @ stk; E
-  {{{ l b, RET (slice_val (Slice.mk l 4096)); mapsto_block l 1 b ∗ ⌜is_hdr_block sz disk_sz b⌝ }}}.
+Theorem wp_encodeHdr stk E (logend:u64) (logaddrs:list u64) addrslice blk :
+  {{{ ⌜length logaddrs = 511%nat⌝ ∗
+      is_slice blk (replicate (int.nat 4096) (zero_val byteT)) ∗
+      is_slice addrslice ((fun (x : u64) => #x) <$> logaddrs)
+      }}}
+    encodeHdr (#logend, (slice_val addrslice))%V (slice_val blk) @ stk; E
+  {{{ b, RET #();
+      is_slice addrslice ((fun (x : u64) => #x) <$> logaddrs) ∗
+      is_slice blk (Block_to_vals b) ∗
+      ⌜is_hdr_block logend logaddrs b⌝ }}}.
 Proof.
-  iIntros (Φ) "_ HΦ".
+  iIntros (Φ) "(%&Hblk&Haddrs) HΦ".
+  wp_call.
   wp_call.
   wp_apply wp_new_enc; [ auto | ].
   iIntros (enc) "Henc".
