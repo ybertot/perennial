@@ -7,9 +7,12 @@ Require Import Extraction.
 
 Module NFS3.
 
+Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
+                                (at level 54, right associativity, only parsing).
+Notation "x <- p1 ; p2" := (bind p1 (fun x => p2))
+                              (at level 20, p1 at level 100, p2 at level 200, right associativity).
 
 (** Basic types used in NFS operations *)
-
 Inductive err :=
 | ERR_PERM
 | ERR_NOENT
@@ -53,6 +56,8 @@ Inductive ftype :=
 
 Axiom fh : Type.
 Axiom writeverf : Type.
+Axiom writeverf_gt : writeverf -> writeverf -> bool.
+Axiom writeverf_inc: writeverf -> writeverf.
 Axiom createverf : Type.
 Axiom createverf_eq : createverf -> createverf -> bool.
 Parameter createverfinstance : createverf. (* XXX *)
@@ -63,12 +68,14 @@ Definition filename := string.
 Axiom uint32 : Type.
 Axiom uint64 : Type.
 Axiom u32_zero : uint32.
+Axiom u32_one: uint32.
 Axiom u64_zero : uint64.
 
 Axiom uint32_gt : uint32 -> uint32 -> bool.
 Axiom uint32_eq : uint32 -> uint32 -> bool.
 
 Axiom uint64_gt : uint64 -> uint64 -> bool.
+Axiom uint64_le : uint64 -> uint64 -> bool.
 Axiom uint64_eq : uint64 -> uint64 -> bool.
 Axiom u64_u64_sum: uint64 -> uint64 -> uint64.
 Axiom u64_u32_sum: uint64 -> uint32 -> uint64.
@@ -419,12 +426,7 @@ Definition inode_finish (s : async inode_state) : async inode_state :=
   Build_async _ (latest s) nil.
 
 (** Step definitions for each RPC opcode *)
-
 Section SymbolicStep.
-  Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
-                                (at level 54, right associativity, only parsing).
-  Notation "x <- p1 ; p2" := (bind p1 (fun x => p2))
-                              (at level 20, p1 at level 100, p2 at level 200, right associativity).
   Definition symBool := suchThat (fun (_: State) (_ : bool) => True).
   Definition symU32 := suchThat (fun (_: State) (_ : uint32) => True).
   Definition symU64 := suchThat (fun (_: State) (_ : uint64) => True).
@@ -443,24 +445,9 @@ Section SymbolicStep.
     tn <- symU32;
     ret (Build_time ts tn).
 
-  Definition transition State := transition State.
-
   Definition null_step : transition State unit :=
     ret tt.
-(*
-  Definition count_links_dir (count_fh : fh) (dir_fh : fh) : nat :=
-    if (decide (count_fh = dir_fh)) then 1 else 0.
 
-  Definition add_up `{Countable T} (m : gmap T nat) : nat :=
-    map_fold (fun k v acc => plus acc v) 0 m.
-
-  Definition count_links (fh : fh) (i : inode_state) : nat :=
-    match inode_state_type i with
-    | Idir d =>
-      add_up (fmap (count_links_dir fh) d)
-    | _ => 0
-    end.
-*)
   Definition get_fh {A T} (f : fh) (a : A) `(rx : inode_state -> transition State (res A T)) : transition State (res A T) :=
     i <- call_reads (fun s => s.(fhs) !! f);
     match i with
@@ -921,8 +908,20 @@ Section SymbolicStep.
           | OK _ v => OK wcc v
           end).
 
+  Definition count_links_dir (count_fh : fh) (dir_fh : fh) : nat :=
+    if (decide (count_fh = dir_fh)) then 1 else 0.
+
+  Definition add_up `{Countable T} (m : gmap T nat) : nat :=
+    map_fold (fun k v acc => acc + v) 0 m.
+
+  Definition count_links (fh : fh) (i : inode_state) : nat :=
+    match inode_state_type i with
+    | Idir d => add_up ((count_links_dir fh) <$> d)
+    | _ => 0
+    end.
+
   Definition gc_fh (h : fh) : transition State unit :=
-    nlink <- call_reads (fun s => add_up (fmap (count_links h) (fmap latest s.(fhs))));
+    nlink <- call_reads (fun s => add_up ((count_links h) <$> (latest <$> s.(fhs))));
     if (decide (nlink = 0)) then call_puts (set fhs (delete h)) else ret tt.
 
   Definition remove_core (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : transition State (res unit unit) :=
@@ -973,52 +972,54 @@ Section SymbolicStep.
   Definition rmdir_step (a : dirop) : transition State (res wcc_data unit) :=
     remove_like_core a (rmdir_core a).
 
-  Definition rename_core (from to : dirop) (from_dirmeta to_dirmeta : inode_meta) (from_dm to_dm : gmap filename fh) : transition State (res unit unit) :=
-    ret (Err tt ERR_NOSPC) +
-    if (decide (from.(dirop_fn) = ".")) then ret (Err tt ERR_INVAL) else
-    if (decide (from.(dirop_fn) = "..")) then ret (Err tt ERR_INVAL) else
-    if (decide (to.(dirop_fn) = ".")) then ret (Err tt ERR_INVAL) else
-    if (decide (to.(dirop_fn) = "..")) then ret (Err tt ERR_INVAL) else
-    match from_dm !! from.(dirop_fn) with
-    | None => ret (Err tt ERR_NOENT)
-    | Some src_h =>
-      match to_dm !! to.(dirop_fn) with
-      | None =>
-        _ <- dir_link to to_dirmeta to_dm src_h;
-        _ <- dir_unlink from from_dirmeta from_dm;
-        ret (OK tt tt)
-      | Some dst_h =>
-        src_i <- call_reads (fun s => s.(fhs) !! src_h);
-        dst_i <- call_reads (fun s => s.(fhs) !! dst_h);
-        match src_i, dst_i with
-        | Some src_i, Some dst_i =>
-          let src_i := src_i.(latest) in
-          let dst_i := dst_i.(latest) in
+  Definition rename_core (from to : dirop) (from_dirmeta to_dirmeta : inode_meta)
+             (from_dm to_dm : gmap filename fh)
+    : transition State (res unit unit) :=
+    plus (ret (Err tt ERR_NOSPC))
+    (if (decide (from.(dirop_fn) = ".")) then ret (Err tt ERR_INVAL) else
+      if (decide (from.(dirop_fn) = "..")) then ret (Err tt ERR_INVAL) else
+      if (decide (to.(dirop_fn) = ".")) then ret (Err tt ERR_INVAL) else
+      if (decide (to.(dirop_fn) = "..")) then ret (Err tt ERR_INVAL) else
+      match from_dm !! from.(dirop_fn) with
+      | None => ret (Err tt ERR_NOENT)
+      | Some src_h =>
+        match to_dm !! to.(dirop_fn) with
+        | None =>
+          _ <- dir_link to to_dirmeta to_dm src_h;
+          _ <- dir_unlink from from_dirmeta from_dm;
+          ret (OK tt tt)
+        | Some dst_h =>
+          src_i <- call_reads (fun s => s.(fhs) !! src_h);
+          dst_i <- call_reads (fun s => s.(fhs) !! dst_h);
+          match src_i, dst_i with
+          | Some src_i, Some dst_i =>
+            let src_i := src_i.(latest) in
+            let dst_i := dst_i.(latest) in
 
-          match src_i.(inode_state_type), dst_i.(inode_state_type) with
-          | Idir src_dm, Idir dst_dm =>
-            let dst_names := dom (gset filename) dst_dm in
-            if (decide (size dst_names = 2)) then
+            match src_i.(inode_state_type), dst_i.(inode_state_type) with
+            | Idir src_dm, Idir dst_dm =>
+              let dst_names := dom (gset filename) dst_dm in
+              if (decide (size dst_names = 2)) then
+                _ <- dir_unlink to to_dirmeta to_dm;
+                _ <- dir_unlink from from_dirmeta from_dm;
+                _ <- dir_link to to_dirmeta to_dm src_h;
+                _ <- gc_fh dst_h;
+                ret (OK tt tt)
+              else
+                ret (Err tt ERR_EXIST)
+            | Idir _, _ => ret (Err tt ERR_EXIST)
+            | _, Idir _ => ret (Err tt ERR_EXIST)
+            | _, _ =>
               _ <- dir_unlink to to_dirmeta to_dm;
               _ <- dir_unlink from from_dirmeta from_dm;
               _ <- dir_link to to_dirmeta to_dm src_h;
               _ <- gc_fh dst_h;
               ret (OK tt tt)
-            else
-              ret (Err tt ERR_EXIST)
-          | Idir _, _ => ret (Err tt ERR_EXIST)
-          | _, Idir _ => ret (Err tt ERR_EXIST)
-          | _, _ =>
-            _ <- dir_unlink to to_dirmeta to_dm;
-            _ <- dir_unlink from from_dirmeta from_dm;
-            _ <- dir_link to to_dirmeta to_dm src_h;
-            _ <- gc_fh dst_h;
-            ret (OK tt tt)
+            end
+          | _, _ => ret (Err tt ERR_SERVERFAULT)
           end
-        | _, _ => ret (Err tt ERR_SERVERFAULT)
         end
-      end
-    end.
+      end).
 
   (* XXX rename allows a client to form loops in the directory structure,
     and to make it unreachable from the root. *)
@@ -1056,18 +1057,18 @@ Section SymbolicStep.
           end).
 
   Definition link_core (link : dirop) (h : fh) (i : inode_state) (dirmeta : inode_meta) (dm : gmap filename fh) : transition State (res unit unit) :=
-    ret (Err tt ERR_NOSPC) +
-    match i.(inode_state_type) with
-    | Idir _ => ret (Err tt ERR_INVAL)
-    | _ =>
-      match dm !! link.(dirop_fn) with
-      | None =>
-        _ <- dir_link link dirmeta dm h;
-        ret (OK tt tt)
-      | Some curfh =>
-        ret (Err tt ERR_EXIST)
-      end
-    end.
+    plus (ret (Err tt ERR_NOSPC))
+    (match i.(inode_state_type) with
+      | Idir _ => ret (Err tt ERR_INVAL)
+      | _ =>
+        match dm !! link.(dirop_fn) with
+        | None =>
+          _ <- dir_link link dirmeta dm h;
+          ret (OK tt tt)
+        | Some curfh =>
+          ret (Err tt ERR_EXIST)
+        end
+      end).
 
   Definition link_step (h : fh) (link : dirop) : transition State (res (wcc_data * post_op_attr) unit) :=
     i <~- get_fh h (wcc_data_none, None);
@@ -1084,7 +1085,7 @@ Section SymbolicStep.
                       | None => None
                       | Some d_after => Some (inode_wcc d_after.(latest))
                       end in
-    iattr_after <- inode_attr h i;
+    iattr_after <- inode_attrs i;
     let wcc := (Build_wcc_data wcc_before wcc_after, Some iattr_after) in
 
     ret (match r with
@@ -1100,19 +1101,19 @@ Section SymbolicStep.
 
   Definition fsstat_step (h : fh) : transition State (res post_op_attr fsstat_ok) :=
     i <~- get_fh h None;
-    iattr <- inode_attr h i;
+    iattr <- inode_attrs i;
     st <- suchThat (fun _ st =>
-      st.(fsstat_ok_fbytes) <= st.(fsstat_ok_tbytes) /\
-      st.(fsstat_ok_abytes) <= st.(fsstat_ok_fbytes) /\
-      st.(fsstat_ok_ffiles) <= st.(fsstat_ok_tfiles) /\
-      st.(fsstat_ok_afiles) <= st.(fsstat_ok_ffiles));
+      uint64_le st.(fsstat_ok_fbytes) st.(fsstat_ok_tbytes) /\
+      uint64_le st.(fsstat_ok_abytes) st.(fsstat_ok_fbytes) /\
+      uint64_le st.(fsstat_ok_ffiles) st.(fsstat_ok_tfiles) /\
+      uint64_le st.(fsstat_ok_afiles) st.(fsstat_ok_ffiles));
     ret (OK (Some iattr) st).
 
   Definition fsinfo_step (h : fh) : transition State (res post_op_attr fsinfo_ok) :=
     i <~- get_fh h None;
-    iattr <- inode_attr h i;
+    iattr <- inode_attrs i;
     info <- suchThat (fun _ info =>
-      info.(fsinfo_ok_time_delta) = Build_time 0 1 /\
+      info.(fsinfo_ok_time_delta) = Build_time u32_zero u32_one /\
       info.(fsinfo_ok_properties_link) = true /\
       info.(fsinfo_ok_properties_symlink) = true /\
       info.(fsinfo_ok_properties_homogeneous) = true /\
@@ -1121,7 +1122,7 @@ Section SymbolicStep.
 
   Definition pathconf_step (h : fh) : transition State (res post_op_attr pathconf_ok) :=
     i <~- get_fh h None;
-    iattr <- inode_attr h i;
+    iattr <- inode_attrs i;
     pc <- suchThat (fun _ pc =>
       pc.(pathconf_ok_no_trunc) = true /\
       pc.(pathconf_ok_case_insensitive) = false /\
@@ -1141,24 +1142,36 @@ Section SymbolicStep.
     end.
 End SymbolicStep.
 
+Extraction Language JSON.
+Recursive Extraction getattr_step setattr_step.
+
 Definition nfs_crash_step : transition State unit :=
   s' <- suchThat (fun (s s' : State) =>
     forall fh, inode_crash_opt (s.(fhs) !! fh) (s'.(fhs) !! fh) /\
-    s'.(verf) > s.(verf) /\
+    writeverf_gt s'.(verf) s.(verf) /\
     time_ge s.(clock) s'.(clock));
   _ <- call_puts (fun _ => s');
   ret tt.
 
 Definition nfs_finish_step : transition State unit :=
   _ <- call_puts (fun s =>
-    let s := s <| fhs ::= fmap inode_finish |> in
-    let s := s <| verf ::= fun x => plus x 1 |> in
+    let s := s <| fhs ::= base.fmap inode_finish |> in
+    let s := s <| verf ::= fun x => writeverf_inc x |> in
     s);
   ret tt.
 
-Definition nfs3step : OpSemantics Op State :=
-  fun T (op : Op T) => exec_step
-        match op with
+Definition OpSemantics Op State := forall T, Op T -> relation.t State T.
+Definition CrashSemantics State := relation.t State unit.
+Definition FinishSemantics State := relation.t State unit.
+
+Record Dynamics Op State :=
+  { step: OpSemantics Op State;
+    crash_step: CrashSemantics State;
+    finish_step: FinishSemantics State;
+  }.
+
+Definition nfs3op_to_transition {T} (op : Op T): transition State T :=
+  match op with
         | NULL => null_step
         | GETATTR h => getattr_step h
         | SETATTR h attr ctime_guard => setattr_step h attr ctime_guard
@@ -1182,29 +1195,23 @@ Definition nfs3step : OpSemantics Op State :=
         | PATHCONF h => pathconf_step h
         | COMMIT h off count => commit_step h off count
         end.
-Definition nfs3step : OpSemantics Op State :=
-  fun T (op : Op T) =>
-        match op with
-        | NULL => exec_step null_step
-        | GETATTR h => exec_step (getattr_step h)
-        | SETATTR h a ctime_guard => exec_step (setattr_step h a ctime_guard)
-        | _ => none
-        end.
+Definition nfs3step : OpSemantics Op State := fun T (op : Op T) => relation.denote (nfs3op_to_transition op).
 
 Definition dynamics : Dynamics Op State :=
   {| step := nfs3step;
-      crash_step := pure tt; (*XXX TODO*)
-      finish_step := pure tt;
+      crash_step := relation.denote nfs_crash_step;
+      finish_step := relation.denote nfs_finish_step;
   |}.
 
 Lemma getattr_always_err (s: State) (f: fh) a2 e2 s1 s2 ret1 ret2 :
-  (dynamics.(step) (GETATTR f)) s (Val s1 ret1)->
-  (dynamics.(step) (GETATTR f)) s1 (Val s2 ret2) ->
+  (dynamics.(step) (GETATTR f)) s s1 ret1->
+  (dynamics.(step) (GETATTR f)) s1 s2 ret2 ->
   ret2 = (Err a2 e2) ->
   exists a1 e1, ret1 = (Err a1 e1).
 Proof.
   intros. subst. simpl in *.
-  destruct H as [ret_fh1 [s_fh1 [[ret_rds1 [s_rds1 [Hrds1 Hfh1]]] Hexec1]]].
+  inversion H; subst.
+(*  destruct H as [ret_fh1 [s_fh1 [[ret_rds1 [s_rds1 [Hrds1 Hfh1]]] Hexec1]]].
   destruct H0 as [ret_fh2 [s_fh2 [[ret_rds2 [s_rds2 [Hrds2 Hfh2]]] Hexec2]]].
   assert (s = s2).
   {
@@ -1269,16 +1276,8 @@ Proof.
       inversion Hexec1; subst.
       destruct H0 as [s [Hinode Hret]].
       destruct x; unfold exec_step in Hret; inversion Hret; eauto.
-Qed.
+Qed.*)
 
-Extraction Language JSON.
-Recursive Extraction getattr_step setattr_step.
-
-Definition dynamics : Dynamics Op State :=
-  {| step := nfs3step;
-      crash_step := nfs_crash_step;
-      finish_step := nfs_finish_step;
-  |}.
 
 (*
 Lemma crash_total_ok (s: State):
