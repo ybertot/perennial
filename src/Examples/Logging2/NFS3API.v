@@ -1210,74 +1210,60 @@ Lemma getattr_always_err (s: State) (f: fh) a2 e2 s1 s2 ret1 ret2 :
   exists a1 e1, ret1 = (Err a1 e1).
 Proof.
   intros. subst. simpl in *.
-  inversion H; subst.
-(*  destruct H as [ret_fh1 [s_fh1 [[ret_rds1 [s_rds1 [Hrds1 Hfh1]]] Hexec1]]].
-  destruct H0 as [ret_fh2 [s_fh2 [[ret_rds2 [s_rds2 [Hrds2 Hfh2]]] Hexec2]]].
-  assert (s = s2).
-  {
-    destruct ret_fh2 eqn:Hret2;
-    destruct ret_fh1 eqn:Hret1;
-    inversion Hexec1; subst;
-    destruct H as [s_inode [Hinode Hret]];
-    unfold reads in *; subst;
-    inversion Hrds1; unfold pure in Hfh1; inversion Hfh1;
-    inversion Hrds2; inversion Hfh2; subst.
+  inversion H0. subst; simpl in *.
+  destruct x as [x | x].
 
-    1,3: inversion Hret; subst;
-    inversion Hinode;
-    destruct H as [s_sym [Hsym Hfattr]];
-    inversion Hsym; subst;
-    simpl in Hfattr;
-    destruct Hfattr as [ret1 [s' [Hsym' [ret2 [s2' [Hrelated Hpure]]]]]];
-    inversion Hpure; inversion Hrelated; inversion Hsym'; subst.
+  (* Incorrect case: ret2 returns OK, contradiction *)
+  apply relation.inv_bind_runF in H1.
+  apply relation.inv_runF in H1.
+  destruct H1; subst; simpl in *.
+  apply relation.bind_bind in H2.
+  apply relation.inv_bind_suchThat in H2.
+  destruct H2 as [x0 [_ H2]].
+  apply relation.bind_bind in H2.
+  apply relation.inv_bind_suchThat in H2.
+  destruct H2 as [x1 [_ H2]].
+  apply relation.bind_bind in H2.
+  apply relation.inv_bind_suchThat in H2.
+  destruct H2 as [x2 [_ H2]].
+  apply relation.inv_bind_runF in H2.
+  apply relation.inv_runF in H2; simpl in *.
+  destruct H2; subst; simpl in *.
+  inversion H2.
 
-    all: inversion Hexec2; subst;
-    destruct H as [s_inode' [Hinode' Hret']].
+  (* Correct case: ret2 returns error *)
+  destruct ret1; inversion H; subst; eauto.
+  (* contradiction, cannot return ok *)
+  * inversion H3; simpl in *; subst. inversion H5; inversion H7; subst.
+    apply relation.inv_bind_runF in H3.
+    apply relation.inv_runF in H3.
+    destruct H3; simpl in *; subst.
+    apply relation.inv_bind_runF in H1.
+    apply relation.inv_runF in H1.
+    destruct H1; simpl in *; subst.
+    remember (x0.(fhs) !! f) as Hx0.
+    destruct (Hx0).
+    inversion H4; subst; simpl in H4.
+    apply relation.bind_bind in H4.
+    apply relation.inv_bind_suchThat in H4.
+    destruct H4 as [x1 [_ H4]].
+    apply relation.bind_bind in H4.
+    apply relation.inv_bind_suchThat in H4.
+    destruct H4 as [x2 [_ H4]].
+    apply relation.bind_bind in H4.
+    apply relation.inv_bind_suchThat in H4.
+    destruct H4 as [x3 [_ H4]].
+    apply relation.inv_bind_runF in H4.
+    apply relation.inv_runF in H4.
+    destruct H4; subst; simpl in *.
+    rewrite <- H3 in HeqHx0.
+    discriminate.
 
-    1,3: inversion Hret'; subst.
-
-    all: inversion Hinode';subst.
-    - destruct x; inversion Hret'; subst; auto.
-    - inversion Hinode; subst. destruct x; inversion Hret; subst; auto.
-      destruct x0; inversion Hret'; subst; auto.
-      destruct x0; inversion Hret'; subst; auto.
-  }
-  rewrite <- H in *.
-  destruct ret_fh2 eqn:Hret2.
-  - (* second getattr returned ok *)
-    inversion Hexec2; subst.
-    destruct H0 as [s' [Hinode Hret]].
-    unfold exec_step in Hret.
-    unfold pure in Hret.
-    inversion Hret.
-  - (* second getattr returned err *)
-    destruct ret_fh1 eqn:Hret1.
-    * (* first getattr returned ok *)
-      unfold pure in Hfh1.
-      inversion Hfh2; inversion Hfh1.
-      subst.
-      unfold reads in *; subst;
-      inversion Hrds1; unfold pure in Hfh1; inversion Hfh1;
-      inversion Hrds2; inversion Hfh2; subst.
-      inversion Hexec1; subst.
-      destruct H as [s [Hinode Hret]].
-      unfold exec_step in Hret.
-      unfold pure in Hret.
-      inversion Hret; subst.
-      inversion Hinode;
-      destruct H as [s_sym [Hsym Hfattr]];
-      inversion Hsym; subst;
-      simpl in Hfattr;
-      destruct Hfattr as [ret1 [s' [Hsym' [ret2 [s2' [Hrelated Hpure]]]]]].
-      inversion Hpure; inversion Hrelated; inversion Hsym'; subst.
-      rewrite -> H2 in *.
-      discriminate.
-    * (* first getattr returned none *)
-      inversion Hexec1; subst.
-      destruct H0 as [s [Hinode Hret]].
-      destruct x; unfold exec_step in Hret; inversion Hret; eauto.
-Qed.*)
-
+    inversion H4; subst; simpl in H4.
+    apply relation.inv_bind_suchThat in H4.
+    destruct H4 as [x1 [_ H4]].
+    destruct x1; inversion H4; subst; discriminate.
+Qed.
 
 (*
 Lemma crash_total_ok (s: State):
@@ -1335,5 +1321,5 @@ Definition l : Layer Op :=
       crash_non_err := crash_non_err_ok;
       finish_non_err := finish_non_err_ok;
       initP := fun s => s = ∅ |}.
-*)*)
+*)
 End NFS3.
