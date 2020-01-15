@@ -1,7 +1,6 @@
 From Coq Require Import RelationClasses.
 From Coq Require Import Setoid.
 From Coq Require Import ZArith.
-
 From stdpp Require Import base.
 
 Set Implicit Arguments.
@@ -20,10 +19,12 @@ Section transition.
   Inductive transition : Type -> Type :=
   | runF {T} (f: Σ -> Σ * T) : transition T
   | suchThat {T} (pred: Σ -> T -> Prop) {gen:GenPred T Σ pred} : transition T
+  | suchThatBool {T} (b: Σ -> T -> bool) {gen:GenPred T Σ b} : transition T
   | bind {T T'} (x: transition T') (rx: T' -> transition T) : transition T
   .
-
+    
   Arguments suchThat {T} pred {gen}.
+  Arguments suchThatBool {T} b {gen}.
 
   Definition ret {T} (v:T): transition T :=
     runF (fun s => (s, v)).
@@ -114,8 +115,12 @@ Section transition.
                                 | Some (exist _ x _) => Some (hints', s, x)
                                 | None => None
                                 end
+    | suchThatBool b => let (hint, hints') := next_hint hints in
+                          fun s => match genNext hint s with
+                                | Some (exist _ x _) => Some (hints', s, x)
+                                | None => None
+                                end
     end.
-
 End transition.
 
 Arguments transition Σ T : clear implicits.
@@ -189,6 +194,7 @@ Module relation.
       match tr with
       | Transitions.runF f => runF f
       | Transitions.suchThat pred => suchThat pred
+      | Transitions.suchThatBool b => suchThat (fun s t => b s t = true)
       | Transitions.bind r rx => bind (denote r) (fun x => denote (rx x))
       end.
 
@@ -220,7 +226,7 @@ Module relation.
       | _ => inversion H; subst; clear H
       end.
 
-    Theorem interpret_sound {T} (tr: transition Σ T):
+    (*Theorem interpret_sound {T} (tr: transition Σ T):
       forall hints s s' hints' v,
         interpret hints tr s = Some (hints', s', v) ->
         denote tr s s' v.
@@ -239,7 +245,7 @@ Module relation.
         eapply IHtr in Heqo.
         eapply H in H0.
         econstructor; eauto.
-    Qed.
+    Qed.*)
 
     Global Instance equiv_Equiv T : Equivalence (@requiv T).
     Proof.

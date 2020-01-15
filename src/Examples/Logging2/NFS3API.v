@@ -55,6 +55,7 @@ Inductive ftype :=
 .
 
 Axiom fh : Type.
+Axiom fh_eq : fh -> fh -> bool.
 Axiom writeverf : Type.
 Axiom writeverf_gt : writeverf -> writeverf -> bool.
 Axiom writeverf_inc: writeverf -> writeverf.
@@ -427,11 +428,24 @@ Definition inode_finish (s : async inode_state) : async inode_state :=
 
 (** Step definitions for each RPC opcode *)
 Section SymbolicStep.
-  Definition symBool := suchThat (fun (_: State) (_ : bool) => True).
-  Definition symU32 := suchThat (fun (_: State) (_ : uint32) => True).
-  Definition symU64 := suchThat (fun (_: State) (_ : uint64) => True).
-  Definition symFID := suchThat (fun (s: State) (fid: fileid) => ~∃ f i, s.(fhs) !! f = Some i /\ i.(latest).(inode_state_meta).(inode_meta_fileid) = fid).
-  Definition symFH := suchThat (fun s f => f ∉ dom (gset fh) s.(fhs)).
+  Definition symBool := suchThatBool (fun (_: State) (_ : bool) => true).
+  Definition symU32 := suchThatBool (fun (_: State) (_ : uint32) => true).
+  Definition symU64 := suchThatBool (fun (_: State) (_ : uint64) => true).
+  Definition fid_does_not_exist (s: State) (fid: fileid) : bool :=
+    fold_left (fun acc x =>
+                 match x with
+                 | (f,i) => acc && negb(uint64_eq i.(latest).(inode_state_meta).(inode_meta_fileid) fid)
+                 end)
+              (gmap_to_list s.(fhs)) true.
+  Definition fh_does_not_exist (s: State) (f: fh) : bool :=
+    fold_left (fun acc x =>
+                 match x with
+                 | (f',_) => acc && negb(fh_eq f f')
+                 end)
+              (gmap_to_list s.(fhs)) true.
+
+  Definition symFID := suchThatBool fid_does_not_exist.
+  Definition symFH := suchThatBool fh_does_not_exist.
   Definition symAssert (b:bool): transition State unit := check b.
   Definition call_reads {T : Type} (read_f : State -> T) :=
     s <- reads (fun s => s);
@@ -1142,9 +1156,6 @@ Section SymbolicStep.
     end.
 End SymbolicStep.
 
-Extraction Language JSON.
-Recursive Extraction getattr_step setattr_step.
-
 Definition nfs_crash_step : transition State unit :=
   s' <- suchThat (fun (s s' : State) =>
     forall fh, inode_crash_opt (s.(fhs) !! fh) (s'.(fhs) !! fh) /\
@@ -1194,7 +1205,11 @@ Definition nfs3op_to_transition {T} (op : Op T): transition State T :=
         | FSINFO h => fsinfo_step h
         | PATHCONF h => pathconf_step h
         | COMMIT h off count => commit_step h off count
-        end.
+  end.
+
+Extraction Language JSON.
+Recursive Extraction nfs3op_to_transition. (*getattr_step setattr_step commit_step.*)
+
 Definition nfs3step : OpSemantics Op State := fun T (op : Op T) => relation.denote (nfs3op_to_transition op).
 
 Definition dynamics : Dynamics Op State :=
@@ -1265,13 +1280,11 @@ Proof.
     destruct x1; inversion H4; subst; discriminate.
 Qed.
 
-(*
 Lemma crash_total_ok (s: State):
-  exists s', dynamics.(crash_step) s (Val s' tt).
+  exists s', dynamics.(crash_step) s s' tt.
 Proof.
   repeat (eexists; econstructor).
-  econstructor. intros.
-  instantiate (1 := fmap inode_finish s).
+  instantiate (1 := base.fmap inode_finish s).
   rewrite lookup_fmap.
   destruct (s !! fh) eqn:He; rewrite He; simpl; auto.
   destruct i; simpl; auto.

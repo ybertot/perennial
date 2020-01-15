@@ -47,7 +47,7 @@ class SymbolicJSON(object):
     t = datatype.create()
     return t
 
-  def proc_apply(self, expr, state): 
+  def proc_apply(self, expr, state):
     f = self.context.reduce(expr['func'])
     args = expr['args']
     if f['what'] == 'expr:special':

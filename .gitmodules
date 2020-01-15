@@ -19,3 +19,6 @@
 [submodule "vendor/transitions"]
 	path = vendor/transitions
 	url = https://github.com/tchajed/coq-transitions.git
+[submodule "src/Examples/Logging2/src/Examples/Logging2/symtest/pyrpcgen"]
+	path = src/Examples/Logging2/src/Examples/Logging2/symtest/pyrpcgen
+	url = https://github.com/hawk78/pyrpcgen.git
