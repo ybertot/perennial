@@ -7,10 +7,8 @@ Require Import Extraction.
 
 Module NFS3.
 
-Notation "x <~- p1 ; p2" := (p1 (fun x => p2))
-                                (at level 54, right associativity, only parsing).
 Notation "x <- p1 ; p2" := (bind p1 (fun x => p2))
-                              (at level 20, p1 at level 100, p2 at level 200, right associativity).
+                            (at level 20, p1 at level 100, p2 at level 200, right associativity).
 
 (** Basic types used in NFS operations *)
 Inductive err :=
@@ -217,11 +215,10 @@ Inductive res A T :=
 
 Arguments Err {A T}.
 
-Definition res2 A T1 T2 := res A (T1 * T2).
-Definition OK2 `(always : A) `(v1 : T1) `(v2 : T2) := OK always (v1, v2).
-
 (** Result types of different operations, when the operation
     returns more than one thing *)
+Definition res2 A T1 T2 := res A (T1 * T2).
+Definition OK2 `(always : A) `(v1 : T1) `(v2 : T2) := OK always (v1, v2).
 
 Record write_ok := {
   write_ok_count : uint32;
@@ -428,6 +425,18 @@ Definition inode_finish (s : async inode_state) : async inode_state :=
 
 (** Step definitions for each RPC opcode *)
 Section SymbolicStep.
+  Definition result_bind {A T T'} x (fx: T -> transition State T')
+  : transition State T' :=
+    bind x (fun (r : res A T) =>
+      match r with
+      | OK a v => fx v
+      | Err _ _ => undefined
+      end).
+
+  Notation "x <~- p1 ; p2" := (result_bind p1 (fun x => p2))
+                                (at level 54, right associativity, only parsing).
+
+
   Definition symBool := suchThatBool (fun (_: State) (_ : bool) => true).
   Definition symU32 := suchThatBool (fun (_: State) (_ : uint32) => true).
   Definition symU64 := suchThatBool (fun (_: State) (_ : uint64) => true).
@@ -462,7 +471,7 @@ Section SymbolicStep.
   Definition null_step : transition State unit :=
     ret tt.
 
-  Definition get_fh {A T} (f : fh) (a : A) `(rx : inode_state -> transition State (res A T)) : transition State (res A T) :=
+  Definition get_fh {A} (f : fh) (a : A) : transition State (res A inode_state) :=
     i <- call_reads (fun s => s.(fhs) !! f);
     match i with
     | None =>
@@ -471,7 +480,7 @@ Section SymbolicStep.
         ret (Err a ERR_STALE)
       else
         ret (Err a ERR_BADHANDLE)
-    | Some i => rx (latest i)
+    | Some i => ret (OK a (latest i))
     end.
 
 
@@ -512,17 +521,17 @@ Section SymbolicStep.
     ret res.
 
   Definition getattr_step (f : fh) : transition State (res unit fattr) :=
-    i <~- get_fh f tt;
+    i <~- get_fh f (@None inode_state);
     attrs <- inode_attrs i;
     ret (OK tt attrs).
 
-  Definition check_ctime_guard {A T} (i : inode_state) (ctime_guard : option time)
-                                      (a : A) (rx : unit -> transition State (res A T)) :=
+  Definition check_ctime_guard {A} (i : inode_state) (ctime_guard : option time) (a : A)
+    : transition State (res A unit) :=
     match ctime_guard with
-    | None => rx tt
+    | None => ret (OK a tt)
     | Some ct =>
       if (decide (ct = i.(inode_state_meta).(inode_meta_ctime))) then
-        rx tt
+        ret (OK a tt)
       else
         ret (Err a ERR_NOT_SYNC)
     end.
@@ -568,13 +577,12 @@ Section SymbolicStep.
             fun m => m <| f := newtime |> <| inode_meta_ctime := now |> |>
     end.
 
-  Definition truncate {A T} (i : inode_state) (now : time)
+  Definition truncate {A} (i : inode_state) (now : time)
                             (sattr_req : option uint64)
                             (a : A)
-                            (rx : inode_state -> transition State (res A T)) :
-                            transition State (res A T) :=
+                            : transition State (res A inode_state) :=
     match sattr_req with
-    | None => rx i
+    | None => ret (OK a i)
     | Some len =>
       match i.(inode_state_type) with
       | Ifile buf cverf =>
@@ -582,8 +590,8 @@ Section SymbolicStep.
         if andb (uint64_gt len (len_buf buf)) outOfSpace then
           ret (Err a ERR_NOSPC)
         else
-          rx (i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
-                <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>)
+          ret (OK a (i <| inode_state_type := Ifile (resize_buf len buf) cverf |>
+                <| inode_state_meta ::= set inode_meta_mtime (constructor now) |>))
       | _ =>
         ret (Err a ERR_INVAL)
       end
@@ -612,15 +620,14 @@ Section SymbolicStep.
     _ <- put_fh_sync f i;
     ret (OK (Build_wcc_data (Some wcc_before) (Some (inode_wcc i))) tt).
 
-  Definition get_dir {A T} (i : inode_state) (a : A) (rx : gmap filename fh -> transition State (res A T))
-    : transition State (res A T) :=
+  Definition get_dir {A} (i : inode_state) (a : A) : transition State (res A (gmap filename fh)) :=
       match i.(inode_state_type) with
-      | Idir dmap => rx dmap
+      | Idir dmap => ret (OK a dmap)
       | _ => ret (Err a ERR_NOTDIR)
       end.
 
   Definition lookup_step (a : dirop) : transition State (res2 post_op_attr fh post_op_attr) :=
-    d <~- get_fh a.(dirop_dir) None;
+    d <~- get_fh a.(dirop_dir) (@None fattr);
     dattr <- inode_attrs d;
     dm <~- get_dir d (Some dattr);
     match dm !! a.(dirop_fn) with
@@ -636,12 +643,12 @@ Section SymbolicStep.
     end.
 
   Definition access_step (f : fh) (a : uint32) : transition State (res post_op_attr uint32) :=
-    i <~- get_fh f None;
+    i <~- get_fh f (@None inode_state);
     iattr <- inode_attrs i;
     ret (OK (Some iattr) a).
 
   Definition readlink_step (f : fh) : transition State (res post_op_attr string) :=
-    i <~- get_fh f None;
+    i <~- get_fh f (@None inode_state);
     iattr <- inode_attrs i;
     match i.(inode_state_type) with
     | Isymlink data => ret (OK (Some iattr) data)
@@ -652,7 +659,7 @@ Section SymbolicStep.
     if we do introduce atime, then we should make it async to avoid
     disk writes on every read. *)
   Definition read_step (f : fh) (off : uint64) (count : uint32) : transition State (res2 post_op_attr bool buf) :=
-    i <~- get_fh f None;
+    i <~- get_fh f (@None inode_state);
     iattr <- inode_attrs i;
     match i.(inode_state_type) with
     | Ifile buf _ =>
@@ -670,10 +677,10 @@ Section SymbolicStep.
       call_puts (set fhs (fun x => <[f := async_put i ia]> x))
     end.
 
-  Definition check_space {T} (wcc_before : wcc_attr) (buf buf' : buf) `(rx : _ -> transition State (res wcc_data T)) : transition State (res wcc_data T) :=
+  Definition check_space (wcc_before : wcc_attr) (buf buf' : buf) : transition State (res wcc_data Prop) :=
       if (decide (uint64_gt (len_buf buf') (len_buf buf)))
        then ret (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_NOSPC)
-       else rx True.
+       else ret (OK (Build_wcc_data (Some wcc_before) (Some wcc_before)) True).
 
   Definition write_step (f : fh) (off : uint64) (s : stable) (data : buf) : transition State (res wcc_data write_ok) :=
     i <~- get_fh f wcc_data_none;
@@ -1085,11 +1092,11 @@ Section SymbolicStep.
       end).
 
   Definition link_step (h : fh) (link : dirop) : transition State (res (wcc_data * post_op_attr) unit) :=
-    i <~- get_fh h (wcc_data_none, None);
-    d <~- get_fh link.(dirop_dir) (wcc_data_none, None);
+    i <~- get_fh h (wcc_data_none, (@None wcc_data));
+    d <~- get_fh link.(dirop_dir) (wcc_data_none, (@None wcc_data));
 
     let wcc_before := Some (inode_wcc d) in
-    let wcc_ro := (Build_wcc_data wcc_before wcc_before, None) in
+    let wcc_ro := (Build_wcc_data wcc_before wcc_before, (@None wcc_data)) in
 
     dm <~- get_dir d wcc_ro;
     r <- link_core link h i d.(inode_state_meta) dm;
@@ -1114,7 +1121,7 @@ Section SymbolicStep.
     ret (Err None ERR_NOTSUPP).
 
   Definition fsstat_step (h : fh) : transition State (res post_op_attr fsstat_ok) :=
-    i <~- get_fh h None;
+    i <~- get_fh h (@None inode_state);
     iattr <- inode_attrs i;
     st <- suchThat (fun _ st =>
       uint64_le st.(fsstat_ok_fbytes) st.(fsstat_ok_tbytes) /\
@@ -1124,7 +1131,7 @@ Section SymbolicStep.
     ret (OK (Some iattr) st).
 
   Definition fsinfo_step (h : fh) : transition State (res post_op_attr fsinfo_ok) :=
-    i <~- get_fh h None;
+    i <~- get_fh h (@None inode_state);
     iattr <- inode_attrs i;
     info <- suchThat (fun _ info =>
       info.(fsinfo_ok_time_delta) = Build_time u32_zero u32_one /\
@@ -1135,7 +1142,7 @@ Section SymbolicStep.
     ret (OK (Some iattr) info).
 
   Definition pathconf_step (h : fh) : transition State (res post_op_attr pathconf_ok) :=
-    i <~- get_fh h None;
+    i <~- get_fh h (@None inode_state);
     iattr <- inode_attrs i;
     pc <- suchThat (fun _ pc =>
       pc.(pathconf_ok_no_trunc) = true /\
@@ -1229,6 +1236,8 @@ Proof.
   destruct x as [x | x].
 
   (* Incorrect case: ret2 returns OK, contradiction *)
+  monad_simpl in *.
+  apply relation.bind_bind in H1.
   apply relation.inv_bind_runF in H1.
   apply relation.inv_runF in H1.
   destruct H1; subst; simpl in *.
