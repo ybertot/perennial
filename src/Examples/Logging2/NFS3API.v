@@ -1231,62 +1231,10 @@ Lemma getattr_always_err (s: State) (f: fh) a2 e2 s1 s2 ret1 ret2 :
   ret2 = (Err a2 e2) ->
   exists a1 e1, ret1 = (Err a1 e1).
 Proof.
-  intros. subst. simpl in *.
-  inversion H0. subst; simpl in *.
-  destruct x as [x | x].
-
-  (* Incorrect case: ret2 returns OK, contradiction *)
-  monad_simpl in *.
-  apply relation.bind_bind in H1.
-  apply relation.inv_bind_runF in H1.
-  apply relation.inv_runF in H1.
-  destruct H1; subst; simpl in *.
-  apply relation.bind_bind in H2.
-  apply relation.inv_bind_suchThat in H2.
-  destruct H2 as [x0 [_ H2]].
-  apply relation.bind_bind in H2.
-  apply relation.inv_bind_suchThat in H2.
-  destruct H2 as [x1 [_ H2]].
-  apply relation.bind_bind in H2.
-  apply relation.inv_bind_suchThat in H2.
-  destruct H2 as [x2 [_ H2]].
-  apply relation.inv_bind_runF in H2.
-  apply relation.inv_runF in H2; simpl in *.
-  destruct H2; subst; simpl in *.
-  inversion H2.
-
-  (* Correct case: ret2 returns error *)
-  destruct ret1; inversion H; subst; eauto.
-  (* contradiction, cannot return ok *)
-  * inversion H3; simpl in *; subst. inversion H5; inversion H7; subst.
-    apply relation.inv_bind_runF in H3.
-    apply relation.inv_runF in H3.
-    destruct H3; simpl in *; subst.
-    apply relation.inv_bind_runF in H1.
-    apply relation.inv_runF in H1.
-    destruct H1; simpl in *; subst.
-    remember (x0.(fhs) !! f) as Hx0.
-    destruct (Hx0).
-    inversion H4; subst; simpl in H4.
-    apply relation.bind_bind in H4.
-    apply relation.inv_bind_suchThat in H4.
-    destruct H4 as [x1 [_ H4]].
-    apply relation.bind_bind in H4.
-    apply relation.inv_bind_suchThat in H4.
-    destruct H4 as [x2 [_ H4]].
-    apply relation.bind_bind in H4.
-    apply relation.inv_bind_suchThat in H4.
-    destruct H4 as [x3 [_ H4]].
-    apply relation.inv_bind_runF in H4.
-    apply relation.inv_runF in H4.
-    destruct H4; subst; simpl in *.
-    rewrite <- H3 in HeqHx0.
-    discriminate.
-
-    inversion H4; subst; simpl in H4.
-    apply relation.inv_bind_suchThat in H4.
-    destruct H4 as [x1 [_ H4]].
-    destruct x1; inversion H4; subst; discriminate.
+  intros.
+  inversion H0; subst.
+  destruct x as [x | x];
+    repeat (monad_inv; simpl in *; monad_inv); discriminate.
 Qed.
 
 Lemma crash_total_ok (s: State):
