@@ -225,14 +225,14 @@ def rename_binders(expr, namemap):
       newcases.append(newcase)
     return {
       'what': expr['what'],
-      'type': expr['type'],
+      #'type': expr['type'],
       'expr': rename_binders(expr['expr'], namemap),
       'cases': newcases,
     }
   elif expr['what'] == 'expr:constructor':
     return {
       'what': expr['what'],
-      'type': expr['type'],
+      #'type': expr['type'],
       'mod': expr['mod'],
       'name': expr['name'],
       'args': [rename_binders(a, namemap) for a in expr['args']],

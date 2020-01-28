@@ -1,5 +1,6 @@
 ## ahead of time:
 ##   export PYTHONPATH=/home/nickolai/refsrc/z3/build/python
+##   export PYTHONPATH=$PWD/pyrpcgen
 
 import json
 import json_eval
@@ -69,7 +70,7 @@ m.redefine_term('map_insert', {
     'id': 'map_insert',
   },
 })
-for id in ('len_buf', 'resize_buf', 'u32_zero', 'u64_zero', 'uint64_gt', 'uint32_gt', 'uint32_eq', 'eqDec_time',):
+for id in ('eq_dec_fh', 'len_buf', 'eqDec_time', 'u64_zero', 'eq_dec_inode_state', 'countable_inode_state', 'u32_zero', 'countable_fh', 'resize_buf', 'uint64_gt', 'uint32_gt', 'uint32_eq',):
   m.redefine_term(id, {
     'what': 'expr:special',
     'id': id,

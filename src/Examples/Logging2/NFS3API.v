@@ -410,15 +410,9 @@ Definition inode_wcc (i : inode_state) : wcc_attr :=
     (inode_meta_mtime m)
     (inode_meta_ctime m).
 
-Definition inode_crash (i i' : async inode_state) : Prop :=
-  latest i' ∈ possible i /\ pending i' = nil.
-
-Definition inode_crash_opt (s s' : option (async inode_state)) : Prop :=
-  match s, s' with
-  | None, None => True
-  | Some i, Some i' => inode_crash i i'
-  | _, _ => False
-  end.
+Definition inode_crash (i i' : async inode_state) : bool :=
+  (existsb (fun (i: inode_state) => bool_decide (i = (latest i'))) (possible i))
+  && bool_decide (pending i' = nil).
 
 Definition inode_finish (s : async inode_state) : async inode_state :=
   Build_async _ (latest s) nil.
@@ -1123,31 +1117,31 @@ Section SymbolicStep.
   Definition fsstat_step (h : fh) : transition State (res post_op_attr fsstat_ok) :=
     i <~- get_fh h (@None inode_state);
     iattr <- inode_attrs i;
-    st <- suchThat (fun _ st =>
-      uint64_le st.(fsstat_ok_fbytes) st.(fsstat_ok_tbytes) /\
-      uint64_le st.(fsstat_ok_abytes) st.(fsstat_ok_fbytes) /\
-      uint64_le st.(fsstat_ok_ffiles) st.(fsstat_ok_tfiles) /\
+    st <- suchThatBool (fun _ st =>
+      uint64_le st.(fsstat_ok_fbytes) st.(fsstat_ok_tbytes) &&
+      uint64_le st.(fsstat_ok_abytes) st.(fsstat_ok_fbytes) &&
+      uint64_le st.(fsstat_ok_ffiles) st.(fsstat_ok_tfiles) &&
       uint64_le st.(fsstat_ok_afiles) st.(fsstat_ok_ffiles));
     ret (OK (Some iattr) st).
 
   Definition fsinfo_step (h : fh) : transition State (res post_op_attr fsinfo_ok) :=
     i <~- get_fh h (@None inode_state);
     iattr <- inode_attrs i;
-    info <- suchThat (fun _ info =>
-      info.(fsinfo_ok_time_delta) = Build_time u32_zero u32_one /\
-      info.(fsinfo_ok_properties_link) = true /\
-      info.(fsinfo_ok_properties_symlink) = true /\
-      info.(fsinfo_ok_properties_homogeneous) = true /\
-      info.(fsinfo_ok_properties_cansettime) = true);
+    info <- suchThatBool (fun _ info =>
+      (bool_decide (info.(fsinfo_ok_time_delta) = (Build_time u32_zero u32_one))) &&
+      info.(fsinfo_ok_properties_link) &&
+      info.(fsinfo_ok_properties_symlink) &&
+      info.(fsinfo_ok_properties_homogeneous) &&
+      info.(fsinfo_ok_properties_cansettime));
     ret (OK (Some iattr) info).
 
   Definition pathconf_step (h : fh) : transition State (res post_op_attr pathconf_ok) :=
     i <~- get_fh h (@None inode_state);
     iattr <- inode_attrs i;
-    pc <- suchThat (fun _ pc =>
-      pc.(pathconf_ok_no_trunc) = true /\
-      pc.(pathconf_ok_case_insensitive) = false /\
-      pc.(pathconf_ok_case_preserving) = true);
+    pc <- suchThatBool (fun _ pc =>
+      pc.(pathconf_ok_no_trunc) &&
+      negb pc.(pathconf_ok_case_insensitive) &&
+      pc.(pathconf_ok_case_preserving));
     ret (OK (Some iattr) pc).
 
   Definition commit_step (h : fh) (off : uint64) (count : uint32) : transition State (res wcc_data writeverf) :=
@@ -1163,10 +1157,28 @@ Section SymbolicStep.
     end.
 End SymbolicStep.
 
+Definition states_inodes_crash_consistent (s s': State) : bool :=
+    (fold_left (fun acc x =>
+                 match x with
+                 | (f,i) => acc && match (s'.(fhs) !! f) with
+                             | Some i' => inode_crash i i'
+                             | None => false
+                                  end
+                 end)
+              (gmap_to_list s.(fhs)) true) &&
+    (fold_left (fun acc x =>
+                 match x with
+                 | (f,i) => acc && match (s.(fhs) !! f) with
+                             | Some i' => inode_crash i i'
+                             | None => false
+                                  end
+               end)
+              (gmap_to_list s'.(fhs)) true).
+
 Definition nfs_crash_step : transition State unit :=
-  s' <- suchThat (fun (s s' : State) =>
-    forall fh, inode_crash_opt (s.(fhs) !! fh) (s'.(fhs) !! fh) /\
-    writeverf_gt s'.(verf) s.(verf) /\
+  s' <- suchThatBool (fun (s s' : State) =>
+    states_inodes_crash_consistent s s' &&
+    writeverf_gt s'.(verf) s.(verf) &&
     time_ge s.(clock) s'.(clock));
   _ <- call_puts (fun _ => s');
   ret tt.
@@ -1187,6 +1199,9 @@ Record Dynamics Op State :=
     crash_step: CrashSemantics State;
     finish_step: FinishSemantics State;
   }.
+
+Extraction Language JSON.
+Recursive Extraction setattr_step getattr_step. (*getattr_step setattr_step commit_step.*)
 
 Definition nfs3op_to_transition {T} (op : Op T): transition State T :=
   match op with
@@ -1214,8 +1229,6 @@ Definition nfs3op_to_transition {T} (op : Op T): transition State T :=
         | COMMIT h off count => commit_step h off count
   end.
 
-Extraction Language JSON.
-Recursive Extraction nfs3op_to_transition. (*getattr_step setattr_step commit_step.*)
 
 Definition nfs3step : OpSemantics Op State := fun T (op : Op T) => relation.denote (nfs3op_to_transition op).
 

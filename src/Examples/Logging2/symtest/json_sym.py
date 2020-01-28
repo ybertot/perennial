@@ -136,12 +136,15 @@ class SymbolicJSON(object):
       if procexpr['what'] == 'expr:constructor':
         mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
         c = mod.get_constructor(name)
-        if c['typename'] == 'proc':
-          state, procexpr = self.proc_constructor_proc(procexpr, state)
-          continue
 
-        state, procexpr = self.proc_constructor_other(procexpr, state)
+        print name, c
+
+        #if c['typename'] == 'proc':
+        state, procexpr = self.proc_constructor_proc(procexpr, state)
         continue
+
+        #state, procexpr = self.proc_constructor_other(procexpr, state)
+        #continue
 
       if procexpr['what'] == 'expr:special':
         if procexpr['id'] == 'u64_zero':
@@ -157,6 +160,21 @@ class SymbolicJSON(object):
       raise Exception("proc() on unexpected thing", procexpr['what'])
 
   def proc_constructor_other(self, procexpr, state):
+    other_state_sort = self.z3_sort({
+        'what': 'type:glob',
+        'mod': procexpr['mod'],
+        'args': [],
+        'name': 'other',
+      })
+    cid = constructor_idx_by_name(other_state_sort, procexpr['name'])
+
+    cargs = []
+    for arg in procexpr['args']:
+      state, carg = self.proc(arg, state)
+      cargs.append(carg)
+
+    return state, sort.constructor(cid)(*cargs)
+  '''
     t = procexpr['type']
 
     if t['name'] == 'list':
@@ -191,6 +209,7 @@ class SymbolicJSON(object):
       cargs.append(carg)
 
     return state, sort.constructor(cid)(*cargs)
+'''
 
   def proc_constructor_proc(self, procexpr, state):
     if procexpr['name'] == 'Bind':
@@ -204,10 +223,12 @@ class SymbolicJSON(object):
         'func': p1lam,
       }
       return self.proc(p1, state0)
+    elif procexpr['name'] == 'SuchThatBool':
+
     elif procexpr['name'] == 'Ret':
       retval = self.context.reduce(procexpr['args'][0])
       return state, retval
-    elif procexpr['name'] == 'Call':
+    elif procexpr['name'] == 'RunF':
       callop = self.context.reduce(procexpr['args'][0])
       if callop['what'] != 'expr:constructor':
         raise Exception("callop expected constructor, got", callop['what'])
