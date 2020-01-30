@@ -72,7 +72,6 @@ Axiom u64_zero : uint64.
 
 Axiom uint32_gt : uint32 -> uint32 -> bool.
 Axiom uint32_eq : uint32 -> uint32 -> bool.
-
 Axiom uint64_gt : uint64 -> uint64 -> bool.
 Axiom uint64_le : uint64 -> uint64 -> bool.
 Axiom uint64_eq : uint64 -> uint64 -> bool.
@@ -80,6 +79,7 @@ Axiom u64_u64_sum: uint64 -> uint64 -> uint64.
 Axiom u64_u32_sum: uint64 -> uint32 -> uint64.
 Axiom u64_to_u32: uint64 -> uint32.
 Axiom nat_to_u32: nat -> uint32.
+Axiom nat_to_u64: nat -> uint64.
 
 Definition fileid := uint64.
 Definition cookie := uint64.
@@ -88,6 +88,7 @@ Record time := {
   time_sec : uint32;
   time_nsec : uint32;
 }.
+Axiom time_le : time -> time -> bool.
 
 Global Instance EqDec_time : EqDecision time.
 (*
@@ -594,6 +595,35 @@ Section SymbolicStep.
   Definition put_fh_sync (f : fh) (i : inode_state) : transition State unit :=
     call_puts (set fhs (fun x => <[f := sync i]> x)).
 
+  Definition sync_at_inode (i : inode_state) (a : async inode_state) :=
+  (* if no one has written since, just flush all writes *)
+  if (bool_decide (i = (latest a)))
+      then sync (latest a)
+      (* otherwise, flush all writes that are older than the inode state to commit *)
+      else (* find the inode entry in pending (if exists) ) *)
+        let new_pending := filter
+                             (fun i' => time_le
+                                       (i'.(inode_state_meta).(inode_meta_mtime))
+                                       (i.(inode_state_meta).(inode_meta_mtime)))
+                             (pending a) in
+        Build_async _ (latest a) new_pending.
+
+  Definition put_fh_sync_at_inode (f : fh) (i : inode_state) : transition State unit :=
+    ia <- call_reads (fun s => s.(fhs) !! f);
+    match ia with
+    | None => ret tt
+    | Some ia =>
+      call_puts (set fhs (fun x => <[f := sync_at_inode i ia]> x))
+    end.
+
+  Definition put_fh_async (f : fh) (i : inode_state) : transition State unit :=
+    ia <- call_reads (fun s => s.(fhs) !! f);
+    match ia with
+    | None => ret tt
+    | Some ia =>
+      call_puts (set fhs (fun x => <[f := async_put i ia]> x))
+    end.
+
   Definition set_attr_nonlen (i : inode_state) (now : time) (a : sattr) : inode_state :=
 (*
     let i := set_attr_one i now (f := inode_meta_mode) a.(sattr_mode) in
@@ -663,13 +693,6 @@ Section SymbolicStep.
     | _ => ret (Err (Some iattr) ERR_INVAL)
     end.
 
-  Definition put_fh_async (f : fh) (i : inode_state) : transition State unit :=
-    ia <- call_reads (fun s => s.(fhs) !! f);
-    match ia with
-    | None => ret tt
-    | Some ia =>
-      call_puts (set fhs (fun x => <[f := async_put i ia]> x))
-    end.
 
   Definition check_space (wcc_before : wcc_attr) (buf buf' : buf) : transition State (res wcc_data Prop) :=
       if (decide (uint64_gt (len_buf buf') (len_buf buf)))
@@ -1144,16 +1167,20 @@ Section SymbolicStep.
       pc.(pathconf_ok_case_preserving));
     ret (OK (Some iattr) pc).
 
-  Definition commit_step (h : fh) (off : uint64) (count : uint32) : transition State (res wcc_data writeverf) :=
-    i <~- get_fh h wcc_data_none;
-    let wcc_before := inode_wcc i in
-    let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
+  Definition commit_step (h : fh) (off: uint64) (count: uint32): transition State (res wcc_data writeverf) :=
+    i_before <~- get_fh h wcc_data_none;
+    let wcc_before := inode_wcc i_before in
     wverf <- call_reads verf;
-    match i.(inode_state_type) with
+    match i_before.(inode_state_type) with
     | Ifile buf cverf =>
-      _ <- put_fh_sync h i;
+      i_after <~- get_fh h wcc_data_none;
+      let wcc_after := inode_wcc i_after in
+      let wcc := Build_wcc_data (Some wcc_before) (Some wcc_after) in
+      _ <- put_fh_sync_at_inode h i_before;
       ret (OK wcc wverf)
-    | _ => ret (OK wcc wverf)
+    | _ =>
+      let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
+      ret (OK wcc wverf)
     end.
 End SymbolicStep.
 
@@ -1200,7 +1227,7 @@ Record Dynamics Op State :=
     finish_step: FinishSemantics State;
   }.
 
-Extraction Language JSON.
+Extraction Language OCaml.
 Recursive Extraction setattr_step getattr_step. (*getattr_step setattr_step commit_step.*)
 
 Definition nfs3op_to_transition {T} (op : Op T): transition State T :=

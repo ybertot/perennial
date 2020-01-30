@@ -136,16 +136,12 @@ class SymbolicJSON(object):
       if procexpr['what'] == 'expr:constructor':
         mod, name = self.context.scope_name(procexpr['name'], procexpr['mod'])
         c = mod.get_constructor(name)
-
         print name, c
-
-        #if c['typename'] == 'proc':
+        # XXX todo
         state, procexpr = self.proc_constructor_proc(procexpr, state)
         continue
 
-        #state, procexpr = self.proc_constructor_other(procexpr, state)
-        #continue
-
+      # XXX todo axioms
       if procexpr['what'] == 'expr:special':
         if procexpr['id'] == 'u64_zero':
           procexpr = 0
@@ -153,6 +149,7 @@ class SymbolicJSON(object):
         elif procexpr['id'] == 'u32_zero':
           procexpr = 0
           continue
+
         else:
           raise Exception("unknown special", procexpr['id'])
 
@@ -224,8 +221,8 @@ class SymbolicJSON(object):
       }
       return self.proc(p1, state0)
     elif procexpr['name'] == 'SuchThatBool':
-
-    elif procexpr['name'] == 'Ret':
+      procexpr['args']['']
+    #elif procexpr['name'] == 'Ret':
       retval = self.context.reduce(procexpr['args'][0])
       return state, retval
     elif procexpr['name'] == 'RunF':
