@@ -331,7 +331,9 @@ Inductive Op : Type -> Type :=
     Op (res post_op_attr fsinfo_ok)
 | PATHCONF (_ : fh) :
     Op (res post_op_attr pathconf_ok)
-| COMMIT (_ : fh) (off : uint64) (count : uint32) :
+| COMMIT_BEGIN (_ : fh) (off : uint64) (count : uint32) :
+    Op (res wcc_data time)
+| COMMIT_END (_ : fh) (begin_time : time) :
     Op (res wcc_data writeverf)
 .
 
@@ -595,25 +597,22 @@ Section SymbolicStep.
   Definition put_fh_sync (f : fh) (i : inode_state) : transition State unit :=
     call_puts (set fhs (fun x => <[f := sync i]> x)).
 
-  Definition sync_at_inode (i : inode_state) (a : async inode_state) :=
+  Definition sync_at_time (ts : time) (a : async inode_state) :=
   (* if no one has written since, just flush all writes *)
-  if (bool_decide (i = (latest a)))
+  if (bool_decide (ts = (latest a).(inode_state_meta).(inode_meta_mtime)))
       then sync (latest a)
       (* otherwise, flush all writes that are older than the inode state to commit *)
-      else (* find the inode entry in pending (if exists) ) *)
-        let new_pending := filter
-                             (fun i' => time_le
-                                       (i'.(inode_state_meta).(inode_meta_mtime))
-                                       (i.(inode_state_meta).(inode_meta_mtime)))
-                             (pending a) in
-        Build_async _ (latest a) new_pending.
+      else let new_pending := filter
+                             (fun i' => time_le (i'.(inode_state_meta).(inode_meta_mtime)) ts)
+                             (pending a)
+           in Build_async _ (latest a) new_pending.
 
-  Definition put_fh_sync_at_inode (f : fh) (i : inode_state) : transition State unit :=
+  Definition put_fh_sync_at_time (f : fh) (ts : time) : transition State unit :=
     ia <- call_reads (fun s => s.(fhs) !! f);
     match ia with
     | None => ret tt
     | Some ia =>
-      call_puts (set fhs (fun x => <[f := sync_at_inode i ia]> x))
+      call_puts (set fhs (fun x => <[f := sync_at_time ts ia]> x))
     end.
 
   Definition put_fh_async (f : fh) (i : inode_state) : transition State unit :=
@@ -1167,19 +1166,22 @@ Section SymbolicStep.
       pc.(pathconf_ok_case_preserving));
     ret (OK (Some iattr) pc).
 
-  Definition commit_step (h : fh) (off: uint64) (count: uint32): transition State (res wcc_data writeverf) :=
+  Definition commit_begin_step (h : fh) (off: uint64) (count: uint32): transition State (res wcc_data time) :=
     i_before <~- get_fh h wcc_data_none;
     let wcc_before := inode_wcc i_before in
+    let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
+    ret (OK wcc i_before.(inode_state_meta).(inode_meta_mtime)).
+
+  Definition commit_end_step (h : fh) (begin_time : time) : transition State (res wcc_data writeverf) :=
+    i_after <~- get_fh h wcc_data_none;
+    let wcc_after := inode_wcc i_after in
+    let wcc := Build_wcc_data (Some wcc_after) (Some wcc_after) in
     wverf <- call_reads verf;
-    match i_before.(inode_state_type) with
+    match i_after.(inode_state_type) with
     | Ifile buf cverf =>
-      i_after <~- get_fh h wcc_data_none;
-      let wcc_after := inode_wcc i_after in
-      let wcc := Build_wcc_data (Some wcc_before) (Some wcc_after) in
-      _ <- put_fh_sync_at_inode h i_before;
+      _ <- put_fh_sync_at_time h begin_time;
       ret (OK wcc wverf)
     | _ =>
-      let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
       ret (OK wcc wverf)
     end.
 End SymbolicStep.
@@ -1253,7 +1255,8 @@ Definition nfs3op_to_transition {T} (op : Op T): transition State T :=
         | FSSTAT h => fsstat_step h
         | FSINFO h => fsinfo_step h
         | PATHCONF h => pathconf_step h
-        | COMMIT h off count => commit_step h off count
+        | COMMIT_BEGIN h off count => commit_begin_step h off count
+        | COMMIT_END h begin_time => commit_end_step h begin_time
   end.
 
 
