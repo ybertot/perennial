@@ -332,8 +332,8 @@ Inductive Op : Type -> Type :=
 | PATHCONF (_ : fh) :
     Op (res post_op_attr pathconf_ok)
 | COMMIT_BEGIN (_ : fh) (off : uint64) (count : uint32) :
-    Op (res wcc_data time)
-| COMMIT_END (_ : fh) (begin_time : time) :
+    Op (res wcc_data nat)
+| COMMIT_END (_ : fh) (checkpt : nat) :
     Op (res wcc_data writeverf)
 .
 
@@ -372,11 +372,12 @@ Global Instance eta_inode_meta : Settable _ :=
 Record inode_state := {
   inode_state_meta : inode_meta;
   inode_state_type : inode_type_state;
+  ctr : nat;
 }.
 
 Global Instance eta_inode_state : Settable _ :=
   settable! Build_inode_state
-    < inode_state_meta; inode_state_type >.
+    < inode_state_meta; inode_state_type; ctr >.
 
 Global Instance eq_dec_inode_meta : EqDecision inode_meta.
 Admitted.
@@ -397,11 +398,12 @@ Record State := {
   fhs : gmap fh (async inode_state);
   verf : writeverf;
   clock : time;
+  global_ctr : nat;
 }.
 
 Global Instance eta_State : Settable _ :=
   settable! Build_State
-    < fhs; verf; clock >.
+    < fhs; verf; clock; global_ctr >.
 
 Definition inode_wcc (i : inode_state) : wcc_attr :=
   let m := inode_state_meta i in
@@ -418,7 +420,8 @@ Definition inode_crash (i i' : async inode_state) : bool :=
   && bool_decide (pending i' = nil).
 
 Definition inode_finish (s : async inode_state) : async inode_state :=
-  Build_async _ (latest s) nil.
+  sync (latest s). (* XXX don't need to update counter here *)
+
 
 (** Step definitions for each RPC opcode *)
 Section SymbolicStep.
@@ -546,6 +549,15 @@ Section SymbolicStep.
     _ <- call_puts (set clock (constructor t'));
     ret t'.
 
+  Definition checkpt_ctr : transition State nat :=
+    ctr <- call_reads (global_ctr);
+    ret ctr.
+
+  Definition get_ctr : transition State nat :=
+    ctr <- call_reads (global_ctr);
+    _ <- call_puts (set global_ctr (constructor (ctr + 1)));
+    ret (ctr + 1).
+
   Definition set_attr_one {F} (i : inode_state) (now : time)
                               (f : inode_meta -> F)
                               `{!Setter f}
@@ -594,28 +606,34 @@ Section SymbolicStep.
       end
     end.
 
-  Definition put_fh_sync (f : fh) (i : inode_state) : transition State unit :=
-    call_puts (set fhs (fun x => <[f := sync i]> x)).
-
-  Definition sync_at_time (ts : time) (a : async inode_state) :=
-  (* if no one has written since, just flush all writes *)
-  if (bool_decide (ts = (latest a).(inode_state_meta).(inode_meta_mtime)))
-      then sync (latest a)
-      (* otherwise, flush all writes that are older than the inode state to commit *)
-      else let new_pending := filter
-                             (fun i' => time_le (i'.(inode_state_meta).(inode_meta_mtime)) ts)
-                             (pending a)
-           in Build_async _ (latest a) new_pending.
-
-  Definition put_fh_sync_at_time (f : fh) (ts : time) : transition State unit :=
+  Definition update_fh_sync (f : fh) (i : inode_state) : transition State unit :=
+    ctr_val <- get_ctr;
+    let i := i <| ctr ::= fun val => ctr_val |> in
     ia <- call_reads (fun s => s.(fhs) !! f);
     match ia with
     | None => ret tt
     | Some ia =>
-      call_puts (set fhs (fun x => <[f := sync_at_time ts ia]> x))
+      call_puts (set fhs (fun x => <[f := sync i]> x))
     end.
 
-  Definition put_fh_async (f : fh) (i : inode_state) : transition State unit :=
+  Definition sync_at_ctr (checkpt_ctr : nat) (a : async inode_state) :=
+    (* flush all pending writes that are older than the inode state to commit *)
+    let new_pending := filter (fun (i : inode_state) => checkpt_ctr <=? i.(ctr))
+                              (pending a)
+    in Build_async _ (latest a) new_pending.
+
+  Definition put_fh_sync_at_ctr (f : fh) (ctr : nat) : transition State unit :=
+    (* don't update the global counter---just flushing some values *)
+    ia <- call_reads (fun s => s.(fhs) !! f);
+    match ia with
+    | None => ret tt
+    | Some ia =>
+      call_puts (set fhs (fun x => <[f := sync_at_ctr ctr ia]> x))
+    end.
+
+  Definition update_fh_async (f : fh) (i : inode_state) : transition State unit :=
+    ctr_val <- get_ctr;
+    let i := i <| ctr ::= fun val => ctr_val |> in
     ia <- call_reads (fun s => s.(fhs) !! f);
     match ia with
     | None => ret tt
@@ -624,13 +642,11 @@ Section SymbolicStep.
     end.
 
   Definition set_attr_nonlen (i : inode_state) (now : time) (a : sattr) : inode_state :=
-(*
     let i := set_attr_one i now (f := inode_meta_mode) a.(sattr_mode) in
     let i := set_attr_one i now (f := inode_meta_uid) a.(sattr_uid) in
     let i := set_attr_one i now (f := inode_meta_gid) a.(sattr_gid) in
     let i := set_attr_time i now (f := inode_meta_atime) a.(sattr_atime) in
     let i := set_attr_time i now (f := inode_meta_mtime) a.(sattr_mtime) in
-*)
     i.
 
   Definition setattr_step (f : fh) (a : sattr) (ctime_guard : option time) : transition State (res wcc_data unit) :=
@@ -640,7 +656,7 @@ Section SymbolicStep.
     t <- get_time;
     i <~- truncate i t a.(sattr_size) (Build_wcc_data (Some wcc_before) (Some wcc_before));
     let i := set_attr_nonlen i t a in
-    _ <- put_fh_sync f i;
+    _ <- update_fh_sync f i;
     ret (OK (Build_wcc_data (Some wcc_before) (Some (inode_wcc i))) tt).
 
   Definition get_dir {A} (i : inode_state) (a : A) : transition State (res A (gmap filename fh)) :=
@@ -713,10 +729,10 @@ Section SymbolicStep.
       let wok := Build_write_ok (u64_to_u32 (len_buf data)) s wverf in
       match s with
       | UNSTABLE =>
-        _ <- put_fh_async f i';
+        _ <- update_fh_async f i';
         ret (OK wcc wok)
       | _ =>
-        _ <- put_fh_sync f i';
+        _ <- update_fh_sync f i';
         ret (OK wcc wok)
       end
     | _ => ret (Err (Build_wcc_data (Some wcc_before) (Some wcc_before)) ERR_INVAL)
@@ -737,23 +753,26 @@ Section SymbolicStep.
 
   Definition dir_link (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) (f : fh) : transition State unit :=
     now <- get_time;
+    ctr_val <- get_ctr;
     let dirmeta := dirmeta <| inode_meta_mtime := now |> in
     let dm := <[a.(dirop_fn) := f]> dm in
-    call_puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
+    call_puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm) ctr_val)))).
 
   Definition dir_unlink (a : dirop) (dirmeta : inode_meta) (dm : gmap filename fh) : transition State unit :=
     now <- get_time;
+    ctr_val <- get_ctr;
     let dirmeta := dirmeta <| inode_meta_mtime := now |> in
     let dm := delete a.(dirop_fn) dm in
-    call_puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm))))).
+    call_puts (set fhs (insert a.(dirop_dir) (sync (Build_inode_state dirmeta (Idir dm) ctr_val)))).
 
   Definition create_unchecked_step (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : transition State (res2 unit post_op_fh post_op_attr) :=
+    ctr_val <- get_ctr;
     f <- match dm !! a.(dirop_fn) with
           | Some curfh => ret curfh
           | None =>
             f <- symFH;
             m <- new_inode_meta;
-            _ <- call_puts (set fhs (insert f (sync (Build_inode_state m (Ifile empty_buf createverfinstance)))));
+            _ <- call_puts (set fhs (insert f (sync (Build_inode_state m (Ifile empty_buf createverfinstance) ctr_val))));
             _ <- dir_link a dirmeta dm f;
             ret f
           end;
@@ -774,12 +793,13 @@ Section SymbolicStep.
                   end
                 end in
       let i := set_attr_nonlen i now attr in
-      _ <- put_fh_sync f i;
+      _ <- update_fh_sync f i;
       iattr <- inode_attrs i;
       ret (OK2 tt (Some f) (Some iattr))
     end.
 
   Definition create_guarded_step (a : dirop) (attr : sattr) (dirmeta : inode_meta) (dm : gmap filename fh) : transition State (res2 unit post_op_fh post_op_attr) :=
+    ctr_val <- get_ctr;
     match dm !! a.(dirop_fn) with
     | Some curfh => ret (Err tt ERR_EXIST)
     | None =>
@@ -787,11 +807,11 @@ Section SymbolicStep.
       m <- new_inode_meta;
       now <- get_time;
       let i := match attr.(sattr_size) with
-                | None => Build_inode_state m (Ifile empty_buf createverfinstance)
-                | Some len => Build_inode_state m (Ifile (resize_buf len empty_buf) createverfinstance)
+                | None => Build_inode_state m (Ifile empty_buf createverfinstance) ctr_val
+                | Some len => Build_inode_state m (Ifile (resize_buf len empty_buf) createverfinstance) ctr_val
                 end in
       let i := set_attr_nonlen i now attr in
-      _ <- put_fh_sync f i;
+      _ <- update_fh_sync f i;
       _ <- dir_link a dirmeta dm f;
       iattr <- inode_attrs i;
       ret (OK2 tt (Some f) (Some iattr))
@@ -819,8 +839,9 @@ Section SymbolicStep.
     | None =>
       f <- symFH;
       m <- new_inode_meta;
-      let i := Build_inode_state m (Ifile empty_buf cverf) in
-      _ <- put_fh_sync f i;
+      ctr_val <- get_ctr;
+      let i := Build_inode_state m (Ifile empty_buf cverf) ctr_val in
+      _ <- update_fh_sync f i;
       _ <- dir_link a dirmeta dm f;
       iattr <- inode_attrs i;
       ret (OK2 tt (Some f) (Some iattr))
@@ -868,12 +889,13 @@ Section SymbolicStep.
       h <- symFH;
       m <- new_inode_meta;
       now <- get_time;
+      ctr_val <- get_ctr;
       let dm := ∅ in
       let dm := <["." := h]> dm in
       let dm := <[".." := a.(dirop_dir)]> dm in
-      let i := Build_inode_state m (Idir dm) in
+      let i := Build_inode_state m (Idir dm) ctr_val in
       let i := set_attr_nonlen i now attr in
-      _ <- put_fh_sync h i;
+      _ <- update_fh_sync h i;
       _ <- dir_link a dirmeta dm h;
       iattr <- inode_attrs i;
       ret (OK2 tt (Some h) (Some iattr))
@@ -889,9 +911,10 @@ Section SymbolicStep.
       h <- symFH;
       m <- new_inode_meta;
       now <- get_time;
-      let i := Build_inode_state m (Isymlink data) in
+      ctr_val <- get_ctr;
+      let i := Build_inode_state m (Isymlink data) ctr_val in
       let i := set_attr_nonlen i now attr in
-      _ <- put_fh_sync h i;
+      _ <- update_fh_sync h i;
       _ <- dir_link a dirmeta dm h;
       iattr <- inode_attrs i;
       ret (OK2 tt (Some h) (Some iattr))
@@ -907,15 +930,16 @@ Section SymbolicStep.
       h <- symFH;
       m <- new_inode_meta;
       now <- get_time;
+      ctr_val <- get_ctr;
       let t := match ft with
                 | mknod_chr mm => Ichr mm
                 | mknod_blk mm => Iblk mm
                 | mknod_sock => Isock
                 | mknod_fifo => Ififo
                 end in
-      let i := Build_inode_state m t in
+      let i := Build_inode_state m t ctr_val in
       let i := set_attr_nonlen i now attr in
-      _ <- put_fh_sync h i;
+      _ <- update_fh_sync h i;
       _ <- dir_link a dirmeta dm h;
       iattr <- inode_attrs i;
       ret (OK2 tt (Some h) (Some iattr))
@@ -1166,20 +1190,21 @@ Section SymbolicStep.
       pc.(pathconf_ok_case_preserving));
     ret (OK (Some iattr) pc).
 
-  Definition commit_begin_step (h : fh) (off: uint64) (count: uint32): transition State (res wcc_data time) :=
+  Definition commit_begin_step (h : fh) (off: uint64) (count: uint32): transition State (res wcc_data nat) :=
     i_before <~- get_fh h wcc_data_none;
+    checkpt <- checkpt_ctr;
     let wcc_before := inode_wcc i_before in
     let wcc := Build_wcc_data (Some wcc_before) (Some wcc_before) in
-    ret (OK wcc i_before.(inode_state_meta).(inode_meta_mtime)).
+    ret (OK wcc checkpt).
 
-  Definition commit_end_step (h : fh) (begin_time : time) : transition State (res wcc_data writeverf) :=
+  Definition commit_end_step (h : fh) (checkpt: nat) : transition State (res wcc_data writeverf) :=
     i_after <~- get_fh h wcc_data_none;
     let wcc_after := inode_wcc i_after in
     let wcc := Build_wcc_data (Some wcc_after) (Some wcc_after) in
     wverf <- call_reads verf;
     match i_after.(inode_state_type) with
     | Ifile buf cverf =>
-      _ <- put_fh_sync_at_time h begin_time;
+      _ <- put_fh_sync_at_ctr h checkpt;
       ret (OK wcc wverf)
     | _ =>
       ret (OK wcc wverf)
@@ -1256,7 +1281,7 @@ Definition nfs3op_to_transition {T} (op : Op T): transition State T :=
         | FSINFO h => fsinfo_step h
         | PATHCONF h => pathconf_step h
         | COMMIT_BEGIN h off count => commit_begin_step h off count
-        | COMMIT_END h begin_time => commit_end_step h begin_time
+        | COMMIT_END h checkpt => commit_end_step h checkpt
   end.
 
 
