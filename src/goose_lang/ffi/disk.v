@@ -98,6 +98,7 @@ Section disk.
     typecheck.
   Qed.
 
+  (*
   Definition Write: val :=
     λ: "a" "b",
     ExternalOp WriteOp (Var "a", slice.ptr (Var "b")).
@@ -106,6 +107,7 @@ Section disk.
   Proof.
     typecheck.
   Qed.
+*)
 
   Definition Barrier: val :=
     λ: <>, #().
@@ -127,6 +129,23 @@ Section disk.
   Definition disk_size (d: gmap Z Block): Z :=
     1 + highest_addr (dom _ d).
 
+  Fixpoint toByteVec (n:nat) (v:val): transition state (vec u8 n) :=
+    match n with
+ | 0%nat => match v with
+        | LitV LitUnit => ret Vector.nil
+        | _ => undefined
+           end
+ | S n => match v with
+      | PairV (LitV (LitByte b)) v2 =>
+        bs ← toByteVec n v2;
+        ret (Vector.cons b bs)
+| _ => undefined
+  end
+  end.
+
+  Definition toBlock (v:val): transition state Block :=
+    toByteVec block_bytes v.
+
   Definition ext_step (op: DiskOp) (v: val): transition state val :=
     match op, v with
     | ReadOp, LitV (LitInt a) =>
@@ -134,15 +153,8 @@ Section disk.
       l ← allocateN 4096;
       modify (state_insert_list l (Block_to_vals b));;
       ret $ #(LitLoc l)
-    | WriteOp, PairV (LitV (LitInt a)) (LitV (LitLoc l)) =>
-      _ ← reads (λ σ, σ.(world) !! int.val a) ≫= unwrap;
-        (* TODO: use Sydney's executable version from disk_interpreter.v as
-        the generator here *)
-      b ← suchThat (gen:=fun _ _ => None) (λ σ b, (forall (i:Z), 0 <= i -> i < 4096 ->
-                match σ.(heap) !! (l +ₗ i) with
-                | Some (Reading v _) => Block_to_vals b !! Z.to_nat i = Some v
-                | _ => False
-                end));
+    | WriteOp, PairV (LitV (LitInt a)) v =>
+      b ← toBlock v;
       modify (set world <[ int.val a := b ]>);;
       ret #()
     | SizeOp, LitV LitUnit =>
@@ -309,6 +321,21 @@ lemmas. *)
     hnf; intros.
     inversion H1; subst; auto.
   Qed.
+
+  Definition loadVec: val :=
+    rec: "loadVec" "n" "l" :=
+      if: Var "n" = #0 then #()
+      else (!(Var "l"), (Var "loadVec") (Var "n"-#1) (Var "l" +ₗ[byteT] #1)).
+
+  Definition Write: val :=
+    λ: "a" "l",
+    let: "b" := loadVec #4096 (Var "l") in
+    ExternalOp WriteOp (Var "a", Var "b").
+
+  Theorem wp_loadVec (n:u64) (l:loc) stk E :
+    {{{ ([∗ map] l0↦v ∈ heap_array l (Free <$> vs), l0 ↦{q} v) }}}
+      loadVec #n #l @ stk; E
+    {{{ ([∗ map] l0↦v ∈ heap_array l (Free <$> vs), l0 ↦{q} v) }}}
 
   Lemma wp_WriteOp s E (a: u64) b q l :
     {{{ ▷ ∃ b0, int.val a d↦{1} b0 ∗ mapsto_block l q b }}}
