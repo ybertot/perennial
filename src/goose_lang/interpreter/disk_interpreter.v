@@ -201,36 +201,37 @@ Instance pretty_disk_op : Pretty DiskOp :=
 Fixpoint disk_interpret_step (op: DiskOp) (v: val) : StateT state Error expr :=
   match (op, v) with
   | (ReadOp, (LitV (LitInt _))) =>
-    σ <- mget;
-      t <- mlift (Transitions.interpret [] (ext_step ReadOp v) σ) "Transitions.interpret failed in ReadOp";
+    bts <- mget;
+      t <- mlift (Transitions.interpret [] (ext_step ReadOp v) bts.(bstate)) "Transitions.interpret failed in ReadOp";
       match t with
-      | (hints, σ', v') => _ <- mput σ'; mret (Val v')
+      | (hints, σ', v') => _ <- mupdate (set bstate (fun _ => σ')); mret (Val v')
       end
   | (WriteOp, (PairV (LitV (LitInt a)) (LitV (LitLoc l)))) =>
-    σ <- mget;
-      _ <- mlift (σ.(world) !! int.val a) ("Disk WriteOp failed: No block at write address " ++ (pretty a));
-      b <- mlift (read_block_from_heap σ l) ("Disk WriteOp failed: Read from heap failed at location " ++ (pretty l));
-      _ <- mput (set world <[ int.val a := b ]> σ);
+    bts <- mget;
+      _ <- mlift (bts.(bstate).(world) !! int.val a) ("Disk WriteOp failed: No block at write address " ++ (pretty a));
+      b <- mlift (read_block_from_heap bts.(bstate) l) ("Disk WriteOp failed: Read from heap failed at location " ++ (pretty l));
+      _ <- mupdate (set bstate (set world <[ int.val a := b ]>));
       mret (Val $ LitV (LitUnit))
   | (SizeOp, LitV LitUnit) =>
-    σ <- mget;
-      mret (Val $ LitV $ LitInt (U64 (disk_size σ.(world))))
+    bts <- mget;
+      mret (Val $ LitV $ LitInt (U64 (disk_size bts.(bstate).(world))))
   | _ => mfail ("DiskOp failed: Invalid argument types for " ++ (pretty op))
   end.
 
-Lemma disk_interpret_ok : forall (eop : DiskOp) (arg : val) (result : expr) (σ σ': state),
-    (runStateT (disk_interpret_step eop arg) σ = Works _ (result, σ')) ->
+Lemma disk_interpret_ok : forall (eop : DiskOp) (arg : val) (result : expr) (σ σ': state) (bts bts': btstate),
+    (runStateT (disk_interpret_step eop arg) bts) = Works _ (result, bts') ->
+    bstate bts = σ /\ bstate bts' = σ' ->
     exists m l, @language.nsteps heap_lang m ([ExternalOp eop (Val arg)], σ) l ([result], σ').
 Proof.
-  intros eop arg result σ σ' H.
+  intros eop arg result σ σ' bts bts' H bstates.
   destruct eop; [| inversion H | inversion H].
   { (* ReadOp *)
     unfold disk_interpret_step in H.
     destruct arg; try by inversion H.
     destruct l; try by inversion H.
-    assert (runStateT mget σ = Works _ (σ, σ)) by eauto.
+    assert (runStateT mget bts = Works _ (bts, bts)) by eauto.
     rewrite (runStateT_Error_bind _ _ _ _ _ _ _ H0) in H.
-    destruct (Transitions.interpret [] (ext_step ReadOp #n) σ) eqn:interp_res; simpl in H; try by inversion H.
+    destruct (Transitions.interpret [] (ext_step ReadOp #n) (bstate bts)) eqn:interp_res; simpl in H; try by inversion H.
     destruct p as ((l & s) & b).
     simpl in H.
     inversion H.
@@ -239,25 +240,32 @@ Proof.
     simpl in interp_ok.
     monad_inv.
     simpl in interp_ok.
+    
+    (* Get information about bts and bts' *)
+    destruct bts; destruct bstates as (b1 & b2); inversion b1; inversion b2; subst; simpl in *.
+    
     do 2 eexists.
     single_step.
     (* TODO: rewrite using ltac (or a lemma) to handle adding a function at the end of a known relation (does that exist?) *)
     inversion interp_ok.
-    econstructor; [exact H1|].
-    monad_simpl.
-    subst.
-    inversion H2.
     econstructor; [exact H3|].
     monad_simpl.
-    inversion H4.
     subst.
-    econstructor.
-    inversion H8. inversion H9.
+    inversion H4.
+    econstructor; [exact H5|].
+    monad_simpl.
+    inversion H6.
+    subst.
+    inversion H10. inversion H11.
     subst.
     simpl.
-    inversion H5.
-    rewrite H7.
     inversion H11.
+    inversion H13.
+    subst.
+    inversion H10.
+    inversion H9.
+    econstructor.
+    rewrite H17.
     reflexivity.
   }
   { (* WriteOp *)
@@ -267,22 +275,27 @@ Proof.
     destruct arg2; try by inversion H1.
     destruct l; try by inversion H1.
     simpl in H1.
-    destruct (world σ !! int.val n) eqn:disk_at_n; rewrite disk_at_n in H1; try by inversion H1.
-    destruct (read_block_from_heap σ l) eqn:block_at_l; try by inversion H1.
+    destruct (world (bstate bts) !! int.val n) eqn:disk_at_n; rewrite disk_at_n in H1; try by inversion H1.
+    destruct (read_block_from_heap (bstate bts) l) eqn:block_at_l; try by inversion H1.
     simpl in H1.
     inversion H1.
+    simpl in *.
     do 2 eexists.
     single_step.
+    monad_simpl.
+    destruct bts; destruct bstates as (b1 & b2); subst; simpl in *.
     rewrite disk_at_n.
-    simpl.
-    monad_simpl.
     pose proof (read_block_from_heap_ok _ _ _ block_at_l) as rbfsok.
-    eapply relation.bind_suchThat; [exact rbfsok|].
+    simpl in *.
     monad_simpl.
+    monad_inv.
+    eapply relation.bind_suchThat; [exact rbfsok|].
+    monad_simpl. 
   }
   { (* SizeOp *)
     destruct arg; try by inversion H1.
     destruct l; try by inversion H1.
+    destruct bts; destruct bstates as (b1 & b2); subst; simpl.
     simpl in H1.
     inversion H1.
     do 2 eexists.

@@ -5,7 +5,7 @@ From Perennial.goose_lang.interpreter Require Import disk_interpreter.
 
 From Perennial.goose_lang.ffi Require Import disk.
 
-Definition startstate : state := inhabitant.
+Definition startstate : btstate := Build_btstate inhabitant nil.
 
 (* testing infrastructure *)
 Definition run (p: expr): Error val :=
@@ -36,6 +36,9 @@ Ltac test :=
     end
   end.
 Notation t := ltac:(test) (only parsing).
+
+Definition runWithTrace (e: expr) : Error (val * list string) :=
+  (fun p => (fst p, reverse $ btrace (snd p))) <$> runStateT (interpret 100 e) startstate.
 
 (* these notations make vm_compute'd values more readable *)
 Notation U64_val z := {| u64_car := {| Naive.unsigned := z; Naive._unsigned_in_range := eq_refl |} |}.
