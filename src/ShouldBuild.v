@@ -7,10 +7,14 @@ From Perennial Require Import program_logic.crash_inv.
 From Perennial Require Import heap_lang.crash_lock.
 
 From Perennial.goose_lang Require Import
-     adequacy spec_assert lib.spin_lock refinement.
+     adequacy recovery_adequacy spec_assert lib.spin_lock refinement refinement_adequacy logical_reln.
 From Perennial.goose_lang Require Import map_triples.
 From Perennial.program_proof Require Import
-     marshal_proof append_log_proof util_proof.
+     marshal_proof
+     append_log_proof
+     util_proof
+     lockmap_proof
+     wal.specs wal.proof wal.circular_proof.
 From Perennial.goose_lang Require Import
      ffi.append_log_ffi.
 (* goose deep output *)
@@ -22,7 +26,12 @@ From Perennial.goose_lang.examples.nfs_spec Require Import
      NFS3API.
 
 (* more goose output *)
-From Goose Require github_com.mit_pdos.goose_nfsd.wal.
+From Goose.github_com.mit_pdos Require
+     goose_nfsd.lockmap
+     goose_nfsd.buf
+     goose_nfsd.txn
+     goose_nfsd.alloc
+     goose_nfsd.buftxn.
 
 (* interpreter *)
 From Perennial.goose_lang.interpreter Require Import interpreter test_config.

@@ -4,12 +4,10 @@ From Perennial.goose_lang Require Import ffi.disk_prelude.
 
 From Goose Require github_com.mit_pdos.goose_nfsd.addr.
 From Goose Require github_com.mit_pdos.goose_nfsd.common.
-From Goose Require github_com.mit_pdos.goose_nfsd.fake_bcache.bcache.
-From Goose Require github_com.mit_pdos.goose_nfsd.util.
 
 Module FsSuper.
   Definition S := struct.decl [
-    "Disk" :: struct.ptrT bcache.Bcache.S;
+    "Disk" :: disk.Disk;
     "Size" :: uint64T;
     "nLog" :: uint64T;
     "NBlockBitmap" :: uint64T;
@@ -20,67 +18,51 @@ Module FsSuper.
 End FsSuper.
 
 Definition MkFsSuper: val :=
-  λ: "sz" "name",
+  rec: "MkFsSuper" "d" :=
+    let: "sz" := disk.Size #() in
     let: "nblockbitmap" := "sz" `quot` common.NBITBLOCK + #1 in
-    let: "d" := ref (zero_val Disk) in
-    (if: "name" ≠ slice.nil
-    then
-      util.DPrintf #0 (#(str"MkFsSuper: open file disk %s
-      ")) (![stringT] "name");;
-      let: ("file", "err") := disk.NewFileDisk (![stringT] "name") "sz" in
-      (if: "err" ≠ slice.nil
-      then
-        Panic ("MkFsSuper: couldn't create disk image");;
-        #()
-      else #());;
-      "d" <-[Disk] "file"
-    else
-      util.DPrintf #0 (#(str"MkFsSuper: create mem disk
-      "));;
-      "d" <-[Disk] disk.NewMemDisk "sz");;
-    let: "bc" := bcache.MkBcache (![Disk] "d") in
     struct.new FsSuper.S [
-      "Disk" ::= "bc";
+      "Disk" ::= "d";
       "Size" ::= "sz";
       "nLog" ::= common.LOGSIZE;
       "NBlockBitmap" ::= "nblockbitmap";
       "NInodeBitmap" ::= common.NINODEBITMAP;
-      "nInodeBlk" ::= common.NINODEBITMAP * common.NBITBLOCK * common.INODESZ `quot` disk.BlockSize;
+      "nInodeBlk" ::= (common.NINODEBITMAP * common.NBITBLOCK * common.INODESZ) `quot` disk.BlockSize;
       "Maxaddr" ::= "sz"
     ].
 
 Definition FsSuper__MaxBnum: val :=
-  λ: "fs",
+  rec: "FsSuper__MaxBnum" "fs" :=
     struct.loadF FsSuper.S "Maxaddr" "fs".
 
 Definition FsSuper__BitmapBlockStart: val :=
-  λ: "fs",
+  rec: "FsSuper__BitmapBlockStart" "fs" :=
     struct.loadF FsSuper.S "nLog" "fs".
 
 Definition FsSuper__BitmapInodeStart: val :=
-  λ: "fs",
+  rec: "FsSuper__BitmapInodeStart" "fs" :=
     FsSuper__BitmapBlockStart "fs" + struct.loadF FsSuper.S "NBlockBitmap" "fs".
 
 Definition FsSuper__InodeStart: val :=
-  λ: "fs",
+  rec: "FsSuper__InodeStart" "fs" :=
     FsSuper__BitmapInodeStart "fs" + struct.loadF FsSuper.S "NInodeBitmap" "fs".
 
 Definition FsSuper__DataStart: val :=
-  λ: "fs",
+  rec: "FsSuper__DataStart" "fs" :=
     FsSuper__InodeStart "fs" + struct.loadF FsSuper.S "nInodeBlk" "fs".
 
 Definition FsSuper__Block2addr: val :=
-  λ: "fs" "blkno",
+  rec: "FsSuper__Block2addr" "fs" "blkno" :=
     addr.MkAddr "blkno" #0 common.NBITBLOCK.
 
 Definition FsSuper__NInode: val :=
-  λ: "fs",
+  rec: "FsSuper__NInode" "fs" :=
     struct.loadF FsSuper.S "nInodeBlk" "fs" * common.INODEBLK.
 
 Definition FsSuper__Inum2Addr: val :=
-  λ: "fs" "inum",
+  rec: "FsSuper__Inum2Addr" "fs" "inum" :=
     addr.MkAddr (FsSuper__InodeStart "fs" + "inum" `quot` common.INODEBLK) ("inum" `rem` common.INODEBLK * common.INODESZ * #8) (common.INODESZ * #8).
 
 Definition FsSuper__DiskBlockSize: val :=
-  λ: "fs" "addr",
+  rec: "FsSuper__DiskBlockSize" "fs" "addr" :=
     (struct.get addr.Addr.S "Sz" "addr" = common.NBITBLOCK).

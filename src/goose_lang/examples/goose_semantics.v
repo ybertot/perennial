@@ -5,7 +5,7 @@ From Perennial.goose_lang Require Import ffi.disk_prelude.
 (* comparisons.go *)
 
 Definition testCompareAll: val :=
-  λ: <>,
+  rec: "testCompareAll" <> :=
     let: "ok" := ref #true in
     let: "nok" := ref #false in
     "ok" <-[boolT] ![boolT] "ok" && #1 < #2;;
@@ -18,7 +18,7 @@ Definition testCompareAll: val :=
     else ![boolT] "ok").
 
 Definition testCompareGT: val :=
-  λ: <>,
+  rec: "testCompareGT" <> :=
     let: "x" := ref #4 in
     let: "y" := ref #5 in
     let: "ok" := ref #true in
@@ -27,7 +27,7 @@ Definition testCompareGT: val :=
     ![boolT] "ok".
 
 Definition testCompareGE: val :=
-  λ: <>,
+  rec: "testCompareGE" <> :=
     let: "x" := ref #4 in
     let: "y" := ref #5 in
     let: "ok" := ref #true in
@@ -39,7 +39,7 @@ Definition testCompareGE: val :=
     else ![boolT] "ok").
 
 Definition testCompareLT: val :=
-  λ: <>,
+  rec: "testCompareLT" <> :=
     let: "x" := ref #4 in
     let: "y" := ref #5 in
     let: "ok" := ref #true in
@@ -48,7 +48,7 @@ Definition testCompareLT: val :=
     ![boolT] "ok".
 
 Definition testCompareLE: val :=
-  λ: <>,
+  rec: "testCompareLE" <> :=
     let: "x" := ref #4 in
     let: "y" := ref #5 in
     let: "ok" := ref #true in
@@ -62,32 +62,32 @@ Definition testCompareLE: val :=
 (* conversions.go *)
 
 Definition literalCast: val :=
-  λ: <>,
+  rec: "literalCast" <> :=
     let: "x" := #2 in
     "x" + #2.
 
 Definition stringToByteSlice: val :=
-  λ: "s",
+  rec: "stringToByteSlice" "s" :=
     let: "p" := Data.stringToBytes "s" in
     "p".
 
 Definition byteSliceToString: val :=
-  λ: "p",
-    let: "s" := Data.bytesToString "p" in
-    "s".
+  rec: "byteSliceToString" "p" :=
+    Data.bytesToString "p".
 
 (* tests *)
-Definition testConversions: val :=
-  λ: <>,
-    let: "s" := #(str"four") in
-    let: "b" := stringToByteSlice "s" in
-    let: "x" := literalCast #() in
-    ("x" = slice.len "b") && (byteSliceToString "b" = "s").
+Definition testByteSliceToString: val :=
+  rec: "testByteSliceToString" <> :=
+    let: "x" := NewSlice byteT #3 in
+    SliceSet byteT "x" #0 (#(U8 65));;
+    SliceSet byteT "x" #1 (#(U8 66));;
+    SliceSet byteT "x" #2 (#(U8 67));;
+    (byteSliceToString "x" = #(str"ABC")).
 
 (* copy.go *)
 
 Definition testCopySimple: val :=
-  λ: <>,
+  rec: "testCopySimple" <> :=
     let: "x" := NewSlice byteT #10 in
     SliceSet byteT "x" #3 (#(U8 1));;
     let: "y" := NewSlice byteT #10 in
@@ -95,7 +95,7 @@ Definition testCopySimple: val :=
     (SliceGet byteT "y" #3 = #(U8 1)).
 
 Definition testCopyDifferentLengths: val :=
-  λ: <>,
+  rec: "testCopyDifferentLengths" <> :=
     let: "x" := NewSlice byteT #15 in
     SliceSet byteT "x" #3 (#(U8 1));;
     SliceSet byteT "x" #12 (#(U8 2));;
@@ -113,7 +113,7 @@ Module Enc.
 End Enc.
 
 Definition Enc__consume: val :=
-  λ: "e" "n",
+  rec: "Enc__consume" "e" "n" :=
     let: "b" := SliceTake (struct.loadF Enc.S "p" "e") "n" in
     struct.storeF Enc.S "p" "e" (SliceSkip byteT (struct.loadF Enc.S "p" "e") "n");;
     "b".
@@ -125,13 +125,13 @@ Module Dec.
 End Dec.
 
 Definition Dec__consume: val :=
-  λ: "d" "n",
+  rec: "Dec__consume" "d" "n" :=
     let: "b" := SliceTake (struct.loadF Dec.S "p" "d") "n" in
     struct.storeF Dec.S "p" "d" (SliceSkip byteT (struct.loadF Dec.S "p" "d") "n");;
     "b".
 
 Definition roundtripEncDec32: val :=
-  λ: "x",
+  rec: "roundtripEncDec32" "x" :=
     let: "r" := NewSlice byteT #4 in
     let: "e" := struct.new Enc.S [
       "p" ::= "r"
@@ -143,7 +143,7 @@ Definition roundtripEncDec32: val :=
     UInt32Get (Dec__consume "d" #4).
 
 Definition roundtripEncDec64: val :=
-  λ: "x",
+  rec: "roundtripEncDec64" "x" :=
     let: "r" := NewSlice byteT #8 in
     let: "e" := struct.new Enc.S [
       "p" ::= "r"
@@ -156,7 +156,7 @@ Definition roundtripEncDec64: val :=
 
 (* tests *)
 Definition testEncDec32Simple: val :=
-  λ: <>,
+  rec: "testEncDec32Simple" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec32 (#(U32 0)) = #(U32 0));;
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec32 (#(U32 1)) = #(U32 1));;
@@ -164,7 +164,7 @@ Definition testEncDec32Simple: val :=
     ![boolT] "ok".
 
 Definition testEncDec32: val :=
-  λ: <>,
+  rec: "testEncDec32" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec32 (#(U32 3434807466)) = #(U32 3434807466));;
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec32 (#1 ≪ #20) = #1 ≪ #20);;
@@ -175,7 +175,7 @@ Definition testEncDec32: val :=
     ![boolT] "ok".
 
 Definition testEncDec64Simple: val :=
-  λ: <>,
+  rec: "testEncDec64Simple" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec64 #0 = #0);;
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec64 #1 = #1);;
@@ -183,7 +183,7 @@ Definition testEncDec64Simple: val :=
     ![boolT] "ok".
 
 Definition testEncDec64: val :=
-  λ: <>,
+  rec: "testEncDec64" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec64 #62206846038638762 = #62206846038638762);;
     "ok" <-[boolT] ![boolT] "ok" && (roundtripEncDec64 (#1 ≪ #63) = #1 ≪ #63);;
@@ -208,7 +208,7 @@ End Editor.
 (* advances the array editor, and returns the value it wrote, storing
    "next" in next_val *)
 Definition Editor__AdvanceReturn: val :=
-  λ: "e" "next",
+  rec: "Editor__AdvanceReturn" "e" "next" :=
     let: "tmp" := ref (struct.loadF Editor.S "next_val" "e") in
     SliceSet uint64T (struct.loadF Editor.S "s" "e") #0 (![uint64T] "tmp");;
     struct.storeF Editor.S "next_val" "e" "next";;
@@ -218,7 +218,7 @@ Definition Editor__AdvanceReturn: val :=
 (* we call this function with side-effectful function calls as arguments,
    its implementation is unimportant *)
 Definition addFour64: val :=
-  λ: "a" "b" "c" "d",
+  rec: "addFour64" "a" "b" "c" "d" :=
     "a" + "b" + "c" + "d".
 
 Module Pair.
@@ -230,7 +230,7 @@ End Pair.
 
 (* tests *)
 Definition testFunctionOrdering: val :=
-  λ: <>,
+  rec: "testFunctionOrdering" <> :=
     let: "arr" := ref (NewSlice uint64T #5) in
     let: "e1" := struct.mk Editor.S [
       "s" ::= SliceSkip uint64T (![slice.T uint64T] "arr") #0;
@@ -274,7 +274,7 @@ Definition testFunctionOrdering: val :=
 
 (* helpers *)
 Definition standardForLoop: val :=
-  λ: "s",
+  rec: "standardForLoop" "s" :=
     let: "sumPtr" := ref (zero_val uint64T) in
     let: "i" := ref #0 in
     (for: (λ: <>, #true); (λ: <>, Skip) := λ: <>,
@@ -289,9 +289,27 @@ Definition standardForLoop: val :=
     let: "sum" := ![uint64T] "sumPtr" in
     "sum".
 
+(* based off diskAppendWait loop pattern in logging2 *)
+Module LoopStruct.
+  Definition S := struct.decl [
+    "loopNext" :: refT uint64T
+  ].
+End LoopStruct.
+
+Definition LoopStruct__forLoopWait: val :=
+  rec: "LoopStruct__forLoopWait" "ls" "i" :=
+    Skip;;
+    (for: (λ: <>, #true); (λ: <>, Skip) := λ: <>,
+      let: "nxt" := struct.get LoopStruct.S "loopNext" "ls" in
+      (if: "i" < ![uint64T] "nxt"
+      then Break
+      else
+        struct.get LoopStruct.S "loopNext" "ls" <-[refT uint64T] ![uint64T] (struct.get LoopStruct.S "loopNext" "ls") + #1;;
+        Continue)).
+
 (* tests *)
 Definition testStandardForLoop: val :=
-  λ: <>,
+  rec: "testStandardForLoop" <> :=
     let: "arr" := ref (NewSlice uint64T #4) in
     SliceSet uint64T (![slice.T uint64T] "arr") #0 (SliceGet uint64T (![slice.T uint64T] "arr") #0 + #1);;
     SliceSet uint64T (![slice.T uint64T] "arr") #1 (SliceGet uint64T (![slice.T uint64T] "arr") #1 + #3);;
@@ -299,11 +317,57 @@ Definition testStandardForLoop: val :=
     SliceSet uint64T (![slice.T uint64T] "arr") #3 (SliceGet uint64T (![slice.T uint64T] "arr") #3 + #7);;
     (standardForLoop (![slice.T uint64T] "arr") = #16).
 
+Definition testForLoopWait: val :=
+  rec: "testForLoopWait" <> :=
+    let: "ls" := struct.mk LoopStruct.S [
+      "loopNext" ::= ref (zero_val uint64T)
+    ] in
+    LoopStruct__forLoopWait "ls" #3;;
+    (![uint64T] (struct.get LoopStruct.S "loopNext" "ls") = #4).
+
+(* maps.go *)
+
+Definition IterateMapKeys: val :=
+  rec: "IterateMapKeys" "m" :=
+    let: "sum" := ref (zero_val uint64T) in
+    MapIter "m" (λ: "k" <>,
+      "sum" <-[uint64T] ![uint64T] "sum" + "k");;
+    ![uint64T] "sum".
+
+Definition IterateMapValues: val :=
+  rec: "IterateMapValues" "m" :=
+    let: "sum" := ref (zero_val uint64T) in
+    MapIter "m" (λ: <> "v",
+      "sum" <-[uint64T] ![uint64T] "sum" + "v");;
+    ![uint64T] "sum".
+
+Definition testIterateMap: val :=
+  rec: "testIterateMap" <> :=
+    let: "ok" := ref #true in
+    let: "m" := NewMap uint64T in
+    MapInsert "m" #0 #1;;
+    MapInsert "m" #1 #2;;
+    MapInsert "m" #3 #4;;
+    "ok" <-[boolT] ![boolT] "ok" && (IterateMapKeys "m" = #4);;
+    "ok" <-[boolT] ![boolT] "ok" && (IterateMapValues "m" = #7);;
+    ![boolT] "ok".
+
+Definition testMapSize: val :=
+  rec: "testMapSize" <> :=
+    let: "ok" := ref #true in
+    let: "m" := NewMap uint64T in
+    "ok" <-[boolT] ![boolT] "ok" && (MapLen "m" = #0);;
+    MapInsert "m" #0 #1;;
+    MapInsert "m" #1 #2;;
+    MapInsert "m" #3 #4;;
+    "ok" <-[boolT] ![boolT] "ok" && (MapLen "m" = #3);;
+    ![boolT] "ok".
+
 (* operations.go *)
 
 (* helpers *)
 Definition reverseAssignOps64: val :=
-  λ: "x",
+  rec: "reverseAssignOps64" "x" :=
     let: "y" := ref (zero_val uint64T) in
     "y" <-[uint64T] ![uint64T] "y" + "x";;
     "y" <-[uint64T] ![uint64T] "y" - "x";;
@@ -312,7 +376,7 @@ Definition reverseAssignOps64: val :=
     ![uint64T] "y".
 
 Definition reverseAssignOps32: val :=
-  λ: "x",
+  rec: "reverseAssignOps32" "x" :=
     let: "y" := ref (zero_val uint32T) in
     "y" <-[uint32T] ![uint32T] "y" + "x";;
     "y" <-[uint32T] ![uint32T] "y" - "x";;
@@ -321,16 +385,16 @@ Definition reverseAssignOps32: val :=
     ![uint32T] "y".
 
 Definition add64Equals: val :=
-  λ: "x" "y" "z",
+  rec: "add64Equals" "x" "y" "z" :=
     ("x" + "y" = "z").
 
 Definition sub64Equals: val :=
-  λ: "x" "y" "z",
+  rec: "sub64Equals" "x" "y" "z" :=
     ("x" - "y" = "z").
 
 (* tests *)
 Definition testReverseAssignOps64: val :=
-  λ: <>,
+  rec: "testReverseAssignOps64" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && (reverseAssignOps64 #0 = #0);;
     "ok" <-[boolT] ![boolT] "ok" && (reverseAssignOps64 #1 = #0);;
@@ -346,7 +410,7 @@ Definition testReverseAssignOps64: val :=
     ![boolT] "ok".
 
 Definition testReverseAssignOps32: val :=
-  λ: <>,
+  rec: "testReverseAssignOps32" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && (reverseAssignOps32 (#(U32 0)) = #(U32 0));;
     "ok" <-[boolT] ![boolT] "ok" && (reverseAssignOps32 (#(U32 1)) = #(U32 0));;
@@ -360,14 +424,14 @@ Definition testReverseAssignOps32: val :=
     ![boolT] "ok".
 
 Definition testAdd64Equals: val :=
-  λ: <>,
+  rec: "testAdd64Equals" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && add64Equals #2 #3 #5;;
     "ok" <-[boolT] ![boolT] "ok" && add64Equals (#1 ≪ #64 - #1) #1 #0;;
     ![boolT] "ok".
 
 Definition testSub64Equals: val :=
-  λ: <>,
+  rec: "testSub64Equals" <> :=
     let: "ok" := ref #true in
     "ok" <-[boolT] ![boolT] "ok" && sub64Equals #2 #1 #1;;
     "ok" <-[boolT] ![boolT] "ok" && sub64Equals (#1 ≪ #64 - #1) (#1 ≪ #63) (#1 ≪ #63 - #1);;
@@ -387,18 +451,18 @@ Module BoolTest.
 End BoolTest.
 
 Definition CheckTrue: val :=
-  λ: "b",
+  rec: "CheckTrue" "b" :=
     struct.storeF BoolTest.S "tc" "b" (struct.loadF BoolTest.S "tc" "b" + #1);;
     struct.loadF BoolTest.S "t" "b".
 
 Definition CheckFalse: val :=
-  λ: "b",
+  rec: "CheckFalse" "b" :=
     struct.storeF BoolTest.S "fc" "b" (struct.loadF BoolTest.S "fc" "b" + #1);;
     struct.loadF BoolTest.S "f" "b".
 
 (* tests *)
 Definition testShortcircuitAndTF: val :=
-  λ: <>,
+  rec: "testShortcircuitAndTF" <> :=
     let: "b" := struct.new BoolTest.S [
       "t" ::= #true;
       "f" ::= #false;
@@ -410,7 +474,7 @@ Definition testShortcircuitAndTF: val :=
     else (struct.loadF BoolTest.S "tc" "b" = #1) && (struct.loadF BoolTest.S "fc" "b" = #1)).
 
 Definition testShortcircuitAndFT: val :=
-  λ: <>,
+  rec: "testShortcircuitAndFT" <> :=
     let: "b" := struct.new BoolTest.S [
       "t" ::= #true;
       "f" ::= #false;
@@ -422,7 +486,7 @@ Definition testShortcircuitAndFT: val :=
     else (struct.loadF BoolTest.S "tc" "b" = #0) && (struct.loadF BoolTest.S "fc" "b" = #1)).
 
 Definition testShortcircuitOrTF: val :=
-  λ: <>,
+  rec: "testShortcircuitOrTF" <> :=
     let: "b" := struct.new BoolTest.S [
       "t" ::= #true;
       "f" ::= #false;
@@ -434,7 +498,7 @@ Definition testShortcircuitOrTF: val :=
     else #false).
 
 Definition testShortcircuitOrFT: val :=
-  λ: <>,
+  rec: "testShortcircuitOrFT" <> :=
     let: "b" := struct.new BoolTest.S [
       "t" ::= #true;
       "f" ::= #false;
@@ -456,7 +520,7 @@ Module ArrayEditor.
 End ArrayEditor.
 
 Definition ArrayEditor__Advance: val :=
-  λ: "ae" "arr" "next",
+  rec: "ArrayEditor__Advance" "ae" "arr" "next" :=
     SliceSet uint64T "arr" #0 (SliceGet uint64T "arr" #0 + #1);;
     SliceSet uint64T (struct.loadF ArrayEditor.S "s" "ae") #0 (struct.loadF ArrayEditor.S "next_val" "ae");;
     struct.storeF ArrayEditor.S "next_val" "ae" "next";;
@@ -464,7 +528,7 @@ Definition ArrayEditor__Advance: val :=
 
 (* tests *)
 Definition testOverwriteArray: val :=
-  λ: <>,
+  rec: "testOverwriteArray" <> :=
     let: "arr" := ref (NewSlice uint64T #4) in
     let: "ae1" := struct.new ArrayEditor.S [
       "s" ::= SliceSkip uint64T (![slice.T uint64T] "arr") #0;
@@ -484,3 +548,30 @@ Definition testOverwriteArray: val :=
     (if: SliceGet uint64T (![slice.T uint64T] "arr") #0 + SliceGet uint64T (![slice.T uint64T] "arr") #1 + SliceGet uint64T (![slice.T uint64T] "arr") #2 + SliceGet uint64T (![slice.T uint64T] "arr") #3 ≥ #100
     then #false
     else (SliceGet uint64T (![slice.T uint64T] "arr") #3 = #4) && (SliceGet uint64T (![slice.T uint64T] "arr") #0 = #4)).
+
+(* strings.go *)
+
+Definition stringAppend: val :=
+  rec: "stringAppend" "s" "x" :=
+    "s" + uint64_to_string "x".
+
+Definition stringLength: val :=
+  rec: "stringLength" "s" :=
+    strLen "s".
+
+Definition testStringAppend: val :=
+  rec: "testStringAppend" <> :=
+    let: "ok" := ref #true in
+    let: "s" := ref #(str"123") in
+    let: "y" := ref (stringAppend (![stringT] "s") #45) in
+    ![boolT] "ok" && (![stringT] "y" = #(str"12345")).
+
+Definition testStringLength: val :=
+  rec: "testStringLength" <> :=
+    let: "ok" := ref #true in
+    let: "s" := ref #(str"") in
+    "ok" <-[boolT] ![boolT] "ok" && (strLen (![stringT] "s") = #0);;
+    "s" <-[stringT] stringAppend (![stringT] "s") #1;;
+    "ok" <-[boolT] ![boolT] "ok" && (strLen (![stringT] "s") = #1);;
+    "s" <-[stringT] stringAppend (![stringT] "s") #23;;
+    ![boolT] "ok" && (strLen (![stringT] "s") = #3).

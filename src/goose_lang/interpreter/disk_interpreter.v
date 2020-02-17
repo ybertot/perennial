@@ -197,8 +197,14 @@ Instance pretty_disk_op : Pretty DiskOp :=
         | SizeOp => "SizeOp"
         end.
 
+(* Not imported from interpreter.v? *)
+Instance statet_error_bind : MBind (StateT btstate Error) :=
+  StateT_bind Error Error_fmap Error_join Error_bind.
+Instance statet_error_ret : MRet (StateT btstate Error) :=
+  StateT_ret Error Error_ret.
+
 (* Single-step interpreter for external disk operations. *)
-Fixpoint disk_interpret_step (op: DiskOp) (v: val) : StateT state Error expr :=
+Fixpoint disk_interpret_step (op: DiskOp) (v: val) : StateT btstate Error expr :=
   match (op, v) with
   | (ReadOp, (LitV (LitInt _))) =>
     bts <- mget;

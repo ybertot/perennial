@@ -8,6 +8,7 @@ From Perennial.Helpers Require Import CountableTactics Transitions.
 From Perennial.goose_lang Require Import lang lifting slice typing.
 From Perennial.algebra Require Import gen_heap.
 
+Set Default Proof Using "Type".
 (* this is purely cosmetic but it makes printing line up with how the code is
 usually written *)
 Set Printing Projections.
@@ -157,12 +158,20 @@ Section disk.
     { ext_step := ext_step;
       ext_crash := eq; }.
 
-  Instance disk_interp: ffi_interp disk_model :=
+  Program Instance disk_interp: ffi_interp disk_model :=
     {| ffiG := diskG;
        ffi_names := gen_heap_names;
+       ffi_get_names := fun _ hD => gen_heapG_get_names (diskG_gen_heapG);
        ffi_update := fun _ hD names =>
                        {| diskG_gen_heapG := gen_heapG_update (@diskG_gen_heapG _ hD) names |};
-       ffi_ctx := fun _ _ (d: @ffi_state disk_model) => gen_heap_ctx d; |}.
+       ffi_get_update := fun _ _ => _;
+       ffi_ctx := fun _ _ (d: @ffi_state disk_model) => gen_heap_ctx d;
+       ffi_start := fun _ _ (d: @ffi_state disk_model) =>
+                      ([∗ map] l↦v ∈ d, (mapsto (L:=Z) (V:=Block) l 1 v))%I;
+       ffi_restart := fun _ _ (d: @ffi_state disk_model) => True%I |}.
+  Next Obligation. intros ? [[]] [] => //=. Qed.
+  Next Obligation. intros ? [[]] => //=. Qed.
+  Next Obligation. intros ? [[]] => //=. Qed.
 
   Section proof.
   Context `{!heapG Σ}.

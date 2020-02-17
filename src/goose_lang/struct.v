@@ -8,10 +8,11 @@ From Perennial.goose_lang Require Import typing.
 
 (* Check eq_refl : (#0, #1, #2)%E = ((#0, #1), #2)%E. *)
 
+Set Default Proof Using "Type".
+
 Section goose_lang.
   Context `{ffi_sem: ext_semantics}.
   Context {ext_ty: ext_types ext}.
-  Set Default Proof Using "ext ext_ty".
 
 Record descriptor :=
   mkStruct { fields: list (string*ty); }.
@@ -19,12 +20,46 @@ Record descriptor :=
 Fixpoint getField_e (f0: string) (rev_fields: list (string*ty)) (se: expr): expr :=
   match rev_fields with
   | [] => LitV LitUnit
-  | [f] => if String.eqb (fst f) f0 then se else #()
-  | f::fs => if String.eqb (fst f) f0 then Snd se else getField_e f0 fs (Fst se)
+  | [(f,_)] => if String.eqb f f0 then se else #()
+  | (f,_)::fs => if String.eqb f f0 then Snd se else getField_e f0 fs (Fst se)
   end.
 
 Definition getField (d:descriptor) f : val :=
   λ: "v", getField_e f (rev d.(fields)) (Var "v").
+
+Definition val_fst (p : val) : val :=
+  match p with
+  | PairV a b => a
+  | _ => #()
+  end.
+
+Definition val_snd (p : val) : val :=
+  match p with
+  | PairV a b => b
+  | _ => #()
+  end.
+
+Fixpoint extractField_helper (f0: string) (rev_fields: list (string*ty)) (v: val): val :=
+  match rev_fields with
+  | [] => #()
+  | [f] => if String.eqb (fst f) f0 then v else #()
+  | f::fs => if String.eqb (fst f) f0 then val_snd v else extractField_helper f0 fs (val_fst v)
+  end.
+
+Definition extractField (d:descriptor) f v : val :=
+  extractField_helper f (rev d.(fields)) v.
+
+Fixpoint updateField_helper (rev_fields: list (string*ty)) (f0: string) (f0v: val) (oldv: val): val :=
+  match rev_fields with
+  | [] => #()
+  | [f] => if String.eqb (fst f) f0 then f0v else oldv
+  | f::fs =>
+    PairV (updateField_helper fs f0 f0v (val_fst oldv))
+          (if String.eqb (fst f) f0 then f0v else val_snd oldv)
+  end.
+
+Definition updateField (d:descriptor) f fv v : val :=
+  updateField_helper (rev d.(fields)) f fv v.
 
 Fixpoint assocl_lookup {A} (field_vals: list (string * A)) (f0: string) : option A :=
   match field_vals with
@@ -103,6 +138,12 @@ Definition fieldPointer (d:descriptor) (f:string) (l:loc): loc :=
   match field_offset d.(fields) f with
   | Some (off, _) => l +ₗ off
   | None => null
+  end.
+
+Definition fieldType (d:descriptor) (f:string): ty :=
+  match field_offset d.(fields) f with
+  | Some (_, t) => t
+  | None => unitT
   end.
 
 (** structFieldRef gives a function that takes a location and constant pointer
@@ -323,11 +364,6 @@ Theorem store_ty_val_t : forall Γ t,
 Proof using Type.
   induction t; simpl; intros; eauto.
   - typecheck.
-  - typecheck.
-  - typecheck.
-  - typecheck.
-  - typecheck.
-  - typecheck.
   - type_step.
     type_step.
     type_step.
@@ -349,6 +385,7 @@ Proof using Type.
   - typecheck.
   - typecheck.
   - typecheck.
+    Fail idtac.
 Admitted.
 
 Theorem store_ty_t Γ t :

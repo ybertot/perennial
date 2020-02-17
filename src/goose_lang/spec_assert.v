@@ -46,6 +46,7 @@ Class refinement_heapG Σ := refinement_HeapG {
    *)
 }.
 
+Section go_spec_definitions.
 Context {Σ: gFunctors}.
 Context {hR: refinement_heapG Σ}.
 Context `{invG Σ}.
@@ -59,6 +60,8 @@ Definition spec_stateN := nroot .@ "source".@  "state".
 (* TODO: these names are terrible *)
 Definition spec_ctx : iProp Σ :=
   source_ctx (CS := spec_crash_lang) ∗ inv spec_stateN (∃ σ, source_state σ ∗ spec_interp σ)%I.
+Definition spec_ctx' r ρ : iProp Σ :=
+  source_ctx' (CS := spec_crash_lang) r ρ ∗ inv spec_stateN (∃ σ, source_state σ ∗ spec_interp σ)%I.
 
 Global Instance spec_ctx_persistent : Persistent (spec_ctx).
 Proof. apply _. Qed.
@@ -74,11 +77,11 @@ Notation "l ↦ -" := (l ↦{1} -)%I (at level 20) : bi_scope.
 
 Section go_ghost_step.
 
-Lemma sourceN_sub_minus_state E:
-  nclose sourceN_root ⊆ E →
-  nclose sourceN ⊆ E ∖ ↑spec_stateN.
+Lemma sN_inv_sub_minus_state E:
+  nclose sN ⊆ E →
+  nclose sN_inv ⊆ E ∖ ↑spec_stateN.
 Proof.
-  rewrite /sourceN/sourceN_root/spec_stateN. intros Hsub.
+  rewrite /sN_inv/sN/spec_stateN. intros Hsub.
   assert (nclose (nroot.@"source".@"base") ##
                  ↑nroot.@"source".@"state").
   { solve_ndisj. }
@@ -87,10 +90,10 @@ Proof.
   set_solver.
 Qed.
 
-Hint Resolve sourceN_sub_minus_state.
+Hint Resolve sN_inv_sub_minus_state.
 
 Lemma ghost_load j K E l q v:
-  nclose sourceN_root ⊆ E →
+  nclose sN ⊆ E →
   spec_ctx -∗
   l s↦{q} Free v -∗
   j ⤇ fill K (Load (Val $ LitV $ LitLoc l)) ={E}=∗
@@ -131,7 +134,7 @@ Qed.
 (*
 Lemma ghost_allocN_seq j K E v (n: u64):
   (0 < int.val n)%Z →
-  nclose sourceN_root ⊆ E →
+  nclose sN ⊆ E →
   spec_ctx -∗
   j ⤇ fill K (AllocN (Val $ LitV $ LitInt $ n) (Val v)) ={E}=∗
   ∃ l, ([∗ list] i ∈ seq 0 (int.nat n),
@@ -163,5 +166,84 @@ Qed.
 *)
 
 End go_ghost_step.
+End go_spec_definitions.
 
 End go_refinement.
+
+Notation "l s↦{ q } v" := (mapsto (L:=loc) (V:=nonAtomic val) (hG := refinement_gen_heapG) l q v%V)
+  (at level 20, q at level 50, format "l  s↦{ q }  v") : bi_scope.
+Notation "l s↦ v" :=
+  (mapsto (L:=loc) (V:=nonAtomic val) (hG := refinement_gen_heapG) l 1 v%V) (at level 20) : bi_scope.
+Notation "l s↦{ q } -" := (∃ v, l ↦{q} v)%I
+  (at level 20, q at level 50, format "l  s↦{ q }  -") : bi_scope.
+Notation "l ↦ -" := (l ↦{1} -)%I (at level 20) : bi_scope.
+
+Section trace_inv.
+Context {ext: ext_op}.
+Context {ffi: ffi_model}.
+Context {ffi_semantics: ext_semantics ext ffi}.
+Context `{!ffi_interp ffi}.
+Context {spec_ext: spec_ext_op}.
+Context {spec_ffi: spec_ffi_model}.
+Context {spec_ffi_semantics: spec_ext_semantics spec_ext spec_ffi}.
+Context `{!spec_ffi_interp spec_ffi}.
+Context {Σ: gFunctors}.
+Context {hG: heapG Σ}.
+Context {hR: refinement_heapG Σ}.
+
+Definition trace_inv : iProp Σ :=
+  (∃ tr trs or ors, ⌜ tr = trs ⌝ ∗
+                    ⌜ or = ors ⌝ ∗
+                    trace_frag (hT := heapG_traceG) tr ∗
+                    trace_frag (hT := refinement_traceG) trs ∗
+                    oracle_frag (hT := heapG_traceG) or ∗
+                    oracle_frag (hT := refinement_traceG) ors).
+
+Definition spec_traceN := sN .@ "trace".
+
+Definition trace_ctx : iProp Σ :=
+  inv spec_traceN trace_inv.
+
+End trace_inv.
+
+Section resolution_test.
+Context {ext: ext_op}.
+Context {ffi: ffi_model}.
+Context {ffi_semantics: ext_semantics ext ffi}.
+Context `{!ffi_interp ffi}.
+Context {spec_ext: spec_ext_op}.
+Context {spec_ffi: spec_ffi_model}.
+Context {spec_ffi_semantics: spec_ext_semantics spec_ext spec_ffi}.
+Context `{!spec_ffi_interp spec_ffi}.
+Context {Σ: gFunctors}.
+Context {hG: heapG Σ}.
+Context {hR: refinement_heapG Σ}.
+Set Printing Implicit.
+
+Lemma test_resolution1 l v :
+  l ↦ Free v -∗ (mapsto (hG := heapG_gen_heapG) l 1 (Free v)).
+Proof using Type.
+  iIntros "H". eauto.
+Qed.
+
+Lemma test_resolution2 l v :
+  l s↦ Free v -∗ (mapsto (hG := refinement_gen_heapG) l 1 (Free v)).
+Proof using Type.
+  iIntros "H". eauto.
+Qed.
+
+Lemma test_resolution3 l v :
+  l ↦ Free v -∗ (mapsto l 1 (Free v)).
+Proof using Type.
+  iIntros "H". eauto.
+Qed.
+
+Lemma test_resolution4 l v :
+  l s↦ Free v -∗ (mapsto l 1 (Free v)).
+Proof using Type.
+  iIntros "H". eauto.
+Qed.
+
+End resolution_test.
+
+Arguments refinement_spec_ffiG {spec_ext spec_ffi spec_ffi_semantics spec_ffi_interp0 Σ hRG} : rename.
