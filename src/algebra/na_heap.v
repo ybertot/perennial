@@ -331,3 +331,52 @@ Section na_heap.
     { by rewrite /na_heap_mapsto_def Hread. }
   Qed.
 End na_heap.
+
+Section na_heap_defs.
+  Context {L V : Type} `{Countable L}.
+
+  Record na_heap_names :=
+    {
+      na_heap_heap_name : gname;
+    }.
+
+  Definition na_heapG_update {Σ} (hG: na_heapG L V Σ) (names: na_heap_names) :=
+    Na_HeapG _ _ _ _ _
+             (@na_heap_inG _ _ _ _ _ hG)
+             (na_heap_heap_name names).
+
+  Definition na_heapG_update_pre {Σ} (hG: na_heapPreG L V Σ) (names: na_heap_names) :=
+    Na_HeapG _ _ _ _ _
+             (@na_heap_preG_inG _ _ _ _ _ hG)
+             (na_heap_heap_name names).
+
+  Definition na_heapG_get_names {Σ} (hG: na_heapG L V Σ) : na_heap_names :=
+    {| na_heap_heap_name := na_heap_name hG; |}.
+
+  Lemma na_heapG_get_update {Σ} (hG: na_heapG L V Σ) :
+    na_heapG_update hG (na_heapG_get_names hG) = hG.
+  Proof. destruct hG => //=. Qed.
+
+  Lemma na_heapG_update_pre_get {Σ} (hG: na_heapPreG L V Σ) names:
+    (na_heapG_get_names (na_heapG_update_pre hG names)) = names.
+  Proof. destruct hG, names => //=. Qed.
+
+  Lemma na_heap_name_init `{!na_heapPreG L V Σ, LK} (tls: LK → _) σ :
+    (|==> ∃ names : na_heap_names, na_heap_ctx (hG := na_heapG_update_pre _ names) tls σ)%I.
+  Proof.
+    iMod (own_alloc (● to_na_heap tls σ)) as (γh) "Hh".
+    { rewrite auth_auth_valid. exact: to_na_heap_valid. }
+    iModIntro. iExists {| na_heap_heap_name := γh |}.
+    iFrame "Hh".
+  Qed.
+
+  Lemma na_heap_reinit {Σ} (hG: na_heapG L V Σ) {LK} (tls: LK → _) σ :
+    (|==> ∃ names : na_heap_names, na_heap_ctx (hG := na_heapG_update hG names) tls σ)%I.
+  Proof.
+    iMod (own_alloc (● to_na_heap tls σ)) as (γh) "Hh".
+    { rewrite auth_auth_valid. exact: to_na_heap_valid. }
+    iModIntro. iExists {| na_heap_heap_name := γh |}.
+    iFrame "Hh".
+  Qed.
+
+End na_heap_defs.
