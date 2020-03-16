@@ -7,10 +7,10 @@ Set Default Proof Using "Type".
 Import uPred.
 
 Class partitionG (L V: Type) (Σ: gFunctors) `{Countable L, Infinite L, Countable V, Infinite V} := {
-  parition_heap_inG :> gen_heapG L (gset V) Σ;
+  partition_heap_inG :> gen_heapG L (gset V) Σ;
 }.
 
-Class parition_preG {Σ L V} `{Countable L, Infinite L, Countable V, Infinite V} := {
+Class partition_preG (L V: Type) Σ `{Countable L, Infinite L, Countable V, Infinite V} := {
   partition_heap_preG: gen_heapPreG L (gset V) Σ;
 }.
 
@@ -69,24 +69,30 @@ Qed.
 Definition fresh_partition_value (σ: gmap L (gset V)) : V :=
   fresh (union_partition σ).
 
+Lemma not_elem_of_union_partition σ x :
+  x ∉ union_partition σ → ∀ i s, σ !! i = Some s → x ∉ s.
+Proof.
+  intros Hin1 i s Hlookup.
+  intros Hin. eapply union_partition_elem_of_2 in Hlookup; eauto.
+Qed.
+
 Lemma fresh_partition_value_spec σ :
   ∀ i s, σ !! i = Some s → fresh_partition_value σ ∉ s.
 Proof.
-  intros i s Hlookup Hin.
-  eapply union_partition_elem_of_2 in Hin; eauto.
-  rewrite /fresh_partition_value in Hin.
-  by eapply is_fresh in Hin.
+  rewrite /fresh_partition_value.
+  apply not_elem_of_union_partition, is_fresh.
 Qed.
 
 Lemma partition_alloc σ:
-  (partition_ctx σ ==∗ ∃ l v (Hfresh: v ∉ union_partition σ),
+  (partition_ctx σ ==∗ ∃ l v (Hfresh1: σ !! l = None) (Hfresh2: v ∉ union_partition σ),
         partition_ctx (<[l := {[v]}]>σ) ∗ l ↦ {[v]} ∗ meta_token l ⊤)%I.
 Proof.
   iIntros "(Hdisj&Hctx)". iDestruct "Hdisj" as %Hdisj.
   iMod (gen_heap_alloc σ (fresh (dom (gset L) σ)) ({[fresh_partition_value σ]}) with "Hctx")
        as "(Hctx&Hl&Hmeta)".
   { rewrite -(not_elem_of_dom (D := gset L)). apply is_fresh. }
-  iModIntro. unshelve (iExists _, _, _; iFrame).
+  iModIntro. unshelve (iExists _, _, _, _; iFrame).
+  { eapply (not_elem_of_dom (D := gset L)). apply is_fresh. }
   { rewrite /fresh_partition_value. eapply is_fresh. }
   iPureIntro.
   intros i j s1 s2 Hneq.
@@ -145,7 +151,7 @@ Proof.
   destruct (decide (i = l2)) as [He2|Hne2].
   {
     subst.
-    rewrite lookup_insert. 
+    rewrite lookup_insert.
     destruct (decide (j = l1)) as [He2|Hne2].
     {
       subst. rewrite lookup_insert. inversion 1; subst.
@@ -183,6 +189,14 @@ Lemma partition_move_1 σ (l1 l2: L) (v: V) (s: gset V):
   partition_ctx (<[l1 := ∅]>(<[l2 := s ∪ {[v]}]>σ)) ∗ l1 ↦ ∅ ∗ l2 ↦ (s ∪ {[v]}).
 Proof.
   replace {[v]} with (∅ ∪ {[v]} : gset V) at 1 by set_solver.
+  iApply partition_move; set_solver.
+Qed.
+
+Lemma partition_join σ (l1 l2: L) (s1 s2: gset V):
+  partition_ctx σ -∗ l1 ↦ s1 -∗ l2 ↦ s2 ==∗
+  partition_ctx (<[l1 := ∅]>(<[l2 := s2 ∪ s1]>σ)) ∗ l1 ↦ ∅ ∗ l2 ↦ (s2 ∪ s1).
+Proof.
+  replace s1 with (∅ ∪ s1) at 1 by set_solver.
   iApply partition_move; set_solver.
 Qed.
 
