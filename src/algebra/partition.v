@@ -108,7 +108,7 @@ Proof.
 Qed.
 
 Lemma partition_valid_disj σ (l1 l2: L) (s1 s2: gset V):
-  partition_ctx σ -∗ l1 ↦ s1 -∗ l2 ↦ s2 -∗ ⌜ s1 ## s2 ⌝.
+  partition_ctx σ -∗ l1 ↦ s1 -∗ l2 ↦ s2 -∗ ⌜ l1 ≠ l2 ∧ s1 ## s2 ⌝.
 Proof.
   iDestruct 1 as (Hdisj) "Hctx". iIntros "Hl1 Hl2".
   iDestruct (gen_heap_valid with "Hctx Hl1") as %Hin1.
@@ -117,7 +117,7 @@ Proof.
   { iIntros (?). subst. iDestruct (mapsto_valid_2 with "[$] [$]") as %Hval.
     rewrite frac_valid' in Hval * => Hlt. by apply Qp_not_plus_q_ge_1 in Hlt.
   }
-  iPureIntro. eapply Hdisj; eauto.
+  iPureIntro. split; auto. eapply Hdisj; eauto.
 Qed.
 
 Lemma partition_move σ (l1 l2: L) (s1 s1' s2: gset V):
