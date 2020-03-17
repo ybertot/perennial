@@ -87,7 +87,7 @@ Definition staged_bundle (Q Q': iProp Σ) b (bundle: gset nat) : iProp Σ :=
       mapsto (hG := sphG) i 1 bundle ∗
       meta (hG := sphG) i bN γ ∗
       own γ (◯ Excl' (b, (γprop, γprop'))) ∗
-      ▷ (Q ≡ Qalt) ∗ ▷ (Q' ≡ Qalt') ∗
+      ▷▷ (Q ≡ Qalt) ∗ ▷▷ (Q' ≡ Qalt') ∗
       saved_prop_own γprop Qalt ∗
       saved_prop_own γprop' Qalt').
 
@@ -294,7 +294,7 @@ Lemma staged_inv_join N k E E' Q1 Qr1 Q2 Qr2 s1 s2:
   ↑N ⊆ E →
   staged_inv N k E' E' ∗
   staged_bundle Q1 Qr1 false s1 ∗
-  staged_bundle Q1 Qr2 false s2
+  staged_bundle Q2 Qr2 false s2
   ={E}=∗
   staged_bundle (Q1 ∗ Q2) (Qr1 ∗ Qr2) false (s1 ∪ s2).
 Proof.
@@ -380,22 +380,29 @@ Proof.
     rewrite delete_insert_ne //.
     rewrite big_sepM_insert_delete.
     iFrame.
-    admit.
+    iModIntro. iApply (big_sepM_mono with "Hbunch_wf").
+    intros k' s' Hlookup.
+    rewrite /bunch_wf_later. rewrite /Qs'/Qsr'.
+    apply lookup_delete_Some in Hlookup as (Hneq1&Hlookup).
+    apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
+    rewrite ?decide_False //=.
   }
+  (* XXX: show that inv lived / inv crashed is preserved *)
   iMod ("Hclo" with "[-Hbid1 Hown1]").
   { admit. }
-  iMod (saved_prop_agree with "Hsaved1 H
   iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#".
-  rewrite -later_sep. iNext.
-
-    iDestruct (big_sepM_insert_acc _ _ bid1 with "Hbunch_wf") as "(Hbid1_bunch&H)"; first eauto.
-    iDestruct "Hbid1_bunch" as (???) "(Hm1&Hown_auth1&Hs1&Hsr1&Hwand1)".
-    iDestruct (meta_agree with "Hb_meta1 Hm1") as %<-.
-    unify_ghost.
-    iMod (ghost_var_update γ1 (γprop1_new, γprop1'_new) with "[$] [$]") as "(Hown_auth1&Hown1)".
-    iFrame "Hown1".
-
-
+  rewrite -?later_sep. iNext.
+  iDestruct (saved_prop_agree with "Hsaved1 Hsaved1'") as "Hequiv1'".
+  iDestruct (saved_prop_agree with "Hsaved2 Hsaved2'") as "Hequiv2'".
+  iDestruct (saved_prop_agree with "Hsavedr1 Hsavedr1'") as "Hequivr1'".
+  iDestruct (saved_prop_agree with "Hsavedr2 Hsavedr2'") as "Hequivr2'".
+  iNext.
+  iRewrite "Hequiv1". iRewrite "Hequiv1'".
+  iRewrite "Hequiv2". iRewrite "Hequiv2'".
+  iRewrite "Hequiv1_alt". iRewrite "Hequivr1'".
+  iRewrite "Hequiv2_alt". iRewrite "Hequivr2'".
+  eauto.
+Abort.
 
 Lemma staged_inv_open E N k E1 E2 γ γ' P Q Qr:
   ↑N ⊆ E →
