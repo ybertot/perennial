@@ -47,19 +47,26 @@ Proof using HAff.
     iModIntro. iModIntro. iMod "Hclo". iModIntro. by iApply "IH".
 Qed.
 
-Lemma step_fupdN_inner_later E1 E2 k (P: PROP):
-  E2 ⊆ E1 →
-  ▷^k P -∗ |={E1,∅}=> |={∅,∅}▷=>^k |={∅,E2}=> P.
+Lemma step_fupdN_inner_later' E1 E2 k (P: PROP):
+  (▷^k |={E1, E2}=> P)%I -∗ |={E1,∅}=> |={∅,∅}▷=>^k |={∅,E2}=> P.
 Proof using HAff.
-  iIntros (Hle).
   iInduction k as [| k] "IH".
   - rewrite //=. iIntros "HP".
-    iMod (fupd_intro_mask' _ E2) as "H"; eauto.
+    iMod "HP".
     iApply fupd_intro_mask; eauto; first set_solver.
   - iIntros. iMod (fupd_intro_mask' _ ∅) as "Hclo".
     { set_solver. }
     rewrite Nat_iter_S.
     iModIntro. iModIntro. iNext. iMod "Hclo". by iApply "IH".
+Qed.
+
+Lemma step_fupdN_inner_later E1 E2 k (P: PROP):
+  E2 ⊆ E1 →
+  ▷^k P -∗ |={E1,∅}=> |={∅,∅}▷=>^k |={∅,E2}=> P.
+Proof using HAff.
+  iIntros (Hle) "H".
+  iApply step_fupdN_inner_later'.
+  iNext. iMod (fupd_intro_mask' _ E2) as "?"; eauto.
 Qed.
 
 Lemma step_fupdN_inner_fupd E1 E2 k (P: PROP):

@@ -56,11 +56,20 @@ Definition bunch_wf k E E' (Ps Pr Qc: nat → iProp Σ) i bunch :=
 Definition bunches_wf k E E' σ (Ps Pr Qc: nat → iProp Σ) :=
   ([∗ map] i↦bunch ∈ σ, bunch_wf k E E' Ps Pr Qc i bunch)%I.
 
-Definition inv_live (σ: gmap nat (gset nat)) (Ps: nat → iProp Σ) :=
-  ([∗ map] i↦_∈ σ, Ps i)%I.
+Definition bunch_live (Ps: nat → iProp Σ) i := Ps i.
+Definition bunch_crashed (Pr Qc: nat → iProp Σ) i bunch :=
+  (C ∗ Pr i ∗ ([∗ set] j ∈ bunch, Qc j ∨ (∃ γ, meta (hG := sghG) j pN γ ∗ staged_done γ)))%I.
 
+(*
 Definition inv_crashed (σ: gmap nat (gset nat)) (Pr Qc: nat → iProp Σ) :=
   (C ∗ [∗ map] i↦bunch∈ σ, Pr i ∗ ([∗ set] j ∈ bunch, ∃ γ, meta (hG := sghG) j pN γ ∗ (Qc j ∨ staged_done γ)))%I.
+
+Definition inv_live (σ: gmap nat (gset nat)) (Ps: nat → iProp Σ) :=
+  ([∗ map] i↦_∈ σ, Ps i)%I.
+*)
+
+Definition inv_status σ (Ps Pr Qc: nat → iProp Σ) :=
+  ([∗ map] i ↦ bunch ∈ σ, bunch_live Ps i ∨ bunch_crashed Pr Qc i bunch)%I.
 
 Definition staged_inv (N: namespace) (k: nat) (E E': coPset) : iProp Σ :=
   (inv N (∃ σ σdom  (Ps Pr Qc: nat → iProp Σ),
@@ -69,7 +78,7 @@ Definition staged_inv (N: namespace) (k: nat) (E E': coPset) : iProp Σ :=
              gen_heap_ctx σdom ∗
              crash_prop_wf σdom Qc ∗
              bunches_wf k E E' σ Ps Pr Qc ∗
-             (inv_live σ Ps ∨ inv_crashed σ Pr Qc)))%I.
+             inv_status σ Ps Pr Qc))%I.
 
 (*
 Definition staged_inv `{!invG Σ, !crashG Σ, !stagedG Σ} (N: namespace)(L: Type) `{Countable L}
@@ -160,6 +169,22 @@ Lemma bunches_wf_later_pers_lookup k E E' σ Ps Pr Qc i s γ (b: bool) γprop_st
                             else ([∗ set] j∈s, (Qc j)) ∗ (Pr i)))%I.
 Proof.
   iIntros. iNext. iApply (bunches_wf_pers_lookup with "[$] [$] [$]"); eauto.
+Qed.
+
+Lemma bunches_wf_later_pers_lookup_weak k E E' σ Ps Pr Qc i s:
+  σ !! i = Some s →
+  ▷ bunches_wf k E E' σ Ps Pr Qc -∗
+     ▷ ∃ (b: bool) γprop_stored γprop_remainder,
+         (saved_prop_own γprop_stored (Ps i) ∗
+        saved_prop_own γprop_remainder (Pr i) ∗
+        □ (C -∗ (Ps i) -∗ if b then |={E, E'}_k=> ([∗ set] j∈s, (Qc j)) ∗ (Pr i)
+                            else ([∗ set] j∈s, (Qc j)) ∗ (Pr i)))%I.
+Proof.
+  iIntros (?) "Hbunch". iNext.
+  rewrite /bunches_wf.
+  iDestruct (big_sepM_lookup with "Hbunch") as "Hb"; first eauto.
+  rewrite /bunch_wf. iDestruct "Hb" as (γ' ???) "(?&Hown'&?&?&?)".
+  iExists _, _, _. iFrame.
 Qed.
 
 Implicit Types N : namespace.
@@ -294,33 +319,22 @@ Proof.
          { eauto. }
       }
     }
-    iDestruct "Hstatus" as "[Hlive|(#HC&Hcrashed)]".
-    - iLeft. rewrite /inv_live.
-      iApply big_sepM_insert; auto.
-      rewrite decide_True //; iFrame.
-      iApply (big_sepM_mono with "Hlive").
-      iIntros (k' x' Hin') "HQ".
-      rewrite decide_False; last by congruence.
-      eauto.
-    - iRight. rewrite /inv_crashed.
-      iFrame "HC".
-      iApply big_sepM_insert; auto.
-      rewrite decide_True //; iFrame.
-      iSplitL "HQ".
-      {
-        rewrite big_opS_singleton. iDestruct ("HQP" with "[$] [$]") as "(HP&$)".
-        iExists _. iFrame "#". rewrite decide_True //. by iLeft.
-      }
-      iApply (big_sepM_mono with "Hcrashed").
-      iIntros (k' x' Hin') "(?&HQ)".
-      rewrite decide_False; last by congruence.
-      iFrame.
-      iApply (big_sepS_mono with "HQ").
-      iIntros (i' Hin'') "HPc".
-      destruct (decide (i' = i)); try iFrame.
-      subst.
-      exfalso. eapply not_elem_of_union_partition in Hin'; eauto.
-      { erewrite <-Hdom. eauto. }
+    iApply big_sepM_insert; first auto.
+    iSplitL "HQ".
+    { iLeft. rewrite /bunch_live decide_True //. }
+    rewrite /inv_status.
+    iApply (big_sepM_mono with "Hstatus").
+    iIntros (k' x' Hin') "HQ".
+    rewrite /bunch_live/bunch_crashed.
+    rewrite ?decide_False; try congruence.
+    iApply (or_mono_r with "HQ").
+    iIntros "($&($&H))".
+    iApply (big_sepS_mono with "H").
+    iIntros (i' Hin'') "HPc".
+    destruct (decide (i' = i)); try iFrame.
+    subst.
+    exfalso. eapply not_elem_of_union_partition in Hin'; eauto.
+    { erewrite <-Hdom. eauto. }
   }
   iModIntro. iExists _.
   iSplitL "Hbundle H2".
@@ -394,58 +408,106 @@ Proof.
   iNext. iRewrite "Hequiv"; eauto.
 Qed.
 
-(* XXX: this isn't true, because |={E,E}_k=> P ∗ |={E,E}_k=> Q does not ⊢ |={E,E}_k=> P ∗ Q, we only get
-  |={E,E}_(2 * k)=> P * Q *)
-Lemma inv_live_to_crashed k σ E1 Qs Qsr Pc:
-  C -∗
-  bunches_wf k E1 E1 σ Qs Qsr Pc -∗
-  inv_live σ Qs -∗ |={E1, E1}_k=>
-  inv_crashed σ Qsr Pc.
-Proof.
-  iIntros "HC Hbunches Hlive".
-  rewrite /inv_live/inv_crashed.
-
 Lemma staged_inv_weak_open E N k E1 P i:
   ↑N ⊆ E →
   E1 ⊆ E ∖ ↑N →
   staged_inv N k E1 E1 ∗
   staged_crash_pending P i ∗
-  C -∗ |={E,E}_(S k)=> P.
+  C -∗ |={E,E}_(S (S k))=> P.
 Proof.
   iIntros (??) "(#Hinv&(Hpts&Hpending&Hsaved)&#HC)".
   iInv "Hinv" as "H" "Hclo".
   iDestruct "H" as (σ σdom Qs Qsr Pc) "(>Hdom&>Hpart&>Hheap&Hcrash_wf&Hbunch_wf&Hstatus)".
   iDestruct "Hdom" as %Hdom.
   iDestruct (gen_heap_valid with "Hheap Hpts") as %Hin.
+
   iDestruct (staged_crash_agree_later_1 with "[$] [$]") as "#Hequiv_crash".
   { apply elem_of_dom; eauto. }
   edestruct (union_partition_elem_of_1 σ i) as (bid&s&Heq&Hin').
   { rewrite -Hdom. apply elem_of_dom; eauto. }
-  iDestruct "Hstatus" as "[Hlive|(>_&Hcrashed)]".
-  -
 
-
-
-
-
-  iInv N as (γprop_alt γprop'_alt Qsaved Qrsaved) "H" "Hclose".
-  iDestruct "H" as "(>Hγ'&#Hsaved_alt&#Hsaved'_alt&#HQ0&Hcase)".
-  iDestruct "Hcase" as "[HQ|Hfalse]"; last first.
-  { iDestruct "Hfalse" as "(?&?&>H)".
-    iDestruct (pending_done with "[$] [$]") as "[]".
-  }
+  iDestruct (bunches_wf_later_pers_lookup_weak with "Hbunch_wf") as (b ??) "(#H1&#H2&#Hwand)"; first eauto.
+  iMod (bunches_wf_to_later with "Hbunch_wf") as "Hbunch_wf".
+  rewrite /inv_status.
+  iDestruct (big_sepM_later with "Hstatus") as "Hstatus".
+  iDestruct (big_sepM_lookup_acc with "Hstatus") as "(Hstatus&Hstatus_rest)"; first eauto.
+  iDestruct (later_or with "Hstatus") as "Hstatus".
   iMod (fupd_intro_mask' _ E1) as "Hclo_E"; first auto.
   iMod (fupd_intro_mask' _ (∅)) as "Hclo_E1"; first by set_solver.
-  iModIntro. rewrite Nat_iter_S. iModIntro. iNext.
-  iMod "Hclo_E1" as "_".
-  iMod ("HQ0" with "[$] [$]") as "H".
-  iApply (step_fupdN_wand with "H"). iIntros "!> H".
-  iMod "H" as "(HP&HQr)".
-  iMod (pending_upd_done with "[$]") as "#Hdone".
-  iMod "Hclo_E" as "_".
-  iMod ("Hclose" with "[HQr Hγ']").
-  { iNext. iExists _, _, _, _. iFrame "Hγ'". iFrame "#". by iRight. }
-  iModIntro. eauto.
+  iModIntro. rewrite Nat_iter_S. iModIntro. iNext. rewrite Nat_iter_S. do 2 iModIntro. iNext.
+  iDestruct "Hstatus" as "[Hlive|(_&Hcrashed)]".
+  - rewrite /bunch_live.
+    iSpecialize ("Hwand" with "[$] [$]").
+    destruct b.
+    * iMod "Hclo_E1" as "_".
+      iApply (step_fupdN_wand with "Hwand"). iIntros "H".
+      iMod "H" as "(HPcs&HQsr)".
+      iDestruct (big_sepS_delete with "HPcs") as "(HP&HPcs)"; first eapply Hin'.
+      iMod "Hclo_E" as "_".
+      iDestruct "Hpending" as (γ) "(#?&Hpend)".
+      iMod (pending_upd_done with "[$]") as "Hdone".
+      iSpecialize ("Hstatus_rest" with "[HQsr HPcs Hdone]").
+      {
+        iRight. iNext. rewrite /bunch_crashed. iFrame. iFrame "#".
+        iApply big_sepS_delete; first eassumption.
+        iSplitL "Hdone".
+        {
+          iRight. iExists _. iFrame. eauto.
+        }
+        iApply (big_sepS_mono with "HPcs").
+        { iIntros. by iLeft. }
+      }
+      iMod ("Hclo" with "[-HP]").
+      { iNext. iExists _, _, _, _, _. iFrame. eauto. }
+      iModIntro. iRewrite "Hequiv_crash". eauto.
+    * iMod "Hclo_E1" as "_".
+      iMod "Hclo_E".
+      iApply (step_fupdN_inner_later'); auto.
+      iNext.
+      iDestruct "Hwand" as "(HPcs&HQsr)".
+      iDestruct (big_sepS_delete with "HPcs") as "(HP&HPcs)"; first eapply Hin'.
+      iDestruct "Hpending" as (γ) "(#?&Hpend)".
+      iMod (pending_upd_done with "[$]") as "Hdone".
+      iSpecialize ("Hstatus_rest" with "[HQsr HPcs Hdone]").
+      {
+        iRight. iNext. rewrite /bunch_crashed. iFrame. iFrame "#".
+        iApply big_sepS_delete; first eassumption.
+        iSplitL "Hdone".
+        {
+          iRight. iExists _. iFrame. eauto.
+        }
+        iApply (big_sepS_mono with "HPcs").
+        { iIntros. by iLeft. }
+      }
+      iMod ("Hclo" with "[-HP]").
+      { iNext. iExists _, _, _, _, _. iFrame. eauto. }
+      iModIntro. iRewrite "Hequiv_crash". eauto.
+  -  iMod "Hclo_E1" as "_".
+     iMod "Hclo_E".
+     iApply (step_fupdN_inner_later'); auto.
+     iNext.
+     iDestruct "Hcrashed" as "(HQsr&HPcs)".
+     iDestruct (big_sepS_delete with "HPcs") as "(HP&HPcs)"; first eapply Hin'.
+     iDestruct "Hpending" as (γ) "(#?&Hpend)".
+     iDestruct "HP" as "[HP|Hfalse]"; last first.
+     { iDestruct "Hfalse" as (?) "(Hmeta&Hdone)".
+       iDestruct (meta_agree with "Hmeta [$]") as %Heq'. subst.
+       iDestruct (pending_done with "[$] [$]") as %[].
+     }
+      iMod (pending_upd_done with "[$]") as "Hdone".
+     iSpecialize ("Hstatus_rest" with "[HQsr HPcs Hdone]").
+     {
+       iRight. iNext. rewrite /bunch_crashed. iFrame. iFrame "#".
+       iApply big_sepS_delete; first eassumption.
+       iSplitL "Hdone".
+       {
+         iRight. iExists _. iFrame. eauto.
+       }
+       iApply (big_sepS_mono with "HPcs"); eauto.
+     }
+     iMod ("Hclo" with "[-HP]").
+     { iNext. iExists _, _, _, _, _. iFrame. eauto. }
+     iModIntro. iRewrite "Hequiv_crash". eauto.
 Qed.
 
 
