@@ -7,7 +7,8 @@ From Perennial.goose_lang Require
      metatheory
      refinement refinement_adequacy
      crash_lock
-     logical_reln.
+     logical_reln
+     my_stuff.alloc_proof.
 From Perennial.program_proof Require
      marshal_proof
      append_log_proof
