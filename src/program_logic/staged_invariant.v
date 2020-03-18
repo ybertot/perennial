@@ -34,7 +34,7 @@ Instance sghG : gen_heapG nat () Σ :=
   gen_heapG_update_pre (staging_gnames_inG) (staging_gnames_names Γ).
 
 Instance staged_bunches_partitionG : partitionG nat nat Σ :=
-  {| partition_heap_inG := gen_heapG_update_pre (partition_heap_preG) (staging_gnames_names Γ) |}.
+  {| partition_heap_inG := gen_heapG_update_pre (partition_heap_preG) (staging_bunches_names Γ) |}.
 
 Notation sphG := (@partition_heap_inG _ _ _ _ _ _ _ _ _ staged_bunches_partitionG).
 
@@ -718,10 +718,11 @@ Proof.
   iDestruct (bunches_wf_later_pers_lookup with "[$] [$] [$]") as "(#HQs&#HQr&#Hwand)"; first eauto.
   iDestruct (staged_crash_agree_later with "[$] [$]") as "#Hequiv_crash".
   { rewrite Hdom. by eapply union_partition_subset. }
+  rewrite /inv_status.
+  iDestruct (big_sepM_later with "Hstatus") as "Hstatus".
+  iDestruct (big_sepM_delete with "Hstatus") as "(Hstatus&Hstatus_rest)"; first eauto.
   iDestruct "Hstatus" as "[Hlive|(>#HC&Hcrashed)]".
-  - iLeft. rewrite /inv_live.
-    iEval (rewrite big_sepM_later) in "Hlive".
-    iDestruct (big_sepM_delete with "Hlive") as "(Hlive&Hlive_rest)"; first eauto.
+  - iLeft.
     iModIntro. iSplitL "Hlive".
     { iNext. iDestruct (saved_prop_agree with "Hsaved HQs") as "Hequiv'".
       iNext. iRewrite "Hequiv". iRewrite "Hequiv'". auto. }
@@ -767,18 +768,16 @@ Proof.
     {
       iNext. iExists _, _, _, _, _. iFrame.
       iSplitL ""; first eauto.
-      iLeft. iApply big_sepM_delete; first eauto.
-      rewrite {1}/Qs' decide_True //; iFrame.
-      iApply (big_sepM_mono with "Hlive_rest").
+      iApply big_sepM_delete; first eauto.
+      rewrite {1}/Qs'/bunch_live decide_True //; iFrame.
+      iApply (big_sepM_mono with "Hstatus_rest").
       { iIntros (k0 ? Hlookup_delete).
         apply lookup_delete_Some in Hlookup_delete as (?&?).
-        rewrite /Qs'. rewrite decide_False //. }
+        rewrite /Qs'/Qsr'/bunch_crashed. rewrite ?decide_False //. }
     }
     iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#". eauto.
-  - iRight. rewrite /inv_crashed.
-    iEval (rewrite big_sepM_later) in "Hcrashed".
-    iDestruct (big_sepM_delete with "Hcrashed") as "((Hcrashed&?)&Hcrashed_rest)"; first eauto.
-    iModIntro. iSplitL "Hcrashed".
+  - iRight.
+    iModIntro. iDestruct "Hcrashed" as "(HQsr&Hcrashed)". iSplitL "HQsr".
     { iNext. iDestruct (saved_prop_agree with "Hsavedr HQr") as "Hequiv'".
       iNext. iRewrite "Hequiv_alt". iRewrite "Hequiv'". auto. }
     iFrame "HC".
@@ -821,12 +820,13 @@ Proof.
     {
       iNext. iExists _, _, _, _, _. iFrame.
       iSplitL ""; first eauto.
-      iRight. iFrame. iFrame "#". iApply big_sepM_delete; first eauto.
-      rewrite {1}/Qsr' decide_True //; iFrame.
-      iApply (big_sepM_mono with "Hcrashed_rest").
+      iApply big_sepM_delete; first eauto.
+      iSplitL "Hcrashed".
+      { iRight. rewrite /bunch_crashed {1}/Qsr' decide_True //; iFrame. eauto. }
+      iApply (big_sepM_mono with "Hstatus_rest").
       { iIntros (k0 ? Hlookup_delete).
         apply lookup_delete_Some in Hlookup_delete as (?&?).
-        rewrite /Qsr'. rewrite decide_False //. }
+        rewrite /Qsr'/bunch_live/bunch_crashed. rewrite decide_False //. }
     }
     iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#". eauto.
 Qed.
@@ -847,5 +847,18 @@ Proof.
   iDestruct (NC_C with "[$] [$]") as %[].
 Qed.
 
+End definitions.
 
-End inv.
+Lemma staved_inv_init `{!invG Σ, !stagedG Σ, !crashG Σ} N k E1 E2 E:
+  (|={E}=> ∃ Γ, staged_inv Γ N k E1 E2)%I.
+Proof.
+  iMod (partition_init (L := nat) (V := nat)) as (n1) "H1".
+  iMod (gen_heap_name_init (∅: gmap nat unit)) as (n2) "H2".
+  iExists {| staging_gnames_names := n2; staging_bunches_names := n1 |}.
+  rewrite /staged_inv.
+  iMod (inv_alloc N E _ with "[-]") as "$"; last done.
+  iNext. iExists ∅, ∅, (λ _, True%I), (λ _, True%I), (λ _, True%I). iFrame.
+  iSplitL "".
+  { rewrite /union_partition map_fold_empty dom_empty_L //=. }
+  rewrite /crash_prop_wf/bunches_wf/inv_status ?big_sepM_empty //.
+Qed.

@@ -3,6 +3,7 @@ From iris.proofmode Require Import tactics.
 From iris.algebra Require Import auth gmap frac agree namespace_map gset.
 From iris.base_logic.lib Require Import gen_heap.
 From iris.base_logic.lib Require Export own.
+From Perennial.algebra Require Import gen_heap.
 Set Default Proof Using "Type".
 Import uPred.
 
@@ -11,7 +12,7 @@ Class partitionG (L V: Type) (Σ: gFunctors) `{Countable L, Infinite L, Countabl
 }.
 
 Class partition_preG (L V: Type) Σ `{Countable L, Infinite L, Countable V, Infinite V} := {
-  partition_heap_preG: gen_heapPreG L (gset V) Σ;
+  partition_heap_preG :> gen_heapPreG L (gset V) Σ;
 }.
 
 
@@ -229,3 +230,13 @@ Proof.
 Qed.
 
 End definitions.
+
+Lemma partition_init `{hP: partition_preG L V Σ}:
+  (|==> ∃ names : gen_heap_names,
+        let _ := {| partition_heap_inG :=
+                      gen_heapG_update_pre (@partition_heap_preG _ _ _ _ _ _ _ _ _ hP) names |} in
+        partition_ctx (∅: gmap L (gset V)))%I.
+Proof.
+  iMod (gen_heap_name_init ∅) as (names) "H".
+  iModIntro. iExists names. iFrame. rewrite //=.
+Qed.
