@@ -554,8 +554,10 @@ Proof.
                 ▷ saved_prop_own γprop2 (Qs bid2) ∗
                 ▷ saved_prop_own γprop2' (Qsr bid2) ∗
                 own γ1 (◯ Excl' (false, (γprop1_new, γprop1'_new))) ∗
-                own γ2 (◯ Excl' (false, (γprop2_new, γprop2'_new))))%I with "[Hbunch_wf Hown1 Hown2]"
-         as ">(Hbunches&#Hsaved1'&#Hsavedr1'&#Hsaved2'&#Hsavedr2'&Hown1&Hown2)".
+                own γ2 (◯ Excl' (false, (γprop2_new, γprop2'_new))) ∗
+                ▷ □ (C -∗ Qs bid1 -∗ ([∗ set] j ∈ s1, Pc j) ∗ Qsr bid1) ∗
+                ▷ □ (C -∗ Qs bid2 -∗ ([∗ set] j ∈ s2, Pc j) ∗ Qsr bid2))%I with "[Hbunch_wf Hown1 Hown2]"
+         as ">(Hbunches&#Hsaved1'&#Hsavedr1'&#Hsaved2'&#Hsavedr2'&Hown1&Hown2&#Hwand1&#Hwand2)".
   { rewrite /bunches_wf_later big_sepM_insert_delete.
     iDestruct (big_sepM_delete with "Hbunch_wf") as "(Hbid2_bunch&Hbunch_wf)"; first eapply Hin2.
     iAssert (|==> bunch_wf_later k E' E' Qs' Qsr' Pc bid2 ∅ ∗
@@ -576,6 +578,7 @@ Proof.
       iNext. iAlways. iIntros "#HC _".
       rewrite big_sepS_empty //=.
     }
+    iFrame "Hwand2".
 
     iDestruct (big_sepM_delete _ _ bid1 with "Hbunch_wf") as "(Hbid1_bunch&Hbunch_wf)".
     { rewrite lookup_delete_ne //. }
@@ -598,6 +601,7 @@ Proof.
       iDestruct ("Hwand1" with "HC [$]") as "($&$)".
       iDestruct ("Hwand2" with "HC [$]") as "($&$)".
     }
+    iFrame "Hwand1".
     rewrite delete_insert_ne //.
     rewrite big_sepM_insert_delete.
     iFrame.
@@ -614,44 +618,68 @@ Proof.
     { iPureIntro. rewrite Hdom. rewrite -union_partition_move //.
       { rewrite Hin2. f_equal; set_solver+. }
     }
-    iDestruct "Hstatus" as "[Hlive|(HC&Hcrashed)]".
-    - iLeft. rewrite /inv_live.
-      iApply big_sepM_insert_delete.
-      rewrite delete_insert_ne //.
-      rewrite big_sepM_insert_delete.
-      iDestruct (big_sepM_delete _ _ bid2 with "Hlive") as "(Hb1&Hlive)"; first done.
-      iDestruct (big_sepM_delete _ _ bid1 with "Hlive") as "(Hb2&Hlive)".
-      { rewrite lookup_delete_ne //. }
-      rewrite /Qs'.
-      destruct (decide (bid1 = bid2)) => //=.
-      destruct (decide (bid2 = bid1)) => //=.
-      rewrite ?decide_True //=.
-      iFrame.
-      iApply (big_sepM_mono with "Hlive").
-      { iIntros (?? Hlookup) "H".
-        apply lookup_delete_Some in Hlookup as (Hneq1&Hlookup).
-        apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
-        rewrite ?decide_False //=.
+    rewrite /inv_status.
+    iApply big_sepM_insert_delete.
+    rewrite delete_insert_ne //.
+    rewrite big_sepM_insert_delete.
+    iDestruct (big_sepM_delete _ _ bid2 with "Hstatus") as "(Hb2&Hstatus)"; first done.
+    iDestruct (big_sepM_delete _ _ bid1 with "Hstatus") as "(Hb1&Hstatus)".
+    { rewrite lookup_delete_ne //. }
+    rewrite assoc.
+    iSplitL "Hb1 Hb2".
+    {
+      rewrite /bunch_live. rewrite /bunch_crashed.
+      iDestruct "Hb1" as "[Hb1l|(#HC&HQr1&Hb1cr)]".
+      {
+        iDestruct "Hb2" as "[Hb2l|(#HC&HQr2&Hb2cr)]".
+        { rewrite /Qs'.
+          destruct (decide (bid1 = bid2)) => //=;
+          destruct (decide (bid2 = bid1)) => //=; [].
+          rewrite ?decide_True //=; [].
+          iSplitL ""; first by iLeft.
+          iLeft. iFrame.
+        }
+        { rewrite /Qsr'.
+          destruct (decide (bid1 = bid2)) => //=;
+          destruct (decide (bid2 = bid1)) => //=; [].
+          rewrite ?decide_True //=; [].
+          iDestruct ("Hwand1" with "[$] [$]") as "(Hb1cr&HQr1)".
+          iSplitL "".
+          { iRight. rewrite big_sepS_empty. iFrame "#". eauto. }
+          iRight. iFrame. iFrame "#". iApply big_sepS_union; first by auto.
+          iFrame. iApply (big_sepS_mono with "Hb1cr"); eauto.
+        }
       }
-    - iRight. rewrite /inv_crashed. iFrame "HC".
-      iApply big_sepM_insert_delete.
-      rewrite delete_insert_ne //.
-      rewrite big_sepM_insert_delete.
-      iDestruct (big_sepM_delete _ _ bid2 with "Hcrashed") as "((Hb1&Hb1')&Hcrashed)"; first done.
-      iDestruct (big_sepM_delete _ _ bid1 with "Hcrashed") as "((Hb2&Hb2')&Hcrashed)".
-      { rewrite lookup_delete_ne //. }
+      iDestruct "Hb2" as "[Hb2l|(_&HQr2&Hb2cr)]".
+      {
+        { rewrite /Qsr'.
+          destruct (decide (bid1 = bid2)) => //=;
+          destruct (decide (bid2 = bid1)) => //=; [].
+          rewrite ?decide_True //=; [].
+          iDestruct ("Hwand2" with "[$] [$]") as "(Hb2cr&HQr2)".
+          iSplitL "".
+          { iRight. rewrite big_sepS_empty. iFrame "#". eauto. }
+          iRight. iFrame. iFrame "#". iApply big_sepS_union; first by auto.
+          iFrame. iApply (big_sepS_mono with "Hb2cr"); eauto.
+        }
+      }
       rewrite /Qsr'.
-      destruct (decide (bid1 = bid2)) => //=.
-      destruct (decide (bid2 = bid1)) => //=.
-      rewrite ?decide_True //=.
-      iFrame. rewrite big_sepS_empty big_sepS_union //. iFrame.
-      iSplitL ""; first done.
-      iApply (big_sepM_mono with "Hcrashed").
-      { iIntros (?? Hlookup) "H".
-        apply lookup_delete_Some in Hlookup as (Hneq1&Hlookup).
-        apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
-        rewrite ?decide_False //=.
-      }
+      destruct (decide (bid1 = bid2)) => //=;
+      destruct (decide (bid2 = bid1)) => //=;
+      rewrite ?decide_True //=; [].
+      iSplitL "".
+      { iRight. rewrite big_sepS_empty. iFrame "#". eauto. }
+      iRight. iFrame. iFrame "#". iApply big_sepS_union; first by auto.
+      iFrame.
+    }
+    iApply (big_sepM_mono with "Hstatus").
+    {
+      iIntros (?? Hlookup) "H".
+      apply lookup_delete_Some in Hlookup as (Hneq1&Hlookup).
+      apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
+      rewrite /Qs'/Qsr'/bunch_live/bunch_crashed. simpl.
+      rewrite ?decide_False //=.
+    }
   }
   iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#".
   rewrite -?later_sep. iNext.
