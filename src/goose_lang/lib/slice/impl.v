@@ -13,17 +13,17 @@ Module slice.
     Definition len: val := λ: "s", Snd (Fst (Var "s")).
     Definition cap: val := λ: "s", Snd (Var "s").
 
-    Theorem ptr_t t : ⊢ ptr : (T t -> arrayT t).
+    Theorem ptr_t t : ∅ ⊢ ptr : (T t -> arrayT t).
     Proof.
       typecheck.
     Qed.
-    Theorem len_t t : ⊢ len : (T t -> uint64T).
+    Theorem len_t t : ∅ ⊢ len : (T t -> uint64T).
     Proof.
       typecheck.
     Qed.
 
     Definition nil : val := (#null, #0, #0).
-    Theorem nil_t t : ⊢ nil : T t.
+    Theorem nil_t t : ∅ ⊢ nil : T t.
     Proof.
       typecheck.
     Qed.
@@ -40,13 +40,18 @@ Implicit Types (t:ty).
 
 Set Default Proof Using "ext ext_ty".
 
-Local Coercion Var' s: @expr ext := Var s.
+Local Coercion Var' s: expr := Var s.
+
+Theorem has_zero_slice_T t : has_zero (slice.T t).
+Proof.
+  auto.
+Qed.
 
 Definition raw_slice (t: ty): val :=
   λ: "p" "sz",
   ("p", "sz", "sz").
 
-Theorem raw_slice_t t : ⊢ raw_slice t : (arrayT t -> uint64T -> slice.T t).
+Theorem raw_slice_t t : ∅ ⊢ raw_slice t : (arrayT t -> uint64T -> slice.T t).
 Proof.
   typecheck.
 Qed.
@@ -111,7 +116,7 @@ Definition SliceSubslice t: val :=
        then Panic "slice index out-of-bounds"
        else (slice.ptr "s" +ₗ[t] "n1", "n2" - "n1", "n2" - "n1").
 
-Theorem SliceSubslice_t t : ⊢ SliceSubslice t : (slice.T t -> uint64T -> uint64T -> slice.T t).
+Theorem SliceSubslice_t t : ∅ ⊢ SliceSubslice t : (slice.T t -> uint64T -> uint64T -> slice.T t).
 Proof.
   typecheck.
 Qed.
@@ -172,4 +177,5 @@ Definition ForSlice t (iv: binder) (xv: binder) (s: expr) (body: expr): expr :=
 
 End goose_lang.
 
+Hint Resolve has_zero_slice_T : core.
 Global Opaque slice.T raw_slice SliceAppend SliceAppendSlice.

@@ -25,20 +25,9 @@ Proof.
   solve_countable DiskOp_rec 3%nat.
 Qed.
 
-Inductive Disk_val := | DiskInterfaceVal.
-Instance eq_Disk_val : EqDecision Disk_val.
-Proof.
-  solve_decision.
-Defined.
-
-Instance eq_Disk_fin : Countable Disk_val.
-Proof.
-  solve_countable Disk_val_rec 1%nat.
-Qed.
-
 Definition disk_op : ext_op.
 Proof.
-  refine (mkExtOp DiskOp _ _ Disk_val _ _).
+  refine (mkExtOp DiskOp _ _).
 Defined.
 
 Inductive Disk_ty := | DiskInterfaceTy.
@@ -50,9 +39,6 @@ Section disk.
   Existing Instances disk_op disk_val_ty.
   Definition disk_ty: ext_types disk_op :=
     {| val_tys := disk_val_ty;
-       val_ty_def x := match x with
-                    | DiskInterfaceTy => DiskInterfaceVal
-                       end;
        get_ext_tys (op: @external disk_op) :=
          match op with
       | ReadOp => (uint64T, arrayT byteT)
@@ -100,8 +86,10 @@ Section disk.
   suddenly cause all FFI parameters to be inferred as the disk model *)
   Existing Instances disk_op disk_model disk_ty.
 
+  (* we return a unit here, which is ok as the type of the disk from a client
+  perspective *)
   Definition Get: val :=
-    λ: <>, ExtV DiskInterfaceVal.
+    λ: <>, #().
 
   Definition Read: val :=
     λ: "a",
@@ -133,7 +121,7 @@ Section disk.
     λ: <>,
        ExternalOp SizeOp #().
 
-  Theorem Size_t : ⊢ Size : (unitT -> uint64T).
+  Theorem Size_t : ∅ ⊢ Size : (unitT -> uint64T).
   Proof.
     typecheck.
   Qed.
@@ -274,7 +262,7 @@ lemmas. *)
 
   Definition bindex_of_Z (i: Z) (Hlow: (0 <= i)%Z) (Hhi: (i < 4096)%Z) : fin block_bytes.
     cut (Z.to_nat i < 4096)%nat.
-    { apply fin_of_nat. }
+    { apply nat_to_fin. }
     change 4096%nat with (Z.to_nat 4096%Z).
     abstract (apply Z2Nat.inj_lt; auto; vm_compute; inversion 1).
   Defined.
@@ -292,7 +280,7 @@ lemmas. *)
   Theorem mapsto_block_extract i l q b :
     (0 <= i)%Z ->
     (i < 4096)%Z ->
-    (mapsto_block l q b -∗ ∃ v, (l +ₗ i) ↦{q} v ∗ ⌜Block_to_vals b !! Z.to_nat i = Some v⌝)%I.
+    ⊢ mapsto_block l q b -∗ ∃ v, (l +ₗ i) ↦{q} v ∗ ⌜Block_to_vals b !! Z.to_nat i = Some v⌝.
   Proof.
     unfold mapsto_block; intros Hlow Hhi.
     iIntros "Hm".

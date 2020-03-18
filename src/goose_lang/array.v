@@ -106,7 +106,7 @@ Qed.
 version (with arbitrary q but no update) below *)
 Local Lemma update_array_gen {l vs off t q v} :
   vs !! off = Some v →
-  (l ↦∗[t]{q} vs -∗ ((l +ₗ[t] off) ↦[t]{q} v ∗ ∀ v', (l +ₗ[t] off) ↦[t]{q} v' -∗ l ↦∗[t]{q} <[off:=v']>vs))%I.
+  ⊢ l ↦∗[t]{q} vs -∗ ((l +ₗ[t] off) ↦[t]{q} v ∗ ∀ v', (l +ₗ[t] off) ↦[t]{q} v' -∗ l ↦∗[t]{q} <[off:=v']>vs).
 Proof.
   iIntros (Hlookup) "Hl".
   rewrite -[X in (l ↦∗[_]{_} X)%I](take_drop_middle _ off v); last done.
@@ -125,7 +125,7 @@ Qed.
 
 Lemma update_array {l vs off t v} :
   vs !! off = Some v →
-  (l ↦∗[t] vs -∗ ((l +ₗ[t] off) ↦[t] v ∗ ∀ v', (l +ₗ[t] off) ↦[t] v' -∗ l ↦∗[t] <[off:=v']>vs))%I.
+  ⊢ l ↦∗[t] vs -∗ ((l +ₗ[t] off) ↦[t] v ∗ ∀ v', (l +ₗ[t] off) ↦[t] v' -∗ l ↦∗[t] <[off:=v']>vs).
 Proof.
   apply update_array_gen.
 Qed.
@@ -148,7 +148,7 @@ Lemma mapsto_seq_array l v t n :
 Proof.
   rewrite /array. iInduction n as [|n'] "IH" forall (l); simpl.
   { done. }
-  iIntros "[$ Hl]". rewrite -fmap_seq big_sepL_fmap.
+  iIntros "[$ Hl]". rewrite -fmap_S_seq big_sepL_fmap.
   setoid_rewrite Nat2Z.inj_succ. setoid_rewrite <-Z.add_1_l.
   setoid_rewrite Z.mul_add_distr_l.
   setoid_rewrite Z.mul_1_r.
@@ -167,7 +167,7 @@ Proof.
   rewrite /array. iInduction n as [|n'] "IH" forall (l); simpl.
   { done. }
   rewrite Z.mul_0_r loc_add_0.
-  iIntros "[$ Hl]". rewrite -fmap_seq big_sepL_fmap.
+  iIntros "[$ Hl]". rewrite -fmap_S_seq big_sepL_fmap.
   setoid_rewrite Zmul_S_r.
   setoid_rewrite <-loc_add_assoc.
   by iApply "IH".
@@ -219,20 +219,26 @@ Notation "l ↦∗[ t ]{ q } vs" := (array l q t vs) : bi_scope.
 Notation "l ↦∗[ t ] vs" := (array l 1%Qp t vs) : bi_scope.
 Typeclasses Opaque array.
 
-Ltac iFramePtsTo_core t :=
+Ltac iFramePtsTo_core tac :=
   match goal with
   | [ |- envs_entails ?Δ ((?l +ₗ ?z) ↦∗[_] ?v) ] =>
     match Δ with
     | context[Esnoc _ ?j ((l +ₗ ?z') ↦∗[_] ?v')] =>
       unify v v';
       replace z with z';
-      [ iExact j | t ]
+      [ iExact j | tac ]
     end
   | [ |- envs_entails ?Δ (?l ↦ ?v) ] =>
     match Δ with
     | context[Esnoc _ ?j (l ↦ ?v')] =>
       replace v with v';
-      [ iExact j | t ]
+      [ iExact j | tac ]
+    end
+  | [ |- envs_entails ?Δ (?l ↦[?t]{?q} ?v) ] =>
+    match Δ with
+    | context[Esnoc _ ?j (l ↦[_]{q} ?v')] =>
+      replace v with v';
+      [ iExact j | tac ]
     end
   end.
 

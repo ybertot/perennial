@@ -53,33 +53,25 @@ Proof.
   iIntros (enc) "[Henc %]".
   wp_steps.
   wp_loadField.
-  wp_apply (wp_Enc__PutInt with "[$Henc]").
-  { simpl; rewrite H; len. }
-  iIntros "Henc".
+  wp_apply (wp_Enc__PutInt with "Henc"); [ word | iIntros "Henc" ].
   wp_steps.
   wp_loadField.
-  wp_apply (wp_Enc__PutInt with "[$Henc]").
-  { simpl; rewrite H; len. }
-  iIntros "Henc".
-  wp_steps.
+  wp_apply (wp_Enc__PutInt with "Henc"); [ word | iIntros "Henc" ].
   wp_apply (wp_Enc__Finish with "[$Henc]").
-  iIntros (s extra) "(Hs&%)".
+  iIntros (s) "(Hs&%)".
+  iDestruct (is_slice_small_sz with "Hs") as %Hsz.
+  autorewrite with len in H0, Hsz.
   destruct s.
   replace sz0 with (U64 4096).
   { iApply "HΦ".
-    iDestruct (is_slice_small_sz with "Hs") as %Hsz.
-    autorewrite with len in Hsz.
-    rewrite /= in Hsz.
     iDestruct (slice_to_block with "Hs") as "Hb"; [ done | ].
     iFrame.
     iPureIntro.
     rewrite /is_hdr_block.
-    exists extra.
-    rewrite -> list_to_block_to_vals; auto. }
-  apply word.unsigned_inj.
-  simpl in H0; subst.
-  rewrite H.
-  reflexivity.
+    eexists _.
+    rewrite list_to_block_to_vals; eauto. }
+  simpl in Hsz.
+  word.
 Qed.
 
 Theorem wpc_write_hdr stk k E1 E2 lptr (sz0 disk_sz0 sz disk_sz:u64) :
@@ -180,46 +172,13 @@ Proof.
   iFrame.
 Qed.
 
-Theorem wp_init (sz: u64) vs :
-  {{{ 0 d↦∗ vs ∗ ⌜length vs = int.nat sz⌝ }}}
-    Init #sz
-  {{{ l (ok: bool), RET (#l, #ok); ⌜ok⌝ -∗ ptsto_log l [] }}}.
+Theorem log_struct_to_fields' lptr (ml: loc) (sz disk_sz: u64) :
+  lptr ↦[struct.t Log.S] (#ml, (#sz, (#disk_sz, #()))) -∗
+  log_fields lptr sz disk_sz ∗ lptr ↦[Log.S :: "m"] #ml.
 Proof.
-  iIntros (Φ) "[Hdisk %] HΦ".
-  rewrite /Init.
-  wp_lam.
-  wp_pures.
-  wp_if_destruct; wp_pures.
-  - wp_apply wp_new_free_lock; iIntros (ml) "_".
-    wp_apply (typed_mem.wp_AllocAt (struct.t Log.S)); [ val_ty | iIntros (lptr) "Hs" ].
-    wp_pures.
-    iApply "HΦ".
-    iIntros ([]).
-  - destruct vs.
-    { simpl in *.
-      word. }
-    wp_apply wp_new_free_lock; iIntros (ml) "_".
-    wp_apply (typed_mem.wp_AllocAt (struct.t Log.S)); [ val_ty | iIntros (lptr) "Hs" ].
-    iDestruct (log_struct_to_fields with "Hs") as "Hfields".
-    wp_pures.
-    iDestruct (disk_array_cons with "Hdisk") as "[Hd0 Hdrest]".
-    iDestruct (block_to_is_hdr with "Hd0") as (sz0 disk_sz0) "Hhdr".
-    wp_apply (wp_write_hdr with "[$Hhdr $Hfields]").
-    iIntros "[Hhdr Hfields]".
-    wp_steps.
-    iApply "HΦ".
-    iIntros "_".
-    rewrite /ptsto_log /is_log'.
-    change (0 + 1) with 1.
-    simpl.
-    iExists _, _; iFrame.
-    rewrite disk_array_emp.
-    iSplitR; first by auto.
-    iSplitR; first by auto.
-    iExists vs; iFrame.
-    iPureIntro.
-    simpl in H.
-    lia.
+  iIntros "Hs".
+  iDestruct (struct_fields_split with "Hs") as "(?&Hsz&Hdisk_sz&?)".
+  iFrame.
 Qed.
 
 Theorem is_log'_sz sz disk_sz bs :
@@ -250,9 +209,9 @@ Proof.
     word.
 Qed.
 
-Theorem wp_Log__Get stk E (lptr: loc) bs (i: u64) :
+Theorem wp_Log__get stk E (lptr: loc) bs (i: u64) :
   {{{ ptsto_log lptr bs ∗ ⌜int.val i < 2^64-1⌝ }}}
-    Log__Get #lptr #i @ stk; E
+    Log__get #lptr #i @ stk; E
   {{{ s (ok: bool), RET (slice_val s, #ok);
       (if ok
        then ∃ b, ⌜bs !! int.nat i = Some b⌝ ∗ is_slice s byteT 1%Qp (Block_to_vals b)
@@ -440,9 +399,7 @@ Proof.
           wpc_pures.
           { iApply ("HΦcI" with "[$]"). }
           assert (int.val (z + 1) = int.val z + 1) by word.
-          replace (word.add z 1) with (U64 (z + 1)); last first.
-          { apply word.unsigned_inj.
-            word. }
+          replace (word.add z 1) with (U64 (z + 1)) by word.
           iSpecialize ("IH" $! (z+1) with "[] []").
           { iPureIntro; word. }
           { iPureIntro; word. }
@@ -550,6 +507,9 @@ Qed.
 
 Definition crashed_log bs: iProp Σ :=
   ∃ sz disk_sz, is_log' sz disk_sz bs.
+Definition uninit_log sz: iProp Σ :=
+  ∃ vs, 0 d↦∗ vs ∗ ⌜ length vs = sz ⌝.
+Definition unopened_log sz : iProp Σ := uninit_log sz ∨ (∃ bs, crashed_log bs).
 
 Lemma is_log_crash_l sz disk_sz bs (Q: iProp Σ) :
   is_log' sz disk_sz bs -∗ crashed_log bs ∨ Q.
@@ -606,6 +566,74 @@ Proof.
   iPureIntro; word.
 Qed.
 
+Theorem wpc_init (sz: u64) k E1 E2 vs :
+  {{{ 0 d↦∗ vs ∗ ⌜length vs = int.nat sz⌝ }}}
+    Init #sz @ NotStuck; k; E1; E2
+  {{{ l (ok: bool), RET (#l, #ok); ⌜ int.nat sz > 0 → ok = true ⌝ ∗
+      if ok then ptsto_log l [] ∗ ∃ (ml: loc), l ↦[Log.S :: "m"] #ml ∗ is_free_lock ml
+      else 0 d↦∗ vs }}}
+  {{{ 0 d↦∗ vs ∨ (∃ b b' vs', ⌜ vs = b :: vs' ⌝ ∗ 0 d↦∗ (b' :: vs') ) }}}.
+Proof.
+  iIntros (Φ Φc) "[Hdisk %] HΦ".
+  rewrite /Init.
+  wpc_pures; first by eauto.
+  wpc_if_destruct; wpc_pures; try by eauto.
+  - wpc_frame "Hdisk HΦ".
+    { iIntros "(Hdisk&HΦ)". iApply "HΦ". eauto. }
+    wp_apply wp_new_free_lock; iIntros (ml) "_".
+    wp_apply (typed_mem.wp_AllocAt (struct.t Log.S)); [ val_ty | iIntros (lptr) "Hs" ].
+    wp_pures.
+    iIntros "(Hdisk&HΦ)".
+    iApply "HΦ". iFrame. iPureIntro. word.
+  - destruct vs.
+    { simpl in *.
+      word. }
+    wpc_bind (Alloc _).
+    wpc_frame "Hdisk HΦ".
+    { iIntros "(Hdisk&HΦ)". iApply "HΦ". eauto. }
+    wp_apply wp_new_free_lock; iIntros (ml) "Hlock".
+    wp_apply (typed_mem.wp_AllocAt (struct.t Log.S)); [ val_ty | iIntros (lptr) "Hs" ].
+    iDestruct (log_struct_to_fields' with "Hs") as "(Hfields&Hm)".
+    wp_pures.
+    iIntros "(Hdisk&HΦ)".
+    wpc_pures; first by eauto.
+    iDestruct (disk_array_cons with "Hdisk") as "[Hd0 Hdrest]".
+    iDestruct (block_to_is_hdr with "Hd0") as (sz0 disk_sz0) "Hhdr".
+    wpc_apply (wpc_write_hdr with "[$Hhdr $Hfields]").
+    iSplit.
+    { iIntros "Hcase". iApply "HΦ".
+      iRight.
+      iDestruct "Hcase" as "[H|H]".
+      - rewrite /is_hdr. iDestruct "H" as (?) "(?&?)".
+        iExists _, _, _. iSplitR; first done. iApply disk_array_cons. by iFrame.
+      - rewrite /is_hdr. iDestruct "H" as (?) "(?&?)".
+        iExists _, _, _. iSplitR; first done. iApply disk_array_cons. by iFrame.
+    }
+    iNext. iIntros "(Hhdr&Hlog)".
+    wpc_pures.
+    { iRight.
+      rewrite /is_hdr. iDestruct "Hhdr" as (?) "(?&?)".
+      iExists _, _, _. iSplitR; first done. iApply disk_array_cons. by iFrame.
+    }
+    iApply "HΦ". rewrite /ptsto_log.
+    rewrite /ptsto_log /is_log'.
+    change (0 + 1) with 1.
+    simpl.
+    iSplitL "".
+    { eauto. }
+    iSplitR "Hm Hlock"; last first.
+    { iExists _. iFrame. }
+    iExists _, _; iFrame.
+    rewrite disk_array_emp.
+    iSplitR; first by auto.
+    iSplitR; first by auto.
+    iExists vs; iFrame.
+    iPureIntro.
+    simpl in H.
+    lia.
+Qed.
+
+
 Transparent struct.store.
 Definition struct_ty_unfold d :
   ltac:(let x := constr:(struct.t d) in
@@ -613,16 +641,16 @@ Definition struct_ty_unfold d :
         exact (x = x')) := eq_refl.
 Opaque struct.t.
 
-Theorem wpc_Log__Append k stk E1 E2 l bs0 bk_s bks bs :
+Theorem wpc_Log__append k stk E1 E2 l bs0 bk_s bks bs :
   {{{ ptsto_log l bs0 ∗ blocks_slice bk_s bks bs }}}
-    Log__Append #l (slice_val bk_s) @ stk; k; E1; E2
+    Log__append #l (slice_val bk_s) @ stk; k; E1; E2
   {{{ (ok: bool), RET #ok; (ptsto_log l (if ok then bs0 ++ bs else bs0)) ∗
                           blocks_slice bk_s bks bs }}}
   {{{ crashed_log bs0 ∨ crashed_log (bs0 ++ bs) }}}.
 Proof.
   iIntros (Φ Φc) "[Hptsto_log Hbs] HΦ".
   iDestruct "Hptsto_log" as (sz disk_sz) "((Hsz&Hdisk_sz)&Hlog)".
-  rewrite /Log__Append.
+  rewrite /Log__append.
 
   wpc_pures.
   { iApply (is_log_crash_l with "Hlog"). }
@@ -758,15 +786,15 @@ Proof.
   len.
 Qed.
 
-Theorem wpc_Log__Reset stk k E1 E2 l bs :
+Theorem wpc_Log__reset stk k E1 E2 l bs :
   {{{ ptsto_log l bs }}}
-    Log__Reset #l @ stk; k; E1; E2
+    Log__reset #l @ stk; k; E1; E2
   {{{ RET #(); ptsto_log l [] }}}
   {{{ crashed_log bs ∨ crashed_log [] }}}.
 Proof.
   iIntros (Φ Φc) "Hlog HΦ".
   iDestruct "Hlog" as (sz disk_sz) "((Hsz&Hdisk_sz)&Hlog)".
-  rewrite /Log__Reset.
+  rewrite /Log__reset.
   wpc_pures.
   { iApply (is_log_crash_l with "[$]"). }
   wpc_bind (struct.storeF _ _ _ _).
@@ -798,26 +826,33 @@ Proof.
     by iApply (is_log_reset with "Hhdr Hlog Hfree [%]").
 Qed.
 
-Theorem wp_Open vs :
+Theorem wpc_Open k E1 E2 vs :
   {{{ crashed_log vs }}}
-    Open #()
-  {{{ lptr, RET #lptr; ptsto_log lptr vs }}}.
+    Open #() @ NotStuck; k; E1; E2
+  {{{ lptr, RET #lptr; ptsto_log lptr vs ∗ ∃ (ml: loc), lptr ↦[Log.S :: "m"] #ml ∗ is_free_lock ml }}}
+  {{{ crashed_log vs }}}.
 Proof.
-  iIntros (Φ) "Hlog HΦ".
+  iIntros (Φ Φc) "Hlog HΦ".
+  rewrite /Open.
+  wpc_pures; first done.
   iDestruct "Hlog" as (sz disk_sz) "[Hhdr Hlog_rest]".
-  wp_call.
-  iDestruct "Hhdr" as (b) "[Hd0 %]".
-  wp_apply (wp_Read with "[Hd0]").
-  { change (int.val 0) with 0.
-    iFrame. }
+  iDestruct "Hhdr" as (b) "[Hd0 Hhdr]".
+  wpc_apply (wpc_Read with "[Hd0]").
+  { iFrame. }
+  iSplit.
+  { iIntros. iApply "HΦ". iExists _, _. iFrame. iExists _. iFrame. }
+  iNext.
   iIntros (s) "[Hd0 Hs]".
+  iDestruct "Hhdr" as %Hhdr.
+  wpc_frame "Hd0 HΦ Hlog_rest".
+  { iIntros "(?&HΦ&?)". iApply "HΦ". iExists _, _. iFrame. iExists _. iFrame; eauto. }
   wp_steps.
   iDestruct (is_slice_sz with "Hs") as %Hsz.
   rewrite length_Block_to_vals in Hsz.
-  assert (int.val s.(Slice.sz) = 4096).
+  assert (int.val s.(Slice.sz) = 4096) as Hlen.
   { change block_bytes with 4096%nat in Hsz; lia. }
-  pose proof H.
-  destruct H as (extra&Hb).
+  pose proof Hhdr as Hhdr'.
+  destruct Hhdr' as (extra&Hb).
   rewrite Hb.
   wp_apply (wp_NewDec with "[Hs]").
   { iApply (is_slice_to_small with "[$]"). }
@@ -828,11 +863,13 @@ Proof.
   wp_apply (wp_Dec__GetInt with "Hdec").
   iIntros "_".
   wp_steps.
-  wp_apply wp_new_free_lock; iIntros (ml) "_".
+  wp_apply wp_new_free_lock; iIntros (ml) "Hlock".
   wp_apply (typed_mem.wp_AllocAt (struct.t Log.S)); [ rewrite struct_ty_unfold; val_ty | iIntros (lptr) "Hs" ].
-  iDestruct (log_struct_to_fields with "Hs") as "Hfields".
+  iDestruct (log_struct_to_fields' with "Hs") as "(Hfields&Hm)".
+  iIntros "(?&HΦ&?&?&?)".
   iApply "HΦ".
   rewrite /ptsto_log.
+  iSplitR "Hm Hlock"; last by (iExists _; iFrame).
   iExists _, _; iFrame.
   rewrite /is_hdr.
   iExists _; iFrame.
@@ -840,3 +877,4 @@ Proof.
 Qed.
 
 End heap.
+

@@ -6,14 +6,19 @@ From Perennial.goose_lang Require
      spec_assert
      metatheory
      refinement refinement_adequacy
+     crash_lock
      logical_reln.
 From Perennial.program_proof Require
      marshal_proof
      append_log_proof
+     append_log_hocap
+     append_log_refinement
      util_proof
      lockmap_proof
-     wal.specs wal.proof wal.circular_proof wal.heapspec
-     txn.specs.
+     (* temporarily disabled while wal abstraction is in flux *)
+     (* wal.proof wal.heapspec txn.specs *)
+     wal.specs
+     wal.circular_proof.
 From Perennial.goose_lang Require
      ffi.append_log_ffi.
 

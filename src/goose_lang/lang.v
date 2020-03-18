@@ -70,10 +70,6 @@ Class ext_op :=
       external: Set;
       external_eq_dec :> EqDecision external;
       external_countable :> Countable external;
-
-      ext_val: Type;
-      ext_val_eq_dec :> EqDecision ext_val;
-      ext_val_countable :> Countable ext_val;
     }.
 
 Class ffi_model :=
@@ -165,7 +161,6 @@ with val :=
   | PairV (v1 v2 : val)
   | InjLV (v : val)
   | InjRV (v : val)
-  | ExtV (x : ext_val)
 .
 
 Bind Scope expr_scope with expr.
@@ -317,7 +312,7 @@ Definition val_is_unboxed (v : val) : Prop :=
 Global Instance lit_is_unboxed_dec l : Decision (lit_is_unboxed l).
 Proof. destruct l; simpl; exact (decide _). Defined.
 Global Instance val_is_unboxed_dec v : Decision (val_is_unboxed v).
-Proof. destruct v as [ | | | [] | [] | ]; simpl; exact (decide _). Defined.
+Proof. destruct v as [ | | | [] | [] ]; simpl; exact (decide _). Defined.
 
 (** We just compare the word-sized representation of two values, without looking
 into boxed data.  This works out fine if at least one of the to-be-compared
@@ -417,7 +412,6 @@ Proof using ext.
         cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
       | InjLV e, InjLV e' => cast_if (decide (e = e'))
       | InjRV e, InjRV e' => cast_if (decide (e = e'))
-      | ExtV x, ExtV x' => cast_if (decide (x = x'))
       | _, _ => right _
       end
         for go); try (clear go gov; abstract intuition congruence).
@@ -435,7 +429,6 @@ Proof using ext.
        cast_if_and (decide (e1 = e1')) (decide (e2 = e2'))
      | InjLV e, InjLV e' => cast_if (decide (e = e'))
      | InjRV e, InjRV e' => cast_if (decide (e = e'))
-     | ExtV x, ExtV x' => cast_if (decide (x = x'))
      | _, _ => right _
      end); try abstract intuition congruence.
 Defined.
@@ -574,7 +567,6 @@ Inductive basic_type :=
   | bin_opVal (op:bin_op)
   | primOpVal (op:prim_op')
   | externOp (op:external)
-  | extVal (x:ext_val)
 .
 
 Instance basic_type_eq_dec : EqDecision basic_type.
@@ -589,8 +581,7 @@ Proof.
                               | un_opVal op => inr (inr (inr (inr (inl op))))
                               | bin_opVal op => inr (inr (inr (inr (inr (inl op)))))
                               | primOpVal op => inr (inr (inr (inr (inr (inr (inl op))))))
-                              | externOp op => inr (inr (inr (inr (inr (inr (inr (inl op)))))))
-                              | extVal x => inr (inr (inr (inr (inr (inr (inr (inr x)))))))
+                              | externOp op => inr (inr (inr (inr (inr (inr (inr op))))))
                               end)
                          (λ x, match x with
                               | inl s => stringVal s
@@ -600,8 +591,7 @@ Proof.
                               | inr (inr (inr (inr (inl op)))) => un_opVal op
                               | inr (inr (inr (inr (inr (inl op))))) => bin_opVal op
                               | inr (inr (inr (inr (inr (inr (inl op)))))) => primOpVal op
-                              | inr (inr (inr (inr (inr (inr (inr (inl op))))))) => externOp op
-                              | inr (inr (inr (inr (inr (inr (inr (inr x))))))) => extVal x
+                              | inr (inr (inr (inr (inr (inr (inr op)))))) => externOp op
                                end) _); by intros [].
 Qed.
 
@@ -657,7 +647,6 @@ Proof using ext.
      | PairV v1 v2 => GenNode 1 [gov v1; gov v2]
      | InjLV v => GenNode 2 [gov v]
      | InjRV v => GenNode 3 [gov v]
-     | ExtV x => GenNode 4 [GenLeaf $ extVal x]
      end
    for go).
  set (dec :=
@@ -694,7 +683,6 @@ Proof using ext.
      | GenNode 1 [v1; v2] => PairV (gov v1) (gov v2)
      | GenNode 2 [v] => InjLV (gov v)
      | GenNode 3 [v] => InjRV (gov v)
-     | GenNode 4 [GenLeaf (extVal x)] => ExtV x
      | _ => LitV LitUnit (* dummy *)
      end
    for go).
@@ -1308,6 +1296,43 @@ Definition trace_observable e r σ tr :=
 
 Definition trace_prefix (tr: Trace) (tr': Trace) : Prop :=
   prefix tr tr'.
+
+Lemma ExternalOp_fill_inv K o e1 e2:
+  ExternalOp o e1 = fill K e2 →
+  (ExternalOp o e1 = e2 ∨ ∃ K1 K2, K = K1 ++ K2 ∧ e1 = fill K1 e2).
+Proof.
+  revert o e1 e2.
+  induction K => o e1 e2.
+  - eauto.
+  - intros [Heq|Happ]%IHK.
+    * destruct a; simpl in Heq; try congruence.
+      inversion Heq; subst. right.
+      exists [], (ExternalOpCtx op :: K) => //=.
+    * destruct Happ as (K1&K2&->&Heq).
+      right. exists (a :: K1), K2; eauto.
+Qed.
+
+Lemma ExternalOp_fill_item_inv Ki o e1 e2:
+  ExternalOp o e1 = fill_item Ki e2 →
+  e1 = e2.
+Proof. destruct Ki => //=; congruence. Qed.
+
+Lemma ExternalOp_sub_redexes o e:
+  is_Some (to_val e) →
+  sub_redexes_are_values (ExternalOp o e).
+Proof.
+  intros Hval. apply ectxi_language_sub_redexes_are_values => Ki e' Heq.
+  apply ExternalOp_fill_item_inv in Heq; subst; auto.
+Qed.
+
+Lemma stuck_ExternalOp σ o e:
+  is_Some (to_val e) →
+  head_irreducible (ExternalOp o e) σ →
+  stuck (ExternalOp o e) σ.
+Proof.
+  intros Hval Hirred. split; first done.
+  apply prim_head_irreducible; auto. apply ExternalOp_sub_redexes; eauto.
+Qed.
 
 End goose_lang.
 

@@ -98,7 +98,7 @@ Definition oracle_frag `{hT: traceG Σ} (o: Oracle) :=
   own (oracle_name (trace_tr_names)) (◯ (Excl' (o: OracleO))).
 
 Lemma trace_init `{hT: trace_preG Σ} (l: list event) (o: Oracle):
-  (|==> ∃ H : traceG Σ, trace_auth l ∗ trace_frag l ∗ oracle_auth o ∗ oracle_frag o)%I.
+  ⊢ |==> ∃ H : traceG Σ, trace_auth l ∗ trace_frag l ∗ oracle_auth o ∗ oracle_frag o .
 Proof.
   iMod (own_alloc (● (Excl' (l: traceO)) ⋅ ◯ (Excl' (l: traceO)))) as (γ) "[H1 H2]".
   { apply auth_both_valid; split; eauto. econstructor. }
@@ -108,8 +108,8 @@ Proof.
 Qed.
 
 Lemma trace_name_init `{hT: trace_preG Σ} (l: list event) (o: Oracle):
-  (|==> ∃ name : tr_names, let _ := traceG_update_pre _ _ name in
-                           trace_auth l ∗ trace_frag l ∗ oracle_auth o ∗ oracle_frag o)%I.
+  ⊢ |==> ∃ name : tr_names, let _ := traceG_update_pre _ _ name in
+                           trace_auth l ∗ trace_frag l ∗ oracle_auth o ∗ oracle_frag o.
 Proof.
   iMod (own_alloc (● (Excl' (l: traceO)) ⋅ ◯ (Excl' (l: traceO)))) as (γ) "[H1 H2]".
   { apply auth_both_valid; split; eauto. econstructor. }
@@ -119,8 +119,8 @@ Proof.
 Qed.
 
 Lemma trace_reinit `(hT: traceG Σ) (l: list event) (o: Oracle):
-  (|==> ∃ names : tr_names, let _ := traceG_update Σ hT names in
-     trace_auth l ∗ trace_frag l ∗ oracle_auth o ∗ oracle_frag o)%I.
+  ⊢ |==> ∃ names : tr_names, let _ := traceG_update Σ hT names in
+     trace_auth l ∗ trace_frag l ∗ oracle_auth o ∗ oracle_frag o.
 Proof.
   iMod (own_alloc (● (Excl' (l: traceO)) ⋅ ◯ (Excl' (l: traceO)))) as (γ) "[H1 H2]".
   { apply auth_both_valid; split; eauto. econstructor. }
@@ -526,7 +526,7 @@ Proof.
     replace (1 + strings.length vs1) with (Z.of_nat (S (strings.length vs1))) by lia.
     (* true, but only due to disjointness *)
     admit.
-Admitted.
+Abort.
 
 Theorem concat_replicate_S A n (vs: list A) :
   concat_replicate (S n) vs = vs ++ concat_replicate n vs.
@@ -557,15 +557,39 @@ Proof.
   rewrite big_opM_singleton; iDestruct "Hvs" as "[$ Hvs]". by iApply "IH".
 Qed.
 
-Theorem big_opL_add (M: ofeT) (o: M -> M -> M) {mon:monoid.Monoid o} f start off n :
-  big_opL o f (seq (start + off) n) ≡
-  big_opL o (fun i x => f i (x + off)%nat) (seq start n).
+Definition big_opL_add_spec (M: ofeT) (o: M -> M -> M) {mon:monoid.Monoid o} f start off k n :=
+  Proper (equiv ==> equiv ==> equiv) o ->
+  big_opL o (fun i x => f (i + k)%nat x) (seq (start + off) n) ≡
+  big_opL o (fun i x => f i (x + off)%nat) (seq (start + k)%nat n).
+
+(*
+Eval compute in (fun M o {mon:monoid.Monoid o} f off => big_opL_add_spec M o f 2%nat off 4%nat).
+*)
+
+Theorem big_opL_add (M: ofeT) (o: M -> M -> M) {mon:monoid.Monoid o} f start off k n :
+  Proper (equiv ==> equiv ==> equiv) o ->
+  big_opL o (fun i x => f (k + i)%nat x) (seq (start + off) n) ≡
+  big_opL o (fun i x => f (k + i)%nat (x + off)%nat) (seq start n).
 Proof.
-  revert start off.
+  intros.
+  revert start k off.
   induction n; simpl; auto; intros.
-  (* seems not the right proof strategy; also don't seem to know that op is
-  proper *)
-Abort.
+  apply H; auto.
+  setoid_rewrite Nat.add_succ_r.
+  rewrite <- (IHn (S start) (S k)).
+  simpl; auto.
+Qed.
+
+Theorem big_sepL_offset {b:bi} f off n :
+  big_opL (@bi_sep b) (fun i x => f i x) (seq off n) ≡
+  big_opL bi_sep (fun i x => f i (x + off)%nat) (seq 0%nat n).
+Proof.
+  apply (big_opL_add _ _ _ 0%nat _ 0%nat _ _).
+Qed.
+
+Lemma Zmul_nat_add1_r (x k:nat) :
+  (x + 1)%nat * k = k + x * k.
+Proof. lia. Qed.
 
 Lemma heap_array_replicate_to_nested_mapsto l vs (n : nat) :
   ([∗ map] l' ↦ vm ∈ heap_array l (concat_replicate n vs), l' ↦ vm) -∗
@@ -583,8 +607,11 @@ Proof.
   - setoid_rewrite Nat2Z.inj_add.
     setoid_rewrite <- loc_add_assoc.
     iDestruct ("IH" with "Hconcat") as "Hseq".
-    admit. (* need to move between seq 0 and seq 1 *)
-Admitted.
+    rewrite (big_sepL_offset _ 1%nat).
+    setoid_rewrite Zmul_nat_add1_r.
+    setoid_rewrite <- loc_add_assoc.
+    iExact "Hseq".
+Qed.
 
 Definition mapsto_vals l q vs : iProp Σ :=
   ([∗ list] j↦vj ∈ vs, (l +ₗ j) ↦{q} vj)%I.

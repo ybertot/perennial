@@ -85,6 +85,13 @@ Proof.
     iIntros "(?&$)". by iApply "HPQ".
 Qed.
 
+Lemma pending_alloc:
+  ⊢ |==> ∃ γ, staged_pending γ.
+Proof.
+  iApply (own_alloc (Cinl (Excl ()))).
+  { econstructor. }
+Qed.
+
 Lemma staged_inv_alloc N k E E' P Q Qr:
   ▷ Q ∗ □ (C -∗ Q -∗ P ∗ Qr) ={E}=∗
   ∃ γ γ', staged_inv N k E' E' γ γ' P ∗ staged_value N γ Q Qr ∗ staged_pending γ'.
@@ -93,8 +100,7 @@ Proof.
   iMod (saved_prop_alloc Qr) as (γprop') "#Hsaved'".
   iMod (own_alloc (● (Excl' (γprop, γprop')) ⋅ ◯ (Excl' (γprop, γprop')))) as (γ) "[H1 H2]".
   { apply auth_both_valid_2; [econstructor | reflexivity]. }
-  iMod (own_alloc (Cinl (Excl ()))) as (γ') "H".
-  { econstructor. }
+  iMod (pending_alloc) as (γ') "H".
   iIntros "(HQ&#HQP)".
   iMod (inv_alloc N E _ with "[HQ H1]") as "HI"; last first.
   { iModIntro. iExists γ, γ'. iFrame "H". iSplitL "HI".
@@ -112,12 +118,12 @@ Lemma staged_inv_open E N k E1 E2 γ γ' P Q Qr:
   staged_inv N k E1 E2 γ γ' P ∗
   staged_value N γ Q Qr ={E,E∖↑N}=∗
   (▷ ▷ Q ∗ (∀ Q' Qr', ▷ Q' ∗ □ (C -∗ Q' -∗ |={E1, E2}_k=> P ∗ Qr') ={E∖↑N,E}=∗ staged_value N γ Q' Qr')) ∨
-  (▷ ▷ Qr ∗ C ∗ |={E∖↑N, E}=> emp).
+  (▷ ▷ Qr ∗ C ∗ |={E∖↑N, E}=> staged_value N γ Q True).
 Proof.
   iIntros (??) "(#Hinv&Hval)".
   iDestruct "Hval" as (γprop γprop') "(Hγ&#Hsaved&#Hsaved')".
   iInv N as (γprop_alt γprop'_alt Qsaved Qrsaved) "H" "Hclose".
-  iDestruct "H" as "(>Hγ'&#Hsaved_alt&#Hsaved'_alt&HQ0&Hcase)".
+  iDestruct "H" as "(>Hγ'&#Hsaved_alt&#Hsaved'_alt&#HQ0&Hcase)".
   iDestruct (own_valid_2 with "Hγ' Hγ") as "#H".
   iDestruct "H" as %[Heq%Excl_included%leibniz_equiv _]%auth_both_valid.
   inversion Heq; subst.
@@ -146,16 +152,29 @@ Proof.
       iDestruct (saved_prop_agree with "Hsaved' Hsaved'_alt") as "Hequiv".
       iNext. by iRewrite "Hequiv".
     - iFrame "HC".
-      iMod (saved_prop_alloc P) as (γprop_new) "#Hsaved_new".
       iMod (saved_prop_alloc True) as (γprop'_new) "#Hsaved'_new".
-      iMod (own_update_2 _ _ _ (● Excl' (γprop_new, γprop'_new) ⋅
-                                ◯ Excl' (γprop_new, γprop'_new)) with "Hγ' Hγ") as "[Hγ' Hγ]".
+      iMod (own_update_2 _ _ _ (● Excl' (γprop_alt, γprop'_new) ⋅
+                                ◯ Excl' (γprop_alt, γprop'_new)) with "Hγ' Hγ") as "[Hγ' Hγ]".
       { by apply auth_update, option_local_update, exclusive_local_update. }
       iMod ("Hclose" with "[Hγ']").
-      * iNext. iExists γprop_new, γprop'_new, _, _. iFrame "#". iFrame.
-        iAlways. iIntros. iApply step_fupdN_inner_later; auto; iNext; by iFrame.
-      * eauto.
+      * iNext. iExists γprop_alt, γprop'_new, _, _. iFrame "#". iFrame.
+        iAlways. iIntros. iSpecialize ("HQ0" with "[$] [$]").
+        iApply (step_fupdN_inner_wand' with "HQ0"); auto. iIntros "($&?)".
+      * iModIntro. iExists _, _. iFrame. iFrame. eauto.
   }
+Qed.
+
+Lemma staged_inv_NC_open E N k E1 E2 γ γ' P Q Qr:
+  ↑N ⊆ E →
+  E2 ⊆ E1 →
+  NC ∗
+  staged_inv N k E1 E2 γ γ' P ∗
+  staged_value N γ Q Qr ={E,E∖↑N}=∗
+  (▷ ▷ Q ∗ (∀ Q' Qr', ▷ Q' ∗ □ (C -∗ Q' -∗ |={E1, E2}_k=> P ∗ Qr') ={E∖↑N,E}=∗ staged_value N γ Q' Qr')).
+Proof.
+  iIntros (??) "(HNC&Hinv&Hval)".
+  iMod (staged_inv_open with "[$]") as "[H|(_&HC&_)]"; auto.
+  iDestruct (NC_C with "[$] [$]") as %[].
 Qed.
 
 Lemma staged_inv_weak_open E N k E1 γ γ' P:
@@ -185,5 +204,47 @@ Proof.
   { iNext. iExists _, _, _, _. iFrame "Hγ'". iFrame "#". by iRight. }
   iModIntro. eauto.
 Qed.
+
+(*
+Definition staged_inv_full N k E1 E2 Q Qr P :=
+  (∃ γ γ', staged_inv N k E1 E2 γ γ' P ∗ staged_value N γ Q Qr)%I.
+
+Lemma staged_inv_full_open E N k E1 E2 P Q Qr:
+  ↑N ⊆ E →
+  E2 ⊆ E1 →
+  staged_inv_full N k E1 E2 Q Qr P ={E,E∖↑N}=∗
+  (▷ ▷ Q ∗ (∀ Q' Qr', ▷ Q' ∗ □ (C -∗ Q' -∗ |={E1, E2}_k=> P ∗ Qr')
+                      ={E∖↑N,E}=∗ staged_inv_full N k E1 E2 Q' Qr' P)) ∨
+  (▷ ▷ Qr ∗ C ∗ |={E∖↑N, E}=> staged_inv_full N k E1 E2 Q True P).
+Proof.
+  iIntros (??) "H". iDestruct "H" as (γ γ') "(#Hinv&Hval)".
+  iMod (staged_inv_open with "[$]") as "[H1|H2]"; auto; iModIntro; [iLeft | iRight].
+  - iDestruct "H1" as "($&H1)". iIntros.
+    iMod ("H1" with "[$]") as "H2". iModIntro. iExists _, _. iFrame; eauto.
+  - iDestruct "H2" as "($&$&H)".
+    iMod ("H") as "Hval". iExists _, _. iModIntro; eauto.
+Qed.
+
+Definition sem_staged_inv N k E1 E2 Q Qr P :=
+  (∀ E, ⌜ ↑N ⊆ E ⌝ → ⌜ E2 ⊆ E1 ⌝ ={E,E∖↑N}=∗
+  (▷ ▷ Q ∗ (∀ Q' Qr', ▷ Q' ∗ □ (C -∗ Q' -∗ |={E1, E2}_k=> P ∗ Qr')
+                      ={E∖↑N,E}=∗ staged_inv_full N k E1 E2 Q' Qr' P)) ∨
+  (▷ ▷ Qr ∗ C ∗ |={E∖↑N, E}=> staged_inv_full N k E1 E2 Q True P))%I.
+
+Lemma staged_inv_combine N (N1_ext N2_ext: namespace) k E Q Q' Qr Qr' P P':
+  sem_staged_inv (N.@N1_ext) k (E ∖ ↑ N.@N1_ext) (E ∖ ↑ N.@N1_ext) Q Qr P -∗
+  sem_staged_inv (N.@N2_ext) k (E ∖ ↑ N.@N2_ext) (E ∖ ↑ N.@N2_ext) Q' Qr' P' -∗
+  sem_staged_inv N k (E ∖ ↑N) (E ∖ ↑N) (Q ∗ Q') (Qr ∗ Qr') (P ∗ P').
+Proof.
+  iIntros "H1 H2".
+  iIntros (E' Hin Hsub).
+  rewrite /sem_staged_inv.
+  unshelve (iSpecialize ("H1" $! E' _ _)).
+  { solve_ndisj. }
+  { solve_ndisj. }
+  iMod "H1".
+  iInv "H1".
+Abort
+*)
 
 End inv.

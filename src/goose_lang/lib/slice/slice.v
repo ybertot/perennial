@@ -21,6 +21,13 @@ Implicit Types (q:Qp).
 
 Coercion slice_val (s: Slice.t) : val := (#s.(Slice.ptr), #s.(Slice.sz), #s.(Slice.cap)).
 
+Transparent slice.T.
+Theorem slice_val_ty s t : val_ty (slice_val s) (slice.T t).
+Proof.
+  val_ty.
+Qed.
+Opaque slice.T.
+
 (* is_slice_small is a smaller footprint version if is_slice that imprecisely
 ignores the extra capacity; it allows for weaker preconditions for code which
 doesn't make use of capacity *)
@@ -36,6 +43,24 @@ Lemma is_slice_to_small s t q vs :
   is_slice s t q vs -∗ is_slice_small s t q vs.
 Proof.
   iDestruct 1 as "[$ _]".
+Qed.
+
+Lemma is_slice_small_acc s t q vs :
+  is_slice s t q vs -∗ is_slice_small s t q vs ∗ (∀ vs', is_slice_small s t q vs' -∗ is_slice s t q vs').
+Proof.
+  iDestruct 1 as "[$ Hextra]".
+  iDestruct "Hextra" as (extra Hlen) "Hextra".
+  iIntros (vs') "Hs".
+  iFrame "Hs".
+  iExists _; by iFrame.
+Qed.
+
+Lemma is_slice_small_read s t q vs :
+  is_slice s t q vs -∗ is_slice_small s t q vs ∗ (is_slice_small s t q vs -∗ is_slice s t q vs).
+Proof.
+  iIntros "Hs".
+  iDestruct (is_slice_small_acc with "Hs") as "[$ Hupd]".
+  iApply ("Hupd" $! vs).
 Qed.
 
 Lemma is_slice_of_small s t q vs :
@@ -72,6 +97,7 @@ Qed.
 
 Definition slice_val_fold (ptr: loc) (sz: u64) (cap: u64) :
   (#ptr, #sz, #cap)%V = slice_val (Slice.mk ptr sz cap) := eq_refl.
+
 
 (* TODO: order commands so primitives are opaque only after proofs *)
 Transparent raw_slice.
@@ -122,7 +148,7 @@ Proof.
 Qed.
 
 Theorem is_slice_zero t q :
-  is_slice (Slice.mk null (U64 0) (U64 0)) t q [].
+  ⊢ is_slice (Slice.mk null (U64 0) (U64 0)) t q [].
 Proof.
   iApply is_slice_of_small; first by auto.
   rewrite /is_slice_small /=.
@@ -167,11 +193,12 @@ Ltac word_eq :=
   repeat (f_equal; try word).
 
 Lemma wp_new_slice s E t (sz: u64) :
+  has_zero t ->
   {{{ True }}}
     NewSlice t #sz @ s; E
   {{{ sl, RET slice_val sl; is_slice sl t 1 (replicate (int.nat sz) (zero_val t)) }}}.
 Proof.
-  iIntros (Φ) "_ HΦ".
+  iIntros (Hzero Φ) "_ HΦ".
   wp_call.
   wp_if_destruct.
   - wp_pures.
@@ -382,9 +409,7 @@ Proof.
     assert (int.val (z + 1) = int.val z + 1).
     { rewrite word.unsigned_of_Z.
       rewrite wrap_small; try lia. }
-    replace (word.add z 1) with (U64 (z + 1)); last first.
-    { apply word.unsigned_inj.
-      word. }
+    replace (word.add z 1) with (U64 (z + 1)) by word.
     iSpecialize ("IH" $! (z+1) with "[] []").
     { iPureIntro; lia. }
     { iPureIntro; lia. }
@@ -467,11 +492,12 @@ Proof.
 Qed.
 
 Lemma wp_SliceAppend stk E s t vs x :
+  has_zero t ->
   {{{ is_slice s t 1 vs ∗ ⌜int.val s.(Slice.sz) + 1 < 2^64⌝ ∗ ⌜val_ty x t⌝ }}}
     SliceAppend t s x @ stk; E
   {{{ s', RET slice_val s'; is_slice s' t 1 (vs ++ [x]) }}}.
 Proof.
-  iIntros (Φ) "(Hs&%) HΦ".
+  iIntros (Hzero Φ) "(Hs&%) HΦ".
   destruct H as [Hbound Hty].
   wp_lam; repeat wp_step.
   repeat wp_step.
@@ -554,26 +580,40 @@ Proof.
 Qed.
 
 Lemma wp_SliceSet stk E s t vs (i: u64) (x: val) :
-  {{{ is_slice s t 1 vs ∗ ⌜ is_Some (vs !! int.nat i) ⌝ ∗ ⌜val_ty x t⌝ }}}
+  {{{ is_slice_small s t 1 vs ∗ ⌜ is_Some (vs !! int.nat i) ⌝ ∗ ⌜val_ty x t⌝ }}}
     SliceSet t s #i x @ stk; E
-  {{{ RET #(); is_slice s t 1 (<[int.nat i:=x]> vs) }}}.
+  {{{ RET #(); is_slice_small s t 1 (<[int.nat i:=x]> vs) }}}.
 Proof.
   iIntros (Φ) "[Hs %] HΦ".
   destruct H as [Hlookup Hty].
   destruct s as [ptr sz].
   wp_call.
   wp_call.
-  iDestruct "Hs" as "((Hptr&%) & Hfree)".
+  iDestruct "Hs" as "(Hptr&%)".
   simpl in H |- *.
   replace (int.val i) with (Z.of_nat (int.nat i)) by word.
   wp_apply (wp_store_offset with "Hptr"); [ | done | iIntros "Hptr" ]; auto.
   iApply "HΦ".
-  rewrite /is_slice /=.
-  iFrame.
   iSplitL.
   { iExactEq "Hptr"; word_eq. }
   iPureIntro.
   rewrite insert_length; auto.
 Qed.
 
+(* using full ownership of the slice *)
+Lemma wp_SliceSet_full stk E s t vs (i: u64) (x: val) :
+  {{{ is_slice s t 1 vs ∗ ⌜ is_Some (vs !! int.nat i) ⌝ ∗ ⌜val_ty x t⌝ }}}
+    SliceSet t s #i x @ stk; E
+  {{{ RET #(); is_slice s t 1 (<[int.nat i:=x]> vs) }}}.
+Proof.
+  iIntros (Φ) "[Hs %] HΦ".
+  iDestruct (is_slice_small_acc with "Hs") as "[Hs Hs_upd]".
+  wp_apply (wp_SliceSet with "[$Hs //]").
+  iIntros "Hs".
+  iApply "HΦ".
+  iApply ("Hs_upd" with "[$]").
+Qed.
+
 End goose_lang.
+
+Hint Resolve slice_val_ty : val_ty.

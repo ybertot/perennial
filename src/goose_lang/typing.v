@@ -62,11 +62,9 @@ Infix "->" := arrowT : heap_type.
 
 Reserved Notation "Γ ⊢ e : A" (at level 74, e, A at next level).
 Reserved Notation "Γ '⊢v' v : A" (at level 74, v, A at next level).
-Reserved Notation "⊢ v : A" (at level 90, v at next level, A at next level).
 
 Class ext_types (ext:ext_op) :=
   { val_tys :> val_types;
-    val_ty_def : ext_tys -> ext_val;
     get_ext_tys: external -> ty * ty; (* the argument type and return type *)
   }.
 
@@ -100,10 +98,22 @@ Section goose_lang.
     | mapValT vt => MapNilV (zero_val vt)
     | prodT t1 t2 => (zero_val t1, zero_val t2)
     | sumT t1 t2 => InjLV (zero_val t1)
-    | arrowT t1 t2 => λ: <>, zero_val t2
+    | arrowT t1 t2 => (λ: <>, Val (zero_val t2))%V
     | arrayT t => #null
     | structRefT ts => #null
-    | extT x => ExtV (val_ty_def x)
+    | extT x => #() (* dummy value of wrong type *)
+    end.
+
+  Fixpoint has_zero (t:ty): Prop :=
+    match t with
+    | baseT _ => True
+    | mapValT t => has_zero t
+    | prodT t1 t2 => has_zero t1 ∧ has_zero t2
+    | sumT t1 t2 => has_zero t1 ∧ has_zero t2
+    | arrowT _ t2 => has_zero t2
+    | arrayT _ => True
+    | structRefT _ => True
+    | extT _ => False
     end.
 
   Fixpoint ty_size (t:ty) : Z :=
@@ -356,18 +366,17 @@ Section goose_lang.
   | mapNilV_hasTy v t :
       Γ ⊢v v : t ->
       Γ ⊢v MapNilV v : mapValT t
-  | ext_def_hasTy x :
-      Γ ⊢v (ExtV (val_ty_def x)) : extT x
   where "Γ ⊢v v : A" := (val_hasTy Γ v A)
   .
 
   Hint Constructors expr_hasTy val_hasTy base_lit_hasTy : core.
 
-  Theorem zero_val_ty ty Γ :
-    Γ ⊢v zero_val ty : ty.
+  Theorem zero_val_ty t Γ :
+    has_zero t ->
+    Γ ⊢v zero_val t : t.
   Proof.
-    generalize dependent Γ.
-    induction ty; simpl; eauto.
+    revert Γ.
+    induction t; simpl; eauto; intros; intuition eauto.
     destruct t; eauto.
   Qed.
 
@@ -453,12 +462,13 @@ Section goose_lang.
   Qed.
 
   Definition NewMap (t:ty) : expr := Alloc (zero_val (mapValT t)).
-  Theorem NewMap_t t Γ : Γ ⊢ NewMap t : mapT t.
+  Theorem NewMap_t t Γ : has_zero t -> Γ ⊢ NewMap t : mapT t.
   Proof.
+    intros Hzero.
     unfold NewMap, mapT.
     eapply (ref_hasTy (mapValT t)); eauto.
     constructor.
-    apply zero_val_ty.
+    apply zero_val_ty; eauto.
   Qed.
 
 End goose_lang.
@@ -469,8 +479,6 @@ Bind Scope heap_type with ty.
 
 Notation "Γ ⊢ e : A" := (expr_hasTy Γ%ht e A%ht) : heap_types.
 Notation "Γ ⊢v v : A" := (val_hasTy Γ%ht v A%ht) : heap_types.
-Notation "⊢ v : A" := (base_lit_hasTy v%V A%ht) (only printing) : heap_types.
-Notation "⊢ e : A" := (val_hasTy ∅ e%V A%ht) : heap_types.
 
 Theorem insert_anon `{ext_ty: ext_types} t : (<[BAnon := t]> : Ctx -> Ctx) = (fun Γ => Γ).
 Proof.
@@ -525,6 +533,9 @@ Ltac typecheck :=
   try lazymatch goal with
       | [ |- _ = _ ] => reflexivity
       end.
+
+Hint Extern 1 (has_zero _) => (compute; intuition idtac) : core.
+Hint Extern 1 (has_zero _) => (compute; intuition idtac) : val_ty.
 
 (* the first notation is a location offset in the model (a pure function over
 locations) while the second is a GooseLang expression; the second evaluates to

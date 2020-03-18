@@ -23,10 +23,10 @@ m = jc.get_module('Main')
 stateType = m.get_type("state")
 
 sym = json_sym.SymbolicJSON(jc)
-sym.register_base_type("Z", lambda args: z3.IntSort())
 sym.register_base_type("positive", lambda args: z3.IntSort())
 sym.register_base_type("string", lambda args: z3.StringSort())
-# u0 is a u64? and u1 is a u32...
+
+# XXX u0 is a u64? and u1 is a u32...
 sym.register_base_type("u0", lambda args: z3.BitVecSort(64))
 sym.register_base_type("u1", lambda args: z3.BitVecSort(32))
 sym.register_base_type("gmap", lambda args: z3.ArraySort(sym.z3_sort(args[0]),
@@ -46,8 +46,6 @@ sym.register_base_type("list", lambda args: z3.SeqSort(sym.z3_sort({
     'mod': m,
 })))
 sym.register_base_type("fh", lambda args: z3.StringSort())
-#sym.register_base_type("uint32", lambda args: z3.BitVecSort(32))
-#sym.register_base_type("uint64", lambda args: z3.BitVecSort(64))
 
 ### Fix later
 sym.register_base_type("fileid", lambda args: z3.BitVecSort(64))
@@ -74,7 +72,7 @@ m.redefine_term('map_insert', {
         'id': 'map_insert',
     },
 })
-for id in ('ret', 'reads', 'modify', 'symBool', 'symU32', 'symU64', 'symAssert', 'eq_dec_fh', 'len_buf', 'eqDec_time', 'eq_dec_inode_state', 'countable_inode_state', 'countable_fh', 'resize_buf',):
+for id in ('gtb', 'u2', 'u3', 'ret', 'reads', 'modify', 'symBool', 'symU32', 'symU64', 'symAssert', 'eq_dec_fh', 'len_buf', 'eqDec_time', 'eq_dec_inode_state', 'countable_inode_state', 'countable_fh', 'resize_buf', 'time_ge'):
     m.redefine_term(id, {
         'what': 'expr:special',
         'id': id,
@@ -128,8 +126,6 @@ s.add(res0.sort().recognizer(0)(res0))
 s.add(res1.sort().recognizer(1)(res1))
 assert(s.check() == z3.unsat)
 
-
-
 def lift_ftype(t):
     ftypeSort = sym.z3_sort(m.get_type("ftype"))
     if t == rfc1813.const.NF3REG:
@@ -173,7 +169,7 @@ def lift_fattr3(fattr3):
 s = z3.Solver()
 s.set(**{"solver.smtlib2_log": "filename.smt2"})
 
-trace = nfs_trace.call_reply_pairs("./nfs.pcap")
+'''trace = nfs_trace.call_reply_pairs("./nfs.pcap")
 for (proc, call, reply) in trace:
     if proc == 1: #getattr
         arg = z3.StringVal(call.object.data)
@@ -226,7 +222,7 @@ for (proc, call, reply) in trace:
     current_state = next_state
 
 print s.check()
-
+'''
 
 ## symbolic nfs server: ask for satisfying assignment for new RPC call
 current_state = z3.Const('s_init', stateSort)
