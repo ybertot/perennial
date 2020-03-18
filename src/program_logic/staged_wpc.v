@@ -251,19 +251,21 @@ Proof.
     { set_solver+. }
 Qed.
 
-Lemma wpc_staged_inv_open' s k k' k'' E1 E1' E2 e Φ Φc Q Qrest Qnew P N γ γ' :
+Lemma wpc_staged_inv_open' Γ s k k' k'' E1 E1' E2 e Φ Φc Q Qrest Qnew P N b bset :
   E1 ⊆ E1' →
   ↑N ⊆ E1 →
   k'' ≤ k →
   (2 * (S k'')) ≤ k' →
   (2 * (S k)) ≤ k' →
   to_val e = None →
-  staged_inv N k' (E1' ∖ ↑N) (E1' ∖ ↑N) γ γ' P ∗
-  staged_value N γ Q Qrest ∗
-  (Φc ∧ (Q -∗ WPC e @ NotStuck; k''; (E1 ∖ ↑N); ∅ {{λ v, Qnew v ∗ □ (Qnew v -∗ P) ∗ (staged_value N γ (Qnew v) True -∗  (Φ v ∧ Φc))}} {{ Φc ∗ P }})) ⊢
+  staged_inv Γ N k' (E1' ∖ ↑N) (E1' ∖ ↑N) ∗
+  staged_bundle Γ Q Qrest b bset ∗
+  (Φc ∧ (Q -∗ WPC e @ NotStuck; k''; (E1 ∖ ↑N); ∅ {{λ v, Qnew v ∗ □ (Qnew v -∗ P) ∗ (staged_bundle Γ (Qnew v) True false bset -∗  (Φ v ∧ Φc))}} {{ Φc ∗ P }})) ∗
+  staged_crash Γ P bset
+  ⊢
   WPC e @ s; (2 * (S (S (S k)))); E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
-  iIntros (????? Hval) "(#Hinv&Hval&Hwp)".
+  iIntros (????? Hval) "(#Hinv&Hval&Hwp&#Hstaged_crash)".
   rewrite !wpc_unfold /wpc_pre.
   iSplit; last first.
   {
@@ -325,8 +327,8 @@ Proof.
   iDestruct "H" as "(Hσ&H&Hefs&HNC)".
   iSpecialize ("Hclo" $!
                       (WPC e2 @ k''; E1 ∖ ↑N;∅
-                        {{ v, Qnew v ∗ □ (Qnew v -∗ P) ∗ (staged_value N γ (Qnew v) True -∗ Φ v ∧ Φc) }}{{Φc ∗ P}})%I
-               Φc with "[H]").
+                        {{ v, Qnew v ∗ □ (Qnew v -∗ P) ∗ (staged_bundle Γ (Qnew v) True false bset -∗ Φ v ∧ Φc) }}{{Φc ∗ P}})%I
+               Φc true with "[H]").
   { iSplitL "H".
     - iNext. iFrame.
     - iAlways. iIntros "HC H".
@@ -352,9 +354,9 @@ Proof.
   iMod (fupd_intro_mask' _ ∅) as "Hclo''"; first by set_solver+.
   iModIntro. iModIntro. iNext. iMod "Hclo''" as "_".
   iModIntro.
-  iPoseProof (wpc_staged_inv_open_aux' s k k' k'' E1 E1'
-                _ _ Φ Φc P Qnew N γ with "[Hclo HNC]") as "H"; try assumption.
-  { iIntros. iFrame "Hinv". iFrame. }
+  iPoseProof (wpc_staged_inv_open_aux' Γ s k k' k'' E1 E1'
+                _ _ Φ Φc P Qnew N with "[Hclo HNC]") as "H"; try assumption.
+  { iIntros. iFrame "Hinv". iFrame. eauto. }
   iApply (step_fupdN_inner_wand with "H"); auto.
   iIntros "(Hwp&?)". iFrame.
   iSplitL "Hwp".
