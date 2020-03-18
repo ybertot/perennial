@@ -91,11 +91,18 @@ Definition staged_bundle (Q Q': iProp Σ) b (bundle: gset nat) : iProp Σ :=
       saved_prop_own γprop Qalt ∗
       saved_prop_own γprop' Qalt').
 
+(*
 Definition staged_crash (i: nat) (P: iProp Σ) : iProp Σ :=
   (∃ γ, meta (hG := sghG) i cN γ ∗ saved_prop_own γ P).
+*)
 
-Definition staged_crash_pending (i: nat) : iProp Σ :=
-  (∃ γ, meta (hG := sghG) i pN γ ∗ staged_pending γ).
+Definition staged_crash (P: iProp Σ) s : iProp Σ :=
+  (∃ Ps, ([∗ set] i ∈ s, ∃ γ, meta (hG := sghG) i cN γ ∗ saved_prop_own γ (Ps i)) ∗
+         □ (P -∗ ([∗ set] i ∈ s, Ps i))).
+
+Definition staged_crash_pending (P: iProp Σ) i : iProp Σ :=
+  (∃ γ, meta (hG := sghG) i pN γ ∗ staged_pending γ) ∗
+  (∃ γ, meta (hG := sghG) i cN γ ∗ saved_prop_own γ P).
 
 Definition bunch_wf_later k E E' (Ps Pr Qc: nat → iProp Σ) i bunch :=
   (∃ (γ: gname) (b: bool) γprop_stored γprop_remainder, meta (hG := sphG) i bN γ ∗
@@ -120,6 +127,38 @@ Proof.
   iDestruct "H" as (????) "H".
   iDestruct "H" as "(>Hm&>Hown&Hsaved1&Hsaved2&Hwand)".
   iModIntro. iExists _, _, _, _. iFrame.
+Qed.
+
+Lemma bunches_wf_pers_lookup k E E' σ Ps Pr Qc i s γ (b: bool) γprop_stored γprop_remainder:
+  σ !! i = Some s →
+  meta (hG := sphG) i bN γ -∗
+  own γ (◯ Excl' (b, (γprop_stored, γprop_remainder))) -∗
+  bunches_wf k E E' σ Ps Pr Qc -∗
+     saved_prop_own γprop_stored (Ps i) ∗
+     saved_prop_own γprop_remainder (Pr i) ∗
+     □ (C -∗ (Ps i) -∗ if b then |={E, E'}_k=> ([∗ set] j∈s, (Qc j)) ∗ (Pr i)
+                            else ([∗ set] j∈s, (Qc j)) ∗ (Pr i))%I.
+Proof.
+  iIntros (?) "#Hm Hown Hbunch".
+  rewrite /bunches_wf.
+  iDestruct (big_sepM_lookup with "Hbunch") as "Hb"; first eauto.
+  rewrite /bunch_wf. iDestruct "Hb" as (γ' ???) "(?&Hown'&?&?&?)".
+  iDestruct (meta_agree with "Hm [$]") as %Heq. subst.
+  unify_ghost.
+  iFrame.
+Qed.
+
+Lemma bunches_wf_later_pers_lookup k E E' σ Ps Pr Qc i s γ (b: bool) γprop_stored γprop_remainder:
+  σ !! i = Some s →
+  meta (hG := sphG) i bN γ -∗
+  own γ (◯ Excl' (b, (γprop_stored, γprop_remainder))) -∗
+  ▷ bunches_wf k E E' σ Ps Pr Qc -∗
+     ▷ (saved_prop_own γprop_stored (Ps i) ∗
+        saved_prop_own γprop_remainder (Pr i) ∗
+        □ (C -∗ (Ps i) -∗ if b then |={E, E'}_k=> ([∗ set] j∈s, (Qc j)) ∗ (Pr i)
+                            else ([∗ set] j∈s, (Qc j)) ∗ (Pr i)))%I.
+Proof.
+  iIntros. iNext. iApply (bunches_wf_pers_lookup with "[$] [$] [$]"); eauto.
 Qed.
 
 Implicit Types N : namespace.
@@ -175,7 +214,7 @@ Lemma staged_inv_alloc N k E E' P Q Qr:
   ↑N ⊆ E →
   staged_inv N k E' E' ∗
   ▷ Q ∗ □ (C -∗ Q -∗ P ∗ Qr) ={E}=∗
-  ∃ i, staged_bundle Q Qr false {[i]} ∗ staged_crash i P ∗ staged_crash_pending i.
+  ∃ i, staged_bundle Q Qr false {[i]} ∗ staged_crash P {[i]} ∗ staged_crash_pending P i.
 Proof.
   iIntros (?) "(Hinv&HQ&#HQP)".
   iInv "Hinv" as "H" "Hclo".
@@ -286,11 +325,58 @@ Proof.
   iSplitL "Hbundle H2".
   { iExists _, _, _, _, Q, Qr. iFrame. iFrame "#". eauto. }
   iSplitL "".
-  { iExists _. iFrame "#". }
-  iExists _. iFrame. iFrame "#".
+  { iExists _. rewrite ?big_sepS_singleton. iFrame "#".
+    iSplitL "".
+    - iExists _. iFrame "#".
+    - iAlways; eauto.
+  }
+  iSplitL.
+  { iExists _. iFrame. iFrame "#". }
+  { iExists _. iFrame. iFrame "#". }
 Qed.
 
-Lemma staged_inv_join N k E E' Q1 Qr1 Q2 Qr2 s1 s2:
+Lemma later_equiv_big_sepS {L} `{Countable L} (s: gset L) (P Q: L → iProp Σ):
+  ([∗ set] i ∈ s, ▷ (P i ≡ Q i)) -∗
+  (▷ (([∗ set] i ∈ s, P i) ≡ ([∗ set] i ∈ s, Q i))) : iProp Σ.
+Proof.
+  induction s using set_ind_L.
+  - rewrite ?big_sepS_empty. eauto.
+  - iIntros "H". rewrite ?big_sepS_insert //.
+    iDestruct "H" as "(H1&H2)".
+    iPoseProof (IHs with "H2") as "H2".
+    iNext. iRewrite "H1". iRewrite "H2". eauto.
+Qed.
+
+Lemma staged_crash_agree σ s Pc_set Pc:
+  s ⊆ dom (gset nat) σ →
+  crash_prop_wf σ Pc -∗
+  ([∗ set] i ∈ s, ∃ γ : gname, meta i cN γ ∗ saved_prop_own γ (Pc_set i)) -∗
+  ▷ (([∗ set] i ∈ s, Pc_set i) ≡ ([∗ set] i ∈ s, Pc i)).
+Proof.
+  iIntros (Hsub) "Hc Hown".
+  iApply later_equiv_big_sepS.
+  rewrite /crash_prop_wf.
+  iDestruct (big_sepM_forall with "Hc") as "#Hc1".
+  iDestruct (big_sepS_forall with "Hown") as "#Hc2".
+  iApply big_sepS_forall.
+  iIntros (k Hin).
+  assert (k ∈ dom (gset nat) σ) as Hin' by set_solver.
+  apply elem_of_dom in Hin' as ([]&Hin').
+  iDestruct ("Hc1" with "[//]") as (γ1) "(Hmeta1&Hsaved1)".
+  iDestruct ("Hc2" with "[//]") as (γ2) "(Hmeta2&Hsaved2)".
+  iDestruct (meta_agree with "Hmeta1 Hmeta2") as %Heq1. subst.
+  iDestruct (saved_prop_agree with "Hsaved1 Hsaved2") as "Hequiv".
+  iNext. iRewrite "Hequiv"; eauto.
+Qed.
+
+Lemma staged_crash_agree_later σ s Pc_set Pc:
+  s ⊆ dom (gset nat) σ →
+  ▷ crash_prop_wf σ Pc -∗
+  ([∗ set] i ∈ s, ∃ γ : gname, meta i cN γ ∗ saved_prop_own γ (Pc_set i)) -∗
+  ▷▷ (([∗ set] i ∈ s, Pc_set i) ≡ ([∗ set] i ∈ s, Pc i)).
+Proof. iIntros. iNext. by iApply staged_crash_agree. Qed.
+
+Lemma staged_bundle_join N k E E' Q1 Qr1 Q2 Qr2 s1 s2:
   ↑N ⊆ E →
   staged_inv N k E' E' ∗
   staged_bundle Q1 Qr1 false s1 ∗
@@ -387,9 +473,51 @@ Proof.
     apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
     rewrite ?decide_False //=.
   }
-  (* XXX: show that inv lived / inv crashed is preserved *)
   iMod ("Hclo" with "[-Hbid1 Hown1]").
-  { admit. }
+  { iNext. iExists _, _, _, _, _. iFrame "Hcrash_wf Hbunches Hpart Hheap".
+    iSplitL "".
+    { iPureIntro. rewrite Hdom. rewrite -union_partition_move //.
+      { rewrite Hin2. f_equal; set_solver+. }
+    }
+    iDestruct "Hstatus" as "[Hlive|(HC&Hcrashed)]".
+    - iLeft. rewrite /inv_live.
+      iApply big_sepM_insert_delete.
+      rewrite delete_insert_ne //.
+      rewrite big_sepM_insert_delete.
+      iDestruct (big_sepM_delete _ _ bid2 with "Hlive") as "(Hb1&Hlive)"; first done.
+      iDestruct (big_sepM_delete _ _ bid1 with "Hlive") as "(Hb2&Hlive)".
+      { rewrite lookup_delete_ne //. }
+      rewrite /Qs'.
+      destruct (decide (bid1 = bid2)) => //=.
+      destruct (decide (bid2 = bid1)) => //=.
+      rewrite ?decide_True //=.
+      iFrame.
+      iApply (big_sepM_mono with "Hlive").
+      { iIntros (?? Hlookup) "H".
+        apply lookup_delete_Some in Hlookup as (Hneq1&Hlookup).
+        apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
+        rewrite ?decide_False //=.
+      }
+    - iRight. rewrite /inv_crashed. iFrame "HC".
+      iApply big_sepM_insert_delete.
+      rewrite delete_insert_ne //.
+      rewrite big_sepM_insert_delete.
+      iDestruct (big_sepM_delete _ _ bid2 with "Hcrashed") as "((Hb1&Hb1')&Hcrashed)"; first done.
+      iDestruct (big_sepM_delete _ _ bid1 with "Hcrashed") as "((Hb2&Hb2')&Hcrashed)".
+      { rewrite lookup_delete_ne //. }
+      rewrite /Qsr'.
+      destruct (decide (bid1 = bid2)) => //=.
+      destruct (decide (bid2 = bid1)) => //=.
+      rewrite ?decide_True //=.
+      iFrame. rewrite big_sepS_empty big_sepS_union //. iFrame.
+      iSplitL ""; first done.
+      iApply (big_sepM_mono with "Hcrashed").
+      { iIntros (?? Hlookup) "H".
+        apply lookup_delete_Some in Hlookup as (Hneq1&Hlookup).
+        apply lookup_delete_Some in Hlookup as (Hneq2&Hlookup).
+        rewrite ?decide_False //=.
+      }
+  }
   iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#".
   rewrite -?later_sep. iNext.
   iDestruct (saved_prop_agree with "Hsaved1 Hsaved1'") as "Hequiv1'".
@@ -402,81 +530,183 @@ Proof.
   iRewrite "Hequiv1_alt". iRewrite "Hequivr1'".
   iRewrite "Hequiv2_alt". iRewrite "Hequivr2'".
   eauto.
-Abort.
-
-Lemma staged_inv_open E N k E1 E2 γ γ' P Q Qr:
-  ↑N ⊆ E →
-  E2 ⊆ E1 →
-  staged_inv N k E1 E2 γ γ' P ∗
-  staged_value N γ Q Qr ={E,E∖↑N}=∗
-  (▷ ▷ Q ∗ (∀ Q' Qr', ▷ Q' ∗ □ (C -∗ Q' -∗ |={E1, E2}_k=> P ∗ Qr') ={E∖↑N,E}=∗ staged_value N γ Q' Qr')) ∨
-  (▷ ▷ Qr ∗ C ∗ |={E∖↑N, E}=> staged_value N γ Q True).
-Proof.
-  iIntros (??) "(#Hinv&Hval)".
-  iDestruct "Hval" as (γprop γprop') "(Hγ&#Hsaved&#Hsaved')".
-  iInv N as (γprop_alt γprop'_alt Qsaved Qrsaved) "H" "Hclose".
-  iDestruct "H" as "(>Hγ'&#Hsaved_alt&#Hsaved'_alt&#HQ0&Hcase)".
-  iDestruct (own_valid_2 with "Hγ' Hγ") as "#H".
-  iDestruct "H" as %[Heq%Excl_included%leibniz_equiv _]%auth_both_valid.
-  inversion Heq; subst.
-  iDestruct "Hcase" as "[HQ|Hdone]".
-  {
-    iModIntro. iLeft.
-    iSplitL "HQ".
-    - iModIntro.
-      iDestruct (saved_prop_agree with "Hsaved Hsaved_alt") as "Hequiv".
-      iNext. by iRewrite "Hequiv".
-    - iIntros (Q' Qr'). iIntros "(HQ'&#HQ'impl)".
-      iMod (saved_prop_alloc Q') as (γprop_new) "#Hsaved_new".
-      iMod (saved_prop_alloc Qr') as (γprop'_new) "#Hsaved'_new".
-      iMod (own_update_2 _ _ _ (● Excl' (γprop_new, γprop'_new) ⋅
-                                ◯ Excl' (γprop_new, γprop'_new)) with "Hγ' Hγ") as "[Hγ' Hγ]".
-      { by apply auth_update, option_local_update, exclusive_local_update. }
-      iMod ("Hclose" with "[HQ' Hγ']").
-      * iNext. iExists γprop_new, γprop'_new, _, _. iFrame "#". iFrame.
-      * iModIntro. iExists γprop_new, γprop'_new. iFrame "#". iFrame.
-  }
-  {
-    iDestruct "Hdone" as "(HQ&>#HC&>#Hdone)".
-    iModIntro. iRight.
-    iSplitL "HQ".
-    - iModIntro.
-      iDestruct (saved_prop_agree with "Hsaved' Hsaved'_alt") as "Hequiv".
-      iNext. by iRewrite "Hequiv".
-    - iFrame "HC".
-      iMod (saved_prop_alloc True) as (γprop'_new) "#Hsaved'_new".
-      iMod (own_update_2 _ _ _ (● Excl' (γprop_alt, γprop'_new) ⋅
-                                ◯ Excl' (γprop_alt, γprop'_new)) with "Hγ' Hγ") as "[Hγ' Hγ]".
-      { by apply auth_update, option_local_update, exclusive_local_update. }
-      iMod ("Hclose" with "[Hγ']").
-      * iNext. iExists γprop_alt, γprop'_new, _, _. iFrame "#". iFrame.
-        iAlways. iIntros. iSpecialize ("HQ0" with "[$] [$]").
-        iApply (step_fupdN_inner_wand' with "HQ0"); auto. iIntros "($&?)".
-      * iModIntro. iExists _, _. iFrame. iFrame. eauto.
-  }
 Qed.
 
-Lemma staged_inv_NC_open E N k E1 E2 γ γ' P Q Qr:
+Lemma staged_inv_open E N k E1 E2 P Q Qr b s:
+  ↑N ⊆ E →
+  E2 ⊆ E1 →
+  staged_inv N k E1 E2 ∗
+  staged_bundle Q Qr b s ∗
+  staged_crash P s ={E,E∖↑N}=∗
+  (▷ ▷ Q ∗ ▷ (∀ Q' Qr' b', ▷ Q' ∗ □ (C -∗ Q' -∗ if (b': bool) then |={E1, E2}_k=> P ∗ Qr' else
+                                                P ∗ Qr')
+                         ={E∖↑N,E}=∗ staged_bundle Q' Qr' b' s)) ∨
+  (▷ ▷ Qr ∗ C ∗ |={E∖↑N, E}=> staged_bundle Q True b s).
+Proof.
+  iIntros (??) "(#Hinv&Hb&Hcrash)".
+  iDestruct "Hcrash" as (Pc_set) "(#Hcrash_agree&#Hcrash_wand)".
+  iDestruct "Hb" as (bid γ γprop γprop' Qalt Qralt)
+                       "(Hbid&#Hb_meta&Hown&#Hequiv&#Hequiv_alt&#Hsaved&#Hsavedr)".
+  iInv "Hinv" as "H" "Hclo".
+  iDestruct "H" as (σ σdom Qs Qsr Pc) "(>Hdom&>Hpart&>Hheap&Hcrash_wf&Hbunch_wf&Hstatus)".
+  iDestruct "Hdom" as %Hdom.
+  iDestruct (gen_heap_valid with "[Hpart] Hbid") as %Hin.
+  { iDestruct "Hpart" as "(?&$)". }
+  iDestruct (bunches_wf_later_pers_lookup with "[$] [$] [$]") as "(#HQs&#HQr&#Hwand)"; first eauto.
+  iDestruct (staged_crash_agree_later with "[$] [$]") as "#Hequiv_crash".
+  { rewrite Hdom. by eapply union_partition_subset. }
+  iDestruct "Hstatus" as "[Hlive|(>#HC&Hcrashed)]".
+  - iLeft. rewrite /inv_live.
+    iEval (rewrite big_sepM_later) in "Hlive".
+    iDestruct (big_sepM_delete with "Hlive") as "(Hlive&Hlive_rest)"; first eauto.
+    iModIntro. iSplitL "Hlive".
+    { iNext. iDestruct (saved_prop_agree with "Hsaved HQs") as "Hequiv'".
+      iNext. iRewrite "Hequiv". iRewrite "Hequiv'". auto. }
+    iNext.
+    iIntros (Q' Qr' b') "(HQs'&#Hwand')".
+    iMod (saved_prop_alloc Q') as (γprop_new) "#Hsaved_new".
+    iMod (saved_prop_alloc Qr') as (γprop'_new) "#Hsaved'_new".
+    iMod (bunches_wf_to_later with "Hbunch_wf") as "Hbunch_wf".
+    set (Qs' := (λ k, if decide (k = bid) then Q' else Qs k)).
+    set (Qsr' := (λ k, if decide (k = bid) then Qr' else Qsr k)).
+    iAssert (|==> bunches_wf_later k E1 E2 σ Qs' Qsr' Pc ∗
+                  ▷ saved_prop_own γprop (Qs bid) ∗
+                  ▷ saved_prop_own γprop' (Qsr bid) ∗
+                  own γ (◯ Excl' (b', (γprop_new, γprop'_new))))%I with "[Hbunch_wf Hown]"
+           as ">(Hbunches&#Hsaved1'&#Hsavedr1'&Hown)".
+    { rewrite /bunches_wf_later.
+      iDestruct (big_sepM_delete with "Hbunch_wf") as "(Hb&Hbunch_wf)"; first eauto.
+      rewrite (big_sepM_delete _ σ); last eauto.
+        iDestruct "Hb" as (????) "(Hm&Hown_auth&Hs&Hsr&#Hwand_old)".
+        iDestruct (meta_agree with "Hb_meta Hm") as %<-.
+        unify_ghost.
+        iMod (ghost_var_update γ (b', (γprop_new, γprop'_new)) with "[$] [$]") as "(Hown_auth&$)".
+        rewrite -assoc.
+        iSplitL "Hm Hs Hsr Hown_auth".
+        {
+          rewrite /bunch_wf_later. iModIntro. iExists _, _, _, _. iFrame.
+          rewrite /Qs'/Qsr'.
+          rewrite ?decide_True //. iFrame "#".
+          iNext. iAlways. iIntros "#HC HQ'".
+          iSpecialize ("Hwand'" with "[$] [$]").
+          destruct b'.
+          * iApply (step_fupdN_inner_wand' with "Hwand'"); auto.
+            iIntros "(?&$)". iRewrite -"Hequiv_crash". by iApply "Hcrash_wand".
+          * iDestruct ("Hwand'") as "(?&$)". iRewrite -"Hequiv_crash". by iApply "Hcrash_wand".
+        }
+        iFrame "#".
+        iModIntro. iApply (big_sepM_mono with "Hbunch_wf").
+        iIntros (k0 ? Hlookup_delete).
+        apply lookup_delete_Some in Hlookup_delete as (?&?).
+        rewrite /bunch_wf_later/Qs'/Qsr'. rewrite ?decide_False //=.
+      }
+    iMod ("Hclo" with "[-Hown Hbid]").
+    {
+      iNext. iExists _, _, _, _, _. iFrame.
+      iSplitL ""; first eauto.
+      iLeft. iApply big_sepM_delete; first eauto.
+      rewrite {1}/Qs' decide_True //; iFrame.
+      iApply (big_sepM_mono with "Hlive_rest").
+      { iIntros (k0 ? Hlookup_delete).
+        apply lookup_delete_Some in Hlookup_delete as (?&?).
+        rewrite /Qs'. rewrite decide_False //. }
+    }
+    iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#". eauto.
+  - iRight. rewrite /inv_crashed.
+    iEval (rewrite big_sepM_later) in "Hcrashed".
+    iDestruct (big_sepM_delete with "Hcrashed") as "((Hcrashed&?)&Hcrashed_rest)"; first eauto.
+    iModIntro. iSplitL "Hcrashed".
+    { iNext. iDestruct (saved_prop_agree with "Hsavedr HQr") as "Hequiv'".
+      iNext. iRewrite "Hequiv_alt". iRewrite "Hequiv'". auto. }
+    iFrame "HC".
+    iMod (saved_prop_alloc True%I) as (γprop'_new) "#Hsaved'_new".
+    iMod (bunches_wf_to_later with "Hbunch_wf") as "Hbunch_wf".
+    set (Qs' := Qs).
+    set (Qsr' := (λ k, if decide (k = bid) then True%I else Qsr k)).
+    iAssert (|==> bunches_wf_later k E1 E2 σ Qs' Qsr' Pc ∗
+                  ▷ saved_prop_own γprop (Qs bid) ∗
+                  ▷ saved_prop_own γprop' (Qsr bid) ∗
+                  own γ (◯ Excl' (b, (γprop, γprop'_new))))%I with "[Hbunch_wf Hown]"
+           as ">(Hbunches&#Hsaved1'&#Hsavedr1'&Hown)".
+    { rewrite /bunches_wf_later.
+      iDestruct (big_sepM_delete with "Hbunch_wf") as "(Hb&Hbunch_wf)"; first eauto.
+      rewrite (big_sepM_delete _ σ); last eauto.
+        iDestruct "Hb" as (????) "(Hm&Hown_auth&Hs&Hsr&#Hwand_old)".
+        iDestruct (meta_agree with "Hb_meta Hm") as %<-.
+        unify_ghost.
+        iMod (ghost_var_update γ (b, (γprop, γprop'_new)) with "[$] [$]") as "(Hown_auth&$)".
+        rewrite -assoc.
+        iSplitL "Hm Hs Hsr Hown_auth".
+        {
+          rewrite /bunch_wf_later. iModIntro. iExists _, _, _, _. iFrame.
+          rewrite /Qs'/Qsr'.
+          rewrite ?decide_True //. iFrame "#".
+          iNext. iAlways. iIntros "#HC' HQ'".
+          iSpecialize ("Hwand_old" with "[$] [$]").
+          destruct b.
+          * iApply (step_fupdN_inner_wand' with "Hwand_old"); auto.
+            iIntros "(?&?)". rewrite right_id. eauto.
+          * iDestruct ("Hwand_old") as "(?&?)". rewrite right_id //.
+        }
+        iFrame "#".
+        iModIntro. iApply (big_sepM_mono with "Hbunch_wf").
+        iIntros (k0 ? Hlookup_delete).
+        apply lookup_delete_Some in Hlookup_delete as (?&?).
+        rewrite /bunch_wf_later/Qs'/Qsr'. rewrite ?decide_False //=.
+      }
+    iMod ("Hclo" with "[-Hown Hbid]").
+    {
+      iNext. iExists _, _, _, _, _. iFrame.
+      iSplitL ""; first eauto.
+      iRight. iFrame. iFrame "#". iApply big_sepM_delete; first eauto.
+      rewrite {1}/Qsr' decide_True //; iFrame.
+      iApply (big_sepM_mono with "Hcrashed_rest").
+      { iIntros (k0 ? Hlookup_delete).
+        apply lookup_delete_Some in Hlookup_delete as (?&?).
+        rewrite /Qsr'. rewrite decide_False //. }
+    }
+    iModIntro. iExists _, _, _, _, _, _. iFrame. iFrame "#". eauto.
+Qed.
+
+Lemma staged_inv_NC_open E N k E1 E2 P Q Qr b s:
   ↑N ⊆ E →
   E2 ⊆ E1 →
   NC ∗
-  staged_inv N k E1 E2 γ γ' P ∗
-  staged_value N γ Q Qr ={E,E∖↑N}=∗
-  (▷ ▷ Q ∗ (∀ Q' Qr', ▷ Q' ∗ □ (C -∗ Q' -∗ |={E1, E2}_k=> P ∗ Qr') ={E∖↑N,E}=∗ staged_value N γ Q' Qr')).
+  staged_inv N k E1 E2 ∗
+  staged_bundle Q Qr b s ∗
+  staged_crash P s ={E,E∖↑N}=∗
+  (▷ ▷ Q ∗ ▷ (∀ Q' Qr' b', ▷ Q' ∗ □ (C -∗ Q' -∗ if (b': bool) then |={E1, E2}_k=> P ∗ Qr' else
+                                                P ∗ Qr')
+                         ={E∖↑N,E}=∗ staged_bundle Q' Qr' b' s)).
 Proof.
   iIntros (??) "(HNC&Hinv&Hval)".
   iMod (staged_inv_open with "[$]") as "[H|(_&HC&_)]"; auto.
   iDestruct (NC_C with "[$] [$]") as %[].
 Qed.
 
-Lemma staged_inv_weak_open E N k E1 γ γ' P:
+Lemma staged_inv_weak_open E N k E1 P i:
   ↑N ⊆ E →
   E1 ⊆ E ∖ ↑N →
-  staged_inv N k E1 E1 γ γ' P ∗
-  staged_pending γ' ∗
+  staged_inv N k E1 E1 ∗
+  staged_crash_pending P i ∗
   C -∗ |={E,E}_(S k)=> P.
 Proof.
-  iIntros (??) "(#Hinv&Hpending&#HC)".
+  iIntros (??) "(#Hinv&(Hpending&Hsaved)&#HC)".
+  iInv "Hinv" as "H" "Hclo".
+  iDestruct "H" as (σ σdom Qs Qsr Pc) "(>Hdom&>Hpart&>Hheap&Hcrash_wf&Hbunch_wf&Hstatus)".
+  iDestruct "Hdom" as %Hdom.
+  SearchAbout meta.
+  iDestruct (meta_heap_valid with "[Hpart] Hbid") as %Hin.
+  { iDestruct "Hpart" as "(?&$)". }
+  iDestruct (bunches_wf_later_pers_lookup with "[$] [$] [$]") as "(#HQs&#HQr&#Hwand)"; first eauto.
+  iDestruct (staged_crash_agree_later with "[$] [$]") as "#Hequiv_crash".
+  { rewrite Hdom. by eapply union_partition_subset. }
+  iDestruct "Hstatus" as "[Hlive|(>#HC&Hcrashed)]".
+  
+
+
+
+
   iInv N as (γprop_alt γprop'_alt Qsaved Qrsaved) "H" "Hclose".
   iDestruct "H" as "(>Hγ'&#Hsaved_alt&#Hsaved'_alt&#HQ0&Hcase)".
   iDestruct "Hcase" as "[HQ|Hfalse]"; last first.

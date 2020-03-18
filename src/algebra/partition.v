@@ -66,6 +66,10 @@ Proof.
       apply elem_of_union_r. eapply HP; eauto.
 Qed.
 
+Lemma union_partition_subset σ i s:
+  σ !! i = Some s → s ⊆ union_partition σ.
+Proof. set_unfold. intros. by eapply union_partition_elem_of_2. Qed.
+
 Definition fresh_partition_value (σ: gmap L (gset V)) : V :=
   fresh (union_partition σ).
 
@@ -118,6 +122,30 @@ Proof.
     rewrite frac_valid' in Hval * => Hlt. by apply Qp_not_plus_q_ge_1 in Hlt.
   }
   iPureIntro. split; auto. eapply Hdisj; eauto.
+Qed.
+
+Lemma union_partition_move σ (l1 l2: L) (s1 s1' s2: gset V):
+  l1 ≠ l2 →
+  s1 ## s1' →
+  σ !! l1 = Some (s1 ∪ s1') →
+  σ !! l2 = Some s2 →
+  union_partition σ = union_partition (<[l1:=s1]> (<[l2:=s2 ∪ s1']> σ)).
+Proof.
+  intros Hneq Hdisj Hl1 Hl2.
+  assert (<[l1:=s1]> (<[l2:=s2 ∪ s1']> σ) =
+          <[l1:=s1]> (delete l1 (<[l2:=s2 ∪ s1']> (delete l2 σ)))) as Heq.
+  { by rewrite ?insert_delete. }
+  rewrite Heq.
+
+  assert (σ = <[l1:=s1 ∪ s1']> (delete l1 (<[l2:=s2]> (delete l2 σ)))) as Heq'.
+  { rewrite ?insert_delete ?insert_id //. }
+  rewrite {1}Heq'.
+
+  rewrite /union_partition ?map_fold_insert ?lookup_delete //; try set_solver+.
+  rewrite ?delete_insert_ne //.
+  assert (delete l1 (delete l2 σ) !! l2 = None).
+  { rewrite lookup_delete_ne // lookup_delete //. }
+  rewrite ?map_fold_insert //; set_solver+.
 Qed.
 
 Lemma partition_move σ (l1 l2: L) (s1 s1' s2: gset V):
