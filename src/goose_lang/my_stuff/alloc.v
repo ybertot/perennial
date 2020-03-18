@@ -104,9 +104,6 @@ Definition alloc_fields (l:loc) (next:u64) (bitmap:Slice.t): iProp Σ :=
   l ↦[Alloc.S :: "next"] #next ∗
   l ↦[Alloc.S :: "bitmap"] slice_val bitmap. (* casts Slice.t to a val (see slice.v) *)
 
-(* First stab at a lemma - it's incorrect until further notice. *)
-(* How do I do addition on a u64? *)
-
 (* increment x mod n *)
 Definition mod_inc (x n: u64) : u64 :=
   if (ge_dec (int.nat x + 1) (int.nat n)) then 0 else u64_instance.u64.(@word.add 64) x 1.
