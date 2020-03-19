@@ -849,7 +849,7 @@ Qed.
 
 End definitions.
 
-Lemma staved_inv_init `{!invG Σ, !stagedG Σ, !crashG Σ} N k E1 E2 E:
+Lemma staged_inv_init `{!invG Σ, !stagedG Σ, !crashG Σ} N k E1 E2 E:
   (|={E}=> ∃ Γ, staged_inv Γ N k E1 E2)%I.
 Proof.
   iMod (partition_init (L := nat) (V := nat)) as (n1) "H1".

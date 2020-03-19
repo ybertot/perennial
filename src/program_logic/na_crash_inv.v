@@ -19,30 +19,42 @@ Implicit Types Φc : iProp Σ.
 Implicit Types v : val Λ.
 Implicit Types e : expr Λ.
 
-Definition na_crash_inv N k P :=
-  (∃ γ γ', staged_inv N k (⊤ ∖ ↑N) (⊤ ∖ ↑N) γ γ' P)%I.
+Definition na_crash_inv Γ N k :=
+  (staged_inv Γ N k (⊤ ∖ ↑N) (⊤ ∖ ↑N))%I.
 
-Definition na_crash_inv_full N k Q P :=
-  (∃ γ γ' Qr, staged_inv N k (⊤ ∖ ↑N) (⊤ ∖ ↑N) γ γ' P ∗ staged_value N γ Q Qr ∗ □ (Q -∗ P))%I.
+Definition na_crash_bundle Γ N k Q bset :=
+  (∃ Qr, staged_inv Γ N k (⊤ ∖ ↑N) (⊤ ∖ ↑N) ∗ staged_bundle Γ Q Qr false bset)%I.
 
-Definition na_crash_inv_pending N k P :=
-  (∃ γ γ', staged_inv N k (⊤ ∖ ↑N) (⊤ ∖ ↑N) γ γ' P ∗ staged_pending γ')%I.
+Definition na_crash_val Γ P bset :=
+  (staged_crash Γ P bset)%I.
 
-Global Instance na_crash_inv_pers N k P : Persistent (na_crash_inv N k P).
+Definition na_crash_pending Γ N k P :=
+  (∃ i, staged_inv Γ N k (⊤ ∖ ↑N) (⊤ ∖ ↑N) ∗ staged_crash_pending Γ P i)%I.
+
+Global Instance na_crash_inv_pers Γ N k : Persistent (na_crash_inv Γ N k).
 Proof. apply _. Qed.
 
-Lemma na_crash_inv_alloc N k E P Q:
-  ▷ Q ∗ □ (Q -∗ P) ={E}=∗
-  na_crash_inv_full N k Q P ∗ na_crash_inv_pending N k P.
+Global Instance na_crash_val_pers Γ P bset : Persistent (na_crash_val Γ P bset).
+Proof. apply _. Qed.
+
+Lemma na_crash_inv_init N k E:
+  (|={E}=> ∃ Γ, na_crash_inv Γ N k)%I.
+Proof. iMod (staged_inv_init) as (Γ) "H". iExists Γ. iFrame "H". eauto. Qed.
+
+Lemma na_crash_inv_alloc Γ N k E P Q:
+  ↑N ⊆ E →
+  na_crash_inv Γ N k -∗
+  ▷ Q -∗ □ (Q -∗ P) ={E}=∗
+  ∃ i, na_crash_bundle Γ N k Q {[i]} ∗ na_crash_val Γ P {[i]} ∗ na_crash_pending Γ N k P.
 Proof.
-  iIntros "HQP".
-  iDestruct "HQP" as "(HQ&#HQP)".
-  iMod (staged_inv_alloc N k E (⊤ ∖ ↑N) P Q True%I with "[HQ]") as (γ γ') "(#Hinv&Hval&Hpend)".
-  { iFrame. iAlways. iIntros. iDestruct ("HQP" with "[$]") as "$". }
-  iModIntro.
-  iSplitL "Hval".
-  - iExists γ, γ', _. iFrame. iFrame "Hinv". iAlways; eauto.
-  - iExists γ, _. iFrame. iFrame "Hinv".
+  iIntros (?) "#Hinv HQ #HQP".
+  iMod (staged_inv_alloc Γ N k E (⊤ ∖ ↑N) P Q True%I with "[HQ]") as (i') "(Hbundle&#Hval&Hpend)".
+  { auto. }
+  { iFrame "#". iFrame. iAlways; iIntros; eauto. rewrite right_id. iApply "HQP"; eauto. }
+  iModIntro. iExists i'. iFrame "#".
+  iSplitL "Hbundle".
+  - iExists _. iFrame.
+  - iExists _. eauto.
 Qed.
 
 Lemma na_crash_inv_full_impl N k Q P:
