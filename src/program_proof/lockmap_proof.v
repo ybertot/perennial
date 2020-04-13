@@ -186,7 +186,9 @@ Proof.
           iExists _, _, _.
           iFrame.
           iApply "Haddrs".
-          iExists _, _, _, _.
+          (* XXX: This used to be iExists _, _, _, _. But after the switch to block allocation,
+             the iFrame that follows would hang forever. *)
+          iExists lockStatePtr, _, _, _.
           iFrame.
           done.
         }
@@ -216,7 +218,7 @@ Proof.
           iLeft. iFrame. iSplitL; try done.
           iExists _, _, _. iFrame.
           iApply "Haddrs".
-          iExists _, _, _, _. iFrame. done.
+          iExists lockStatePtr2, _, _, _. iFrame. done.
 
         * iDestruct "Hacquired" as "[[Hacquired _] _]"; rewrite loc_add_0.
           wp_untyped_load.
@@ -245,7 +247,7 @@ Proof.
 
         erewrite <- (insert_id m) at 1; eauto.
         iApply "Haddrs".
-        iExists _, _, _, _. iFrame.
+        iExists lockStatePtr, _, _, _. iFrame.
         iSplitL; try done.
         iSplitL; try done.
         iLeft; done.
@@ -300,7 +302,7 @@ Proof.
       {
         iApply (big_sepM2_insert); [auto | auto | ].
         iFrame.
-        iExists _, _, _, _.
+        iExists lst, _, _, _.
         iFrame.
         iSplitL; try done.
         iSplitL; [ iPureIntro; congruence | ].
@@ -396,7 +398,7 @@ Proof.
         with "[-Haddrs] Haddrs") as "Haddrs".
       {
         rewrite /setField_f /=.
-        iExists _, _, _, _.
+        iExists lockStatePtr, _, _, _.
         iFrame.
         iSplitR; auto.
         iSplitR; auto.
