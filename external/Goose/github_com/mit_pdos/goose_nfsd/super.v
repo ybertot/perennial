@@ -13,7 +13,8 @@ Module FsSuper.
     "NBlockBitmap" :: uint64T;
     "NInodeBitmap" :: uint64T;
     "nInodeBlk" :: uint64T;
-    "Maxaddr" :: uint64T
+    "Maxaddr" :: uint64T;
+    "InodeStartPrecomp" :: uint64T
   ].
 End FsSuper.
 
@@ -28,7 +29,8 @@ Definition MkFsSuper: val :=
       "NBlockBitmap" ::= "nblockbitmap";
       "NInodeBitmap" ::= common.NINODEBITMAP;
       "nInodeBlk" ::= (common.NINODEBITMAP * common.NBITBLOCK * common.INODESZ) `quot` disk.BlockSize;
-      "Maxaddr" ::= "sz"
+      "Maxaddr" ::= "sz";
+      "InodeStartPrecomp" ::= common.LOGSIZE + "nblockbitmap" + common.NINODEBITMAP
     ].
 
 Definition FsSuper__MaxBnum: val :=
@@ -45,7 +47,7 @@ Definition FsSuper__BitmapInodeStart: val :=
 
 Definition FsSuper__InodeStart: val :=
   rec: "FsSuper__InodeStart" "fs" :=
-    FsSuper__BitmapInodeStart "fs" + struct.loadF FsSuper.S "NInodeBitmap" "fs".
+    struct.loadF FsSuper.S "InodeStartPrecomp" "fs".
 
 Definition FsSuper__DataStart: val :=
   rec: "FsSuper__DataStart" "fs" :=
@@ -61,4 +63,4 @@ Definition FsSuper__NInode: val :=
 
 Definition FsSuper__Inum2Addr: val :=
   rec: "FsSuper__Inum2Addr" "fs" "inum" :=
-    addr.MkAddr (FsSuper__InodeStart "fs" + "inum" `quot` common.INODEBLK) ("inum" `rem` common.INODEBLK * common.INODESZ * #8).
+    addr.MkAddr (FsSuper__InodeStart "fs" + "inum") #0.

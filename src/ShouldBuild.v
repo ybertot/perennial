@@ -30,6 +30,8 @@ From Perennial.goose_lang.examples Require
 
 (* goose-nfsd *)
 From Goose.github_com.mit_pdos Require
+     goose_nfsd.barebones
+     goose_nfsd.inode
      goose_nfsd.lockmap
      goose_nfsd.buf
      goose_nfsd.txn
