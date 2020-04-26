@@ -15,7 +15,7 @@ Module Inode.
     "Gen" :: uint64T;
     "Parent" :: uint64T;
     "Contents" :: slice.T uint64T;
-    "Names" :: slice.T byteT
+    "Names" :: slice.T uint64T
   ].
 End Inode.
 
@@ -27,7 +27,7 @@ Definition Inode__InitInode: val :=
     struct.storeF Inode.S "Parent" "ip" "parent";;
     struct.storeF Inode.S "Gen" "ip" (struct.loadF Inode.S "Gen" "ip" + #1);;
     struct.storeF Inode.S "Contents" "ip" (NewSlice uint64T NENTRIES);;
-    struct.storeF Inode.S "Names" "ip" (NewSlice byteT NENTRIES).
+    struct.storeF Inode.S "Names" "ip" (NewSlice uint64T NENTRIES).
 
 Definition MkRootInode: val :=
   rec: "MkRootInode" <> :=
@@ -41,7 +41,7 @@ Definition Inode__Encode: val :=
     marshal.Enc__PutInt "enc" (struct.loadF Inode.S "Gen" "ip");;
     marshal.Enc__PutInt "enc" (struct.loadF Inode.S "Parent" "ip");;
     marshal.Enc__PutInts "enc" (struct.loadF Inode.S "Contents" "ip");;
-    marshal.Enc__PutBytes "enc" (struct.loadF Inode.S "Names" "ip");;
+    marshal.Enc__PutInts "enc" (struct.loadF Inode.S "Names" "ip");;
     marshal.Enc__Finish "enc".
 
 Definition Decode: val :=
@@ -52,5 +52,5 @@ Definition Decode: val :=
     struct.storeF Inode.S "Gen" "ip" (marshal.Dec__GetInt "dec");;
     struct.storeF Inode.S "Parent" "ip" (marshal.Dec__GetInt "dec");;
     struct.storeF Inode.S "Contents" "ip" (marshal.Dec__GetInts "dec" NENTRIES);;
-    struct.storeF Inode.S "Names" "ip" (marshal.Dec__GetBytes "dec" NENTRIES);;
+    struct.storeF Inode.S "Names" "ip" (marshal.Dec__GetInts "dec" NENTRIES);;
     "ip".

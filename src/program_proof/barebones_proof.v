@@ -64,7 +64,7 @@ Definition is_fh fhl fhd : iProp Σ :=
 
 Record InodeEntry : Set := mkInodeEntry {
   inodee_inum : nat;
-  inodee_name : Ascii.ascii; (* all our names are one character long *)
+  inodee_name : nat; (* all our names are one character long *)
 }.
 
 Record InodeData : Set := mkInodeData {
@@ -87,7 +87,7 @@ Definition inoded_children_val inoded :=
   nat2val <$> vec_to_list (inoded_children inoded).
 Definition ascii2val (a: Ascii.ascii) := #(Ascii.nat_of_ascii a).
 Definition inoded_names_val inoded :=
-  ascii2val <$> vec_to_list (inoded_names inoded).
+  nat2val <$> vec_to_list (inoded_names inoded).
 
 Definition is_inode inodel inoded : iProp Σ :=
   ∃ sl_contents sl_names,
@@ -97,7 +97,7 @@ Definition is_inode inodel inoded : iProp Σ :=
   inodel ↦[Inode.S :: "Contents"] (slice_val sl_contents) ∗
   inodel ↦[Inode.S :: "Names"] (slice_val sl_names) ∗
   is_slice_small sl_contents uint64T 1 (inoded_children_val inoded) ∗
-  is_slice_small sl_names u8T 1 (inoded_names_val inoded).
+  is_slice_small sl_names uint64T 1 (inoded_names_val inoded).
 
 (* Definition superd_BitmapBlockStart superd := superd.(superd_nLog).
 Definition superd_BitmapInodeStart superd :=
@@ -124,7 +124,7 @@ Definition inum2addr superd inum := {|
 Definition EncNat n := EncUInt64 (U64 (Z.of_nat n)).
 
 Definition encodes_inode i inoded : iProp Σ :=
-  ∃ extra names_bytes,
+  ∃ extra,
   ⌜
     inode_to_vals i = b2val <$> marshal_proof.encode (
       [
@@ -132,9 +132,8 @@ Definition encodes_inode i inoded : iProp Σ :=
         EncUInt64 inoded.(inoded_parent)
       ]
       ++ (EncNat <$> (vec_to_list (inoded_children inoded)))
-      ++ [EncBytes names_bytes]
+      ++ (EncNat <$> (vec_to_list (inoded_names inoded)))
     ) ++ extra
-    ∧ u8_to_ascii <$> names_bytes = vec_to_list (inoded_names inoded)
   ⌝.
 
 Definition buf_encodes_inode {K} (buf: bufDataT K) inoded : iProp Σ :=
@@ -145,42 +144,34 @@ Definition buf_encodes_inode {K} (buf: bufDataT K) inoded : iProp Σ :=
 
 Definition mapsto_txn_inode superd γUnified inoded : iProp Σ :=
   ∃ i,
-  (|==> mapsto_txn γUnified (inum2addr superd inoded.(inoded_inum)) (bufInode i)) ∗
+  mapsto_txn γUnified (inum2addr superd inoded.(inoded_inum)) (bufInode i) ∗
   encodes_inode i inoded.
 
 Definition mapsto_inode superd γT inoded : iProp Σ :=
   ∃ (v: {K & bufDataT K}),
   buf_encodes_inode (projT2 v) inoded ∗
-  (|==> mapsto (hG := γT) (inum2addr superd inoded.(inoded_inum)) 1 v).
+  mapsto (hG := γT) (inum2addr superd inoded.(inoded_inum)) 1 v.
 
 Theorem mapsto_inode_lift inoded superd buftx γT γUnified :
   (
-    (|==> is_buftxn buftx γT γUnified) ∗
+    is_buftxn buftx γT γUnified ∗
     mapsto_txn_inode superd γUnified inoded
   )
     ==∗
   (
-    (|==> is_buftxn buftx γT γUnified) ∗
+    is_buftxn buftx γT γUnified ∗
     mapsto_inode superd γT inoded
   ).
 Proof.
   iIntros "[Hbuftxn Hmapsto]".
   iDestruct "Hmapsto" as (i) "[Hmapsto Hencodes]".
-  iPoseProof (BufTxn_lift_one _ _ _ _ (existT _ _) with "[> Hbuftxn Hmapsto]") as "Hmapsto".
-  {
-    iDestruct "Hbuftxn" as "> Hbuftxn".
-    iDestruct "Hmapsto" as "> Hmapsto".
-    iFrame.
-    eauto.
-  }
+  iPoseProof (BufTxn_lift_one _ _ _ _ (existT _ _) with "[Hbuftxn Hmapsto]") as "Hmapsto".
+  1: iFrame.
   iDestruct "Hmapsto" as "> [Hbuftxn Hmapsto]".
   iModIntro.
   iFrame.
-  iSplitR.
-  1: eauto.
   iExists _.
   iFrame.
-  eauto.
 Qed.
 
 Definition mapsto_txn_free_inode superd γUnified inum : iProp Σ :=
@@ -209,7 +200,7 @@ Definition is_barebones_nfs_meta nfsl superd γUnified root_inoded : iProp Σ :=
   mapsto_txn_root_inode superd γUnified root_inoded.
 
 Definition is_inode_entry entry name inum :=
-  name = Ascii.nat_of_ascii entry.(inodee_name) ∧
+  name = entry.(inodee_name) ∧
   inum = entry.(inodee_inum).
 
 Definition non_null_entries_of inoded :=
@@ -341,13 +332,12 @@ Proof.
   iFrame.
 Qed.
 
-Theorem wp_Inode__decode bufl (inum: u64) inodel a b inoded:
+Theorem wp_Inode__decode bufl (inum: u64) a b inoded:
   {{{ is_buf bufl a b
     ∗ buf_encodes_inode b.(bufData) inoded }}}
-    inode.Decode #bufl #inum
-  {{{ RET #inodel;
-    is_buf bufl a b
-    ∗ buf_encodes_inode b.(bufData) inoded
+    inode.Decode #bufl #(inoded.(inoded_inum))
+  {{{ inodel, RET #inodel;
+    buf_encodes_inode b.(bufData) inoded
     ∗ is_inode inodel inoded }}}.
 Proof.
   iIntros (Φ) "(Hbufl & Hbuf) HΦ".
@@ -356,17 +346,14 @@ Proof.
   1: repeat (try constructor; try rewrite zero_slice_val; eauto).
   iIntros (inodel') "Hinodel".
   wp_pures.
-  iDestruct "Hbufl" as (data sz) "(Haddr & Hsz & Hdata & Hdirty & Hbuf_addr & Hbuf_sz & Hbuf_nonnull & Hbuf_data)".
+  iDestruct "Hbufl" as (data sz) "(Haddr & Hsz & Hdata & Hdirty & %Hbuf_addr & %Hbuf_sz & %Hbuf_nonnull & Hbuf_data)".
   wp_loadField.
-  rewrite /buf_encodes_inode.
   destruct b.(bufData); eauto.
-  rewrite /is_buf_data.
-  iDestruct "Hbuf" as (extra names_bytes) "%Hbuf_inode".
-  destruct Hbuf_inode as (Hbuf_children & Hbuf_names).
+  iDestruct "Hbuf" as "%Hbuf_inode".
+  destruct Hbuf_inode as (extra & Hbuf_children).
   wp_apply (wp_NewDec with "[Hbuf_data]").
   {
-    replace u8T with byteT by eauto.
-    rewrite -> Hbuf_children.
+    rewrite /is_buf_data Hbuf_children.
     iFrame.
   }
   iIntros (dec) "[Hdec %Hdec_data]".
@@ -410,18 +397,58 @@ Proof.
   }
   iIntros "!> Hinodel_contents".
   wp_pures.
-  admit. (* no wp_Dec__GetBytes? *)
+  wp_apply (wp_Dec__GetInts with "[Hdec]").
+  {
+    replace (EncNat <$> _) with
+      (EncUInt64 ∘ (U64 ∘ Z.of_nat) <$> vec_to_list (inoded_names inoded)).
+    2: {
+      eapply map_fmap_ext.
+      eauto.
+    }
+    replace (EncUInt64 ∘ (U64 ∘ Z.of_nat) <$> _) with
+      (EncUInt64 <$> (U64 ∘ Z.of_nat <$> vec_to_list (inoded_names inoded))).
+    2: {
+      symmetry.
+      eapply map_fmap_compose.
+    }
+    instantiate (2:=[]).
+    rewrite app_nil_r.
+    iFrame.
+    iPureIntro.
+    word_cleanup.
+    rewrite fmap_length vec_to_list_length.
+    eauto.
+  }
+  iIntros (sl_names) "[Hdec Hsl_names]".
+  wp_bind (struct.storeF _ _ _ _).
+  iApply (wp_storeField with "Hinodel_names").
+  {
+    rewrite /field_ty.
+    simpl.
+    eauto.
+  }
+  iIntros "!> Hinodel_names".
+  wp_pures.
+  iApply "HΦ".
+  iFrame.
+  iSplitR.
+  1: eauto.
+  iExists _, _.
+  iFrame.
+  iDestruct "Hsl_children" as "[Hsl_children Hsl_children_e]".
+  iDestruct "Hsl_names" as "[Hsl_names Hsl_names_e]".
+  admit. (* TODO: change nat to u64 for children and names *)
 Admitted.
 
 Theorem wp_BarebonesNfs__getInode nfsl buftx superd γT γUnified inoded:
   {{{ is_barebones_nfs_super nfsl superd
-    ∗  (|==> is_buftxn buftx γT γUnified)
+    ∗ is_buftxn buftx γT γUnified
     ∗ mapsto_inode superd γT inoded }}}
     BarebonesNfs__getInode #nfsl #buftx #(inoded.(inoded_inum))
   {{{ inodel, RET #inodel;
     is_barebones_nfs_super nfsl superd
     ∗ is_inode inodel inoded
-    ∗ (|==> is_buftxn buftx γT γUnified)
+    ∗ is_buftxn buftx γT γUnified
     ∗ mapsto_inode superd γT inoded }}}.
 Proof.
   iIntros (Φ) "(Hsuper & Hbuftxn & Hinode) HΦ".
@@ -439,8 +466,6 @@ Proof.
   destruct b eqn:Hb; eauto.
   wp_apply (wp_BufTxn__ReadBuf with "[> Hbuftxn Hinode]").
   {
-    iDestruct "Hbuftxn" as "> Hbuftxn".
-    iDestruct "Hinode" as "> Hinode".
     iFrame.
     iPureIntro.
     eauto.
@@ -448,8 +473,10 @@ Proof.
   iIntros (bufl dirty) "[Hbuf Hbuftxn]".
   wp_pures.
   wp_apply (wp_Inode__decode with "[Hencodes Hbuf]").
+  { apply (U64 0). }
   { iFrame. }
-  iIntros "(Hbuf & Hencodes & Hinode)".
+  iIntros (inodel) "(Hencodes & Hinode)".
+  wp_pures.
   iApply "HΦ".
   iDestruct ("Hbuftxn" $! b dirty) as "Hbuftxn".
   iSplitL "Hsuperl Hsuper".
@@ -460,22 +487,23 @@ Proof.
   iSplitL "Hinode".
   1: iFrame.
   rewrite Hb.
-  iSpecialize ("Hbuftxn" with "[Hbuf]"). 1: eauto.
+  admit. (* no more is_buf? *)
+  (* iSpecialize ("Hbuftxn" with "[Hbuf]"). 1: eauto.
   rewrite sep_exist_l.
   iExists _.
-  iFrame.
-  (* iDestruct "Hbuftxn" as "> [Hinode Hbuftxn]".
   iFrame. *)
-  admit. (* fancy update *)
+  (* iDestruct "Hbuftxn" as "[Hinode Hbuftxn]".
+  iFrame. *)
+  (* fancy update *)
 Admitted.
 
 Theorem wp_BarebonesNfs__getInodeByFh nfsl buftx γT γUnified superd inoded:
-  {{{ (|==> is_buftxn buftx γT γUnified)
+  {{{ is_buftxn buftx γT γUnified
     ∗ is_barebones_nfs_super nfsl superd
     ∗ mapsto_inode superd γT inoded }}}
     BarebonesNfs__getInodeByFh #nfsl #buftx (fhd2val (inoded2fhd inoded))
   {{{ inodel, RET (#inodel, #(U32 nfstypes__NFS3_OK));
-    (|==> is_buftxn buftx γT γUnified)
+    is_buftxn buftx γT γUnified
     ∗ is_barebones_nfs_super nfsl superd
     ∗ mapsto_inode superd γT inoded
     ∗ is_inode inodel inoded }}}.
@@ -483,24 +511,17 @@ Proof.
   iIntros (Φ) "(Hbuftxn & Hsuper & Hinode) HΦ".
   wp_call.
   wp_apply (wp_BarebonesNfs__getInode with "[Hbuftxn Hsuper Hinode]").
-  {
-    iFrame.
-  }
+  1: iFrame.
   iIntros (inodel) "(Hsuper & Hinodel & Hbuftxn & Hinode)".
   wp_pures.
-  wp_if_destruct.
-  {
-    wp_pures.
-    admit. (* pointer guaranteed non-null *)
-  }
   iDestruct "Hinodel" as (sl_contents sl_names) "(Hinum & Hgen & Hinode_rest)".
   wp_loadField.
   rewrite /inoded2fhd /fhd2val.
   wp_pures.
   wp_if_destruct.
   {
-    rewrite -> base.negb_true in Heqb0.
-    apply bool_decide_eq_false in Heqb0.
+    rewrite -> base.negb_true in Heqb.
+    apply bool_decide_eq_false in Heqb.
     intuition.
   }
   wp_pures.
@@ -508,7 +529,7 @@ Proof.
   iFrame.
   iExists sl_contents, sl_names.
   iFrame.
-Admitted.
+Qed.
 
 Theorem wp_BarebonesNfs__opGetAttr nfsl fhd root_inoded name_to_inoded_map inoded:
   {{{ is_barebones_nfs nfsl root_inoded name_to_inoded_map
@@ -541,17 +562,11 @@ Proof.
   iPoseProof (mapsto_txn_children_delete with "[Hinode_c]") as (entry) "(%Hin_set & [%Hentry Hinode] & Hinode_c)".
   1: eauto.
   subst fhd.
+  iPoseProof (mapsto_inode_lift with "[Hbuftxn Hinode]") as "> [Hbuftxn Hinode]".
+  1: iFrame.
 
   wp_apply (wp_BarebonesNfs__getInodeByFh with "[Hbuftxn Hsuper Hinode]").
-  {
-    iPoseProof (mapsto_inode_lift with "[Hbuftxn Hinode]") as "Hinode".
-    {
-      iFrame.
-      eauto.
-    }
-    iFrame.
-    admit. (* fancy update *)
-  }
+  1: iFrame.
   iIntros (inodel) "(Hbuftxn & Hsuper & Hinode & Hinodel)".
   wp_pures.
   iDestruct "Hinode" as (v) "[Hinode_buf Hinode]".
@@ -563,7 +578,6 @@ Proof.
     iFrame.
     rewrite -> big_sepM_insert by eauto.
     eauto.
-    admit. (* fancy update *)
   }
   iIntros (ok) "Hinode".
   wp_pures.
@@ -589,7 +603,6 @@ Proof.
   iSplit. 1: eauto.
   rewrite /mapsto_txn_inode_entry.
   iSplit. 1: eauto.
-  instantiate (1 := v).
   destruct v eqn:Hv.
   rewrite /buf_encodes_inode.
   destruct b eqn:Hb.
@@ -597,9 +610,6 @@ Proof.
   iExists i.
   simpl.
   iFrame.
-  eauto.
-  Unshelve.
-  1-2: eauto.
 Admitted.
 
 End heap.

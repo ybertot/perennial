@@ -107,7 +107,8 @@ Definition BarebonesNfs__getInode: val :=
   rec: "BarebonesNfs__getInode" "nfs" "buftxn" "inum" :=
     let: "addr" := super.FsSuper__Inum2Addr (struct.loadF BarebonesNfs.S "fs" "nfs") "inum" in
     let: "buf" := buftxn.BufTxn__ReadBuf "buftxn" "addr" (common.INODESZ * #8) in
-    inode.Decode "buf" "inum".
+    let: "ip" := inode.Decode "buf" "inum" in
+    "ip".
 
 Definition BarebonesNfs__GetRootInode: val :=
   rec: "BarebonesNfs__GetRootInode" "nfs" :=
@@ -117,12 +118,9 @@ Definition BarebonesNfs__GetRootInode: val :=
 Definition BarebonesNfs__getInodeByFh: val :=
   rec: "BarebonesNfs__getInodeByFh" "nfs" "buftxn" "fh" :=
     let: "ip" := BarebonesNfs__getInode "nfs" "buftxn" (struct.get Fh.S "Ino" "fh") in
-    (if: ("ip" = #null)
-    then (slice.nil, NFS3ERR_BADHANDLE)
-    else
-      (if: struct.loadF inode.Inode.S "Gen" "ip" ≠ struct.get Fh.S "Gen" "fh"
-      then (slice.nil, NFS3ERR_STALE)
-      else ("ip", NFS3_OK))).
+    (if: struct.loadF inode.Inode.S "Gen" "ip" ≠ struct.get Fh.S "Gen" "fh"
+    then (slice.nil, NFS3ERR_STALE)
+    else ("ip", NFS3_OK)).
 
 Definition BarebonesNfs__writeInode: val :=
   rec: "BarebonesNfs__writeInode" "nfs" "buftxn" "ip" :=
@@ -143,7 +141,7 @@ Definition BarebonesNfs__lookupName: val :=
           (if: (SliceGet uint64T (struct.loadF inode.Inode.S "Contents" "dip") (![uint64T] "i") = #0)
           then Continue
           else
-            (if: (SliceGet byteT (struct.loadF inode.Inode.S "Names" "dip") (![uint64T] "i") = SliceGet byteT (Data.stringToBytes "name") #0)
+            (if: (SliceGet uint64T (struct.loadF inode.Inode.S "Names" "dip") (![uint64T] "i") = to_u64 (SliceGet byteT (Data.stringToBytes "name") #0))
             then
               "ip" <-[uint64T] SliceGet uint64T (struct.loadF inode.Inode.S "Contents" "dip") (![uint64T] "i");;
               Break
@@ -197,7 +195,7 @@ Definition BarebonesNfs__allocDir: val :=
               inode.Inode__InitInode (![refT (struct.t inode.Inode.S)] "ip") "inum" (struct.loadF inode.Inode.S "Inum" "dip");;
               BarebonesNfs__writeInode "nfs" "buftxn" (![refT (struct.t inode.Inode.S)] "ip");;
               SliceSet uint64T (struct.loadF inode.Inode.S "Contents" "dip") (![uint64T] "i") (struct.loadF inode.Inode.S "Inum" (![refT (struct.t inode.Inode.S)] "ip"));;
-              SliceSet byteT (struct.loadF inode.Inode.S "Names" "dip") (![uint64T] "i") (SliceGet byteT (Data.stringToBytes "name") #0);;
+              SliceSet uint64T (struct.loadF inode.Inode.S "Names" "dip") (![uint64T] "i") (to_u64 (SliceGet byteT (Data.stringToBytes "name") #0));;
               BarebonesNfs__writeInode "nfs" "buftxn" "dip";;
               Break
             else #());;
@@ -423,6 +421,6 @@ Definition BarebonesNfs__OpReadDirPlus: val :=
         then Continue
         else
           let: "ip" := BarebonesNfs__getInode "nfs" "buftxn" (SliceGet uint64T (struct.loadF inode.Inode.S "Contents" "dip") "i") in
-          "entries" <-[slice.T (struct.t Entry3.S)] SliceAppend (struct.t Entry3.S) (![slice.T (struct.t Entry3.S)] "entries") (makeEntry3 "ip" (SliceSingleton (SliceGet byteT (struct.loadF inode.Inode.S "Names" "dip") "i")) ("i" + #3)));;
+          "entries" <-[slice.T (struct.t Entry3.S)] SliceAppend (struct.t Entry3.S) (![slice.T (struct.t Entry3.S)] "entries") (makeEntry3 "ip" (SliceSingleton (SliceGet uint64T (struct.loadF inode.Inode.S "Names" "dip") "i")) ("i" + #3)));;
         Continue);;
       ("dip", ![slice.T (struct.t Entry3.S)] "entries", NFS3_OK)).
