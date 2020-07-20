@@ -42,7 +42,7 @@ Implicit Types e : expr.
 
 Lemma wpr_strong_mono s k E e rec Φ Ψ Φinv Ψinv Φr Ψr :
   wpr s k E e rec Φ Φinv Φr -∗
-  (∀ v, Φ v ==∗ Ψ v) ∧ (∀ hG, Φinv hG -∗ Ψinv hG) ∧ (∀ hG v, Φr hG v ==∗ Ψr hG v) -∗
+  (∀ v, Φ v ==∗ Ψ v) ∧ <disc> ((∀ hG, Φinv hG -∗ Ψinv hG) ∧ (∀ hG v, Φr hG v ==∗ Ψr hG v)) -∗
   wpr s k E e rec Ψ Ψinv Ψr.
 Proof.
   rewrite /wpr. iIntros "Hwpr Himpl".
@@ -50,11 +50,11 @@ Proof.
   repeat iSplit.
   - by iDestruct "Himpl" as "($&_)".
   - iIntros.
-    iDestruct "Himpl" as "(_&H&_)".
-    by iApply "H".
-  - iIntros.
-    iDestruct "Himpl" as "(_&_&H)".
-    by iApply "H".
+    iDestruct "Himpl" as "(_&H)".
+    iModIntro.
+    iSplit.
+    * iIntros. by iApply "H".
+    * iIntros. by iApply "H".
 Qed.
 
 Lemma idempotence_wpr `{!ffi_interp_adequacy} s k E1 E2 e rec Φx Φinv Φrx Φcx:

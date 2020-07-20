@@ -10,13 +10,12 @@ Set Default Proof Using "Type".
 Import uPred.
 
 Lemma wpc_fork `{ffi_sem: ext_semantics} `{!ffi_interp ffi} `{!heapG Σ, !crashG Σ} s k E1 E2 e Φ Φc :
-  ▷ WPC e @ s; k; ⊤; E2 {{ _, True }} {{ True }} -∗ (▷ Φc ∧ ▷ Φ (LitV LitUnit)) -∗
+  ▷ WPC e @ s; k; ⊤; E2 {{ _, True }} {{ True }} -∗ (<disc> ▷ Φc ∧ ▷ Φ (LitV LitUnit)) -∗
                       WPC Fork e @ s; k; E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
   iIntros "He HΦ". iApply wpc_lift_head_step; [done|].
   iSplit; last first.
-  {  iDestruct "HΦ" as "(HΦc&_)". iModIntro. iNext.
-     iApply fupd_mask_weaken; first by set_solver+. iFrame. }
+  {  iDestruct "HΦ" as "(HΦc&_)". iModIntro. by iModIntro. }
   iIntros (σ1 κ κs n) "Hσ".
   iMod (fupd_intro_mask' _ ∅) as "Hclose"; first by set_solver+.
   iModIntro. iSplit.
@@ -26,8 +25,7 @@ Proof.
   iMod "Hclose". iFrame. iModIntro => //=. rewrite right_id.
   iApply wpc_value; iSplit.
   - by iDestruct "HΦ" as "(_&$)".
-  - iDestruct "HΦ" as "($&_)". iModIntro; iApply fupd_mask_weaken; eauto.
-    set_solver+.
+  - iDestruct "HΦ" as "(?&_)". do 2 iModIntro. auto.
 Qed.
 
 Lemma tac_wpc_expr_eval `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
@@ -49,24 +47,27 @@ Lemma tac_wpc_pure_ctx `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
   PureExec φ 1 e1 e2 →
   φ →
   MaybeIntoLaterNEnvs 1 Δ Δ' →
-  envs_entails Δ' Φc →
-  (envs_entails Δ' Φc → envs_entails Δ' (WPC (fill K e2) @ s; k; E1; E2 {{ Φ }} {{ Φc }})) →
+  envs_entails Δ (<disc> ▷ Φc) →
+  (envs_entails Δ (<disc> ▷ Φc) → envs_entails Δ' (WPC (fill K e2) @ s; k; E1; E2 {{ Φ }} {{ Φc }})) →
   envs_entails Δ (WPC (fill K e1) @ s; k; E1; E2 {{ Φ }} {{ Φc }}).
 Proof.
   rewrite envs_entails_eq=> ??? Hcrash HΔ'.
   rewrite -wpc_pure_step_later //. apply and_intro; auto.
   - rewrite into_laterN_env_sound /=.
     rewrite HΔ' //.
-  - rewrite into_laterN_env_sound /= -Hcrash //.
 Qed.
+(*
+  - rewrite into_laterN_env_sound /= Hcrash //. auto.
+Qed.
+*)
 
 Lemma tac_wpc_pure_no_later_ctx `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ}
       Δ s k E1 E2 K e1 e2 φ Φ Φc :
   PureExec φ 1 e1 e2 →
   φ →
-  envs_entails Δ Φc →
-  (envs_entails Δ Φc → envs_entails Δ (WPC (fill K e2) @ s; k; E1; E2 {{ Φ }} {{ Φc }})) →
+  envs_entails Δ (<disc> Φc) →
+  (envs_entails Δ (<disc> Φc) → envs_entails Δ (WPC (fill K e2) @ s; k; E1; E2 {{ Φ }} {{ Φc }})) →
   envs_entails Δ (WPC (fill K e1) @ s; k; E1; E2 {{ Φ }} {{ Φc }}).
 Proof.
   rewrite envs_entails_eq=> ?? Hcrash HΔ'.
@@ -75,20 +76,19 @@ Proof.
   - iIntros "Henv".
     iModIntro.
     iApply HΔ'; iAssumption.
-  - rewrite -Hcrash.
-    iIntros "$".
+  - rewrite Hcrash. iIntros "H". iModIntro; auto.
 Qed.
 
 Lemma tac_wpc_value `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ} Δ s k E1 E2 Φ Φc v :
   envs_entails Δ (Φ v) →
-  envs_entails Δ (Φc) →
+  envs_entails Δ (<disc> Φc) →
   envs_entails Δ (WPC (Val v) @ s; k; E1; E2 {{ Φ }} {{ Φc }}).
 Proof.
   rewrite envs_entails_eq -wpc_value => H1 H2.
   apply and_intro.
   - rewrite H1. eauto.
-  - rewrite H2. iIntros. iModIntro; iApply fupd_mask_weaken; eauto; try set_solver+.
+  - rewrite H2. iIntros. do 2 iModIntro; auto.
 Qed.
 
 Ltac wpc_expr_simpl := wpc_expr_eval simpl.
@@ -191,7 +191,7 @@ Proof. rewrite envs_entails_eq=> -> ->. by apply: wpc_bind. Qed.
 Lemma tac_wpc_wp_frame `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ} Δ d js s k E1 E2 e (Φ: _ -> iProp Σ) (Φc: iProp Σ) :
   match envs_split d js Δ with
-  | Some (Δ1, Δ2) => envs_entails Δ1 Φc ∧
+  | Some (Δ1, Δ2) => envs_entails Δ1 (<disc> Φc) ∧
                      envs_entails Δ2 (WP e @ s; E1
                              {{ v, (env_to_named_prop Δ1.(env_spatial) -∗ Φ v)%I }})
   | None => False
@@ -204,9 +204,9 @@ Proof.
   rewrite (envs_split_sound _ _ _ _ _ Hsplit).
   rewrite {}Hwp.
   iIntros "[HΦc' Hwp]".
-  iApply (wp_wpc_frame' _ _ _ _ _ _ (of_envs Δ1)); iFrame.
-  iSplitR.
-  { iModIntro; iApply HΦc. }
+  iApply (wp_wpc_frame' _ _ _ _ _ _ (Φc) (of_envs Δ1)).
+  iSplitR "Hwp".
+  { iSplit; iFrame. by iApply HΦc. }
   iApply (wp_mono with "Hwp"); cbv beta.
   iIntros (v) "Hwand HΔ".
   iApply "Hwand".
@@ -218,7 +218,7 @@ Qed.
 (* combines using [wpc_frame Hs] with [iFromCache], simultaneously framing and
    proving the crash condition using a cache *)
 Lemma tac_wpc_wp_frame_cache `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
-      `{!heapG Σ, !crashG Σ} (Φc: iProp Σ) i (* name of cache *) (c: cache Φc)
+      `{!heapG Σ, !crashG Σ} (Φc: iProp Σ) i (* name of cache *) (c: cache (<disc> Φc)%I)
       Δ stk k E1 E2 e (Φ: _ → iProp Σ)  :
   envs_lookup i Δ = Some (true, cached c) →
   match envs_split Left c.(cache_names) Δ with
@@ -241,11 +241,9 @@ Proof.
   rewrite (envs_split_sound _ _ _ _ _ Hsplit).
   iDestruct "HΔ" as "[Hcrash HΔ2]".
   iApply wp_wpc_frame'.
-  iSplitL "Hcrash"; [ iAccu | ].
-  iSplit.
-  { iModIntro.
-    iIntros "Hcrash".
-    iApply (cached_elim with "Hcache Hcrash"); eauto. }
+  iSplitL "Hcrash".
+  { iSplit; last iApply "Hcrash".
+    iApply (cached_elim with "Hcache Hcrash"); auto. }
   iDestruct (Hwp with "HΔ2") as "Hwp".
   iApply (wp_mono with "Hwp"); cbv beta.
   iIntros (v) "Hwand HΔ".

@@ -60,7 +60,7 @@ Proof. rewrite wpr_eq. apply (fixpoint_unfold (wpr_pre s k)). Qed.
 (* There's a stronger version of this *)
 Lemma wpr_strong_mono s k Hi Hc t E e rec Φ Ψ Φinv Ψinv Φr Ψr :
   wpr s k Hi Hc t E e rec Φ Φinv Φr -∗
-  (∀ v, Φ v ==∗ Ψ v) ∧ (∀ Hi t, Φinv Hi t -∗ Ψinv Hi t) ∧ (∀ Hi t v, Φr Hi t v ==∗ Ψr Hi t v) -∗
+  (∀ v, Φ v ==∗ Ψ v) ∧ <disc> ((∀ Hi t, Φinv Hi t -∗ Ψinv Hi t) ∧ (∀ Hi t v, Φr Hi t v ==∗ Ψr Hi t v)) -∗
   wpr s k Hi Hc t E e rec Ψ Ψinv Ψr.
 Proof.
   iIntros "H HΦ". iLöb as "IH" forall (e t Hi Hc E Φ Ψ Φinv Ψinv Φr Ψr).
@@ -68,19 +68,19 @@ Proof.
   iApply (wpc_strong_mono' with "H") ; auto.
   iSplit.
   { iDestruct "HΦ" as "(H&_)". iIntros. iMod ("H" with "[$]"); eauto. }
-  iIntros "H".
+  iDestruct "HΦ" as "(_&HΦ)".
+  rewrite own_discrete_idemp.
+  iIntros "!> H".
   rewrite difference_diag_L.
-  iModIntro. iIntros (?????) "Hinterp". iMod ("H" with "[//] Hinterp") as "H".
+  do 2 iModIntro. iIntros (?????) "Hinterp". iMod ("H" with "[//] Hinterp") as "H".
   iModIntro. iNext. iIntros (Hi' Hc') "HNC". iMod ("H" $! Hi' Hc' with "[$]") as (?) "(?&H&HNC)".
   iModIntro. iExists _. iFrame.
   iSplit.
-  - iDestruct "H" as "(H&_)". iDestruct "HΦ" as "(_&HΦ&_)". by iApply "HΦ".
+  - iDestruct "H" as "(H&_)". rewrite own_discrete_elim. iDestruct "HΦ" as "(HΦ&_)". by iApply "HΦ".
   - iDestruct "H" as "(_&H)".
     iApply ("IH" with "[$]").
-    iSplit; [| iSplit].
-    * iIntros. iDestruct ("HΦ") as "(_&_&H)"; by iMod ("H" with "[$]").
-    * iDestruct ("HΦ") as "(_&$&_)"; auto.
-    * iIntros. iDestruct ("HΦ") as "(_&_&H)"; by iMod ("H" with "[$]").
+    iSplit; last by auto.
+    { iIntros. rewrite own_discrete_elim. iDestruct ("HΦ") as "(_&H)"; by iMod ("H" with "[$]"). }
 Qed.
 
 (* To prove a recovery wp for e with rec, it suffices to prove a crash wp for e,
@@ -97,10 +97,10 @@ Proof.
   iIntros (?) "He #Hidemp".
   rewrite wpr_unfold. rewrite /wpr_pre.
   iApply (wpc_strong_mono' with "He"); [ auto | auto | auto | set_solver | ].
-  iSplit; first auto. iIntros "Hcx".
-  iApply @fupd_mask_weaken.
+  iSplit; first auto. iIntros "!> Hcx".
+  iApply @fupd_level_mask_weaken.
   { set_solver +. }
-  iIntros. iMod ("Hidemp" with "[ ] [$] [$]") as "H".
+  iNext. iIntros. iMod ("Hidemp" with "[ ] [$] [$]") as "H".
   { eauto. }
   iModIntro. iNext. iIntros (Hi' Hc') "HNC". iMod ("H" $! Hi' Hc' with "[$]") as (t') "(?&Hc&HNC)".
   iExists _. iFrame. iModIntro.
@@ -108,7 +108,9 @@ Proof.
   { iDestruct "Hc" as "($&_)". }
   iDestruct "Hc" as "(_&Hc)".
   iApply ("IH" $! E1 E2 rec Hi' Hc' t' (λ t v, Φrx Hi' t v)%I with "[//] [Hc]").
-  { iApply (wpc_strong_mono' with "Hc"); rewrite ?difference_diag_L; auto. }
+  { iApply (wpc_strong_mono' with "Hc"); rewrite ?difference_diag_L; auto. iClear "# ∗".
+    iSplit; auto. iModIntro. auto.
+  }
   eauto.
 Qed.
 

@@ -2,6 +2,7 @@ From iris.bi Require Export bi.
 From iris.base_logic Require upred.
 From iris.base_logic Require Export base_logic own.
 From Perennial.Helpers Require Import ipm.
+From Perennial.algebra Require Import atleast.
 Set Default Proof Using "Type".
 
 (* TODO: upstream *)
@@ -140,6 +141,17 @@ Proof.
   by iApply "Hwand".
 Qed.
 
+Lemma own_discrete_idemp  Q:
+  own_discrete Q ⊣⊢ own_discrete (own_discrete Q).
+Proof.
+  iSplit.
+  - iDestruct 1 as (a HD) "(Hown&#Hwand)".
+    iExists a, HD. iFrame. iIntros "!> Ha".
+    iExists a, HD. iFrame; eauto.
+  - by iApply own_discrete_elim.
+Qed.
+
+
 (* This is the splitting lemma referred to above -- it uses a conjunction to capture
    the idea that the thing we want to split (P ∧ own_discrete Q) proves own_discrete Q. *)
 
@@ -191,6 +203,13 @@ Proof.
   { by iApply "Hwand2". }
 Qed.
 
+Lemma own_discrete_wand Q1 Q2:
+  □ (Q1 -∗ Q2) -∗ (own_discrete Q1 -∗ own_discrete Q2).
+Proof.
+  iIntros "#Hwand HQ1". iDestruct "HQ1" as (a1 HD) "(Ha1&#Hwand')".
+  iExists a1, HD. iFrame. iModIntro. iIntros. iApply "Hwand". by iApply "Hwand'".
+Qed.
+
 Lemma own_discrete_pure (φ: Prop) (HD: Discrete (ε: M0)):
   φ → ⊢ own_discrete (⌜ φ ⌝).
 Proof.
@@ -199,12 +218,6 @@ Proof.
 Qed.
 
 
-Lemma own_discrete_wand Q1 Q2:
-  □ (Q1 -∗ Q2) -∗ (own_discrete Q1 -∗ own_discrete Q2).
-Proof.
-  iIntros "#Hwand HQ1". iDestruct "HQ1" as (a1 HD) "(Ha1&#Hwand')".
-  iExists a1, HD. iFrame. iModIntro. iIntros. iApply "Hwand". by iApply "Hwand'".
-Qed.
 
 Global Instance own_discrete_ne : NonExpansive own_discrete.
 Proof. solve_proper. Qed.
@@ -229,6 +242,12 @@ Class Discretizable {M} {P : uPred M} := discretizable :
 Arguments Discretizable {_} _%I : simpl never.
 Arguments discretizable {_} _%I {_}.
 Hint Mode Discretizable + ! : typeclass_instances.
+
+Class IntoDiscrete {M} (P Q : uPred M) :=
+  into_discrete : P ⊢ own_discrete Q.
+Arguments IntoDiscrete {_} _%I _%I.
+Arguments into_discrete {_} _%I _%I {_}.
+Hint Mode IntoDiscrete + ! - : typeclass_instances.
 
 Section instances.
   Context {M: ucmraT}.
@@ -264,6 +283,15 @@ Section instances.
     Discrete a →
     Discretizable (uPred_ownM a).
   Proof. intros ?. by apply own_discrete_ownM. Qed.
+
+  Global Instance discretizable_into_discrete (P: uPred M):
+    Discretizable P →
+    IntoDiscrete P P.
+  Proof. rewrite /Discretizable/IntoDiscrete//=. Qed.
+
+  Global Instance own_discrete_into_discrete (P: uPred M):
+    IntoDiscrete (own_discrete P) P.
+  Proof. rewrite /Discretizable/IntoDiscrete//=. Qed.
 
 End instances.
 
@@ -315,4 +343,58 @@ Section instances_iProp.
     Discretizable (own γ a).
   Proof. intros ?. rewrite own_eq /own_def. apply _. Qed.
 
+  Lemma modality_own_discrete_mixin :
+    modality_mixin (@own_discrete (iResUR Σ))
+                   (MIEnvId)
+                   (MIEnvTransform (IntoDiscrete)).
+  Proof.
+    split; red.
+    - iIntros.
+      iDestruct (own_discrete_pure True) as "Htrue"; auto.
+      iApply (own_discrete_wand with "[] Htrue").
+      iModIntro. eauto.
+    - rewrite /IntoDiscrete/own_discrete//=.
+    - apply discretizable. apply _.
+    - iIntros (?? HPQ). iApply own_discrete_wand. iApply HPQ.
+    - iIntros (??). by rewrite own_discrete_sep.
+  Qed.
+  Definition modality_own_discrete :=
+    Modality _ (modality_own_discrete_mixin).
+
+  Global Instance from_modal_own_discrete (P: iProp Σ):
+    FromModal modality_own_discrete (own_discrete P) (own_discrete P) P.
+  Proof. rewrite /FromModal//=. Qed.
+
+  Lemma own_discrete_atleast k (Q: iProp Σ):
+    ◇_k (own_discrete Q) ⊢ own_discrete (◇_k Q).
+  Proof.
+    rewrite /bi_atleast.
+    iIntros "[#Hf|HQ]".
+    * iModIntro. eauto.
+    * iModIntro. eauto.
+  Qed.
+
+  Global Instance is_atleast_own_discrete (k: nat) (P: iProp Σ):
+    IsAtLeast k P →
+    IsAtLeast k (own_discrete P).
+  Proof. by rewrite /IsAtLeast own_discrete_atleast => ->. Qed.
+
 End instances_iProp.
+
+Notation "'<disc>' P" := (own_discrete P) (at level 20, right associativity) : bi_scope.
+
+Section test.
+
+  Context {Σ: gFunctors}.
+  Context (P Q Q': iProp Σ).
+  Context {HP: Discretizable P}.
+  Context {HQ: IntoDiscrete Q Q'}.
+
+  Goal P -∗ Q -∗ <disc> (P ∗ Q').
+  Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
+
+  Goal ∀ R, P -∗ own_discrete R -∗ <disc> (P ∗ R).
+  Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
+
+End test.
+
