@@ -130,13 +130,18 @@ Implicit Types M : PROP → PROP.
    This splitting is "lossless" in the sense that by combining the laterable
    proposition with the remainder, we can reconstruct a proof of `P`. *)
 
-Definition own_discrete (P: PROP) :=
+Definition own_discrete_def (P: PROP) :=
   (∃ (a: M0) (HD: Discrete a), uPred_ownM a ∗ □ (uPred_ownM a -∗ P))%I.
+Definition own_discrete_aux : seal own_discrete_def. Proof. by eexists. Qed.
+Definition own_discrete := own_discrete_aux.(unseal).
+Definition own_discrete_eq  : own_discrete = own_discrete_def :=
+  own_discrete_aux.(seal_eq).
 Arguments own_discrete _%I.
 
 Lemma own_discrete_elim  Q:
   own_discrete Q -∗ Q.
 Proof.
+  rewrite own_discrete_eq.
   iDestruct 1 as (a HD) "(Hown&Hwand)".
   by iApply "Hwand".
 Qed.
@@ -144,11 +149,12 @@ Qed.
 Lemma own_discrete_idemp  Q:
   own_discrete Q ⊣⊢ own_discrete (own_discrete Q).
 Proof.
+  rewrite ?own_discrete_eq.
   iSplit.
   - iDestruct 1 as (a HD) "(Hown&#Hwand)".
     iExists a, HD. iFrame. iIntros "!> Ha".
     iExists a, HD. iFrame; eauto.
-  - by iApply own_discrete_elim.
+  - rewrite -?own_discrete_eq. by iApply own_discrete_elim.
 Qed.
 
 
@@ -160,7 +166,7 @@ Lemma own_discrete_elim_conj P Q:
   (∃ P0 P1, P0 ∗ ▷ P1 ∗ □ (▷ P1 -∗ ◇ Q) ∗ □ (P0 ∗ ▷ P1 -∗ ◇ (P ∧ own_discrete Q))).
 Proof.
   iIntros "HP".
-  rewrite /own_discrete.
+  rewrite own_discrete_eq.
   iEval (rewrite bi.and_exist_l) in "HP".
   iDestruct "HP" as (a) "HP".
   iEval (rewrite bi.and_exist_l) in "HP".
@@ -190,6 +196,7 @@ Qed.
 Lemma own_discrete_sep P Q: own_discrete P ∗ own_discrete Q ⊢ own_discrete (P ∗ Q).
 Proof.
   iIntros "(H1&H2)".
+  rewrite ?own_discrete_eq.
   iDestruct "H1" as (a1 HD1) "(Hown1&#Hwand1)".
   iDestruct "H2" as (a2 HD2) "(Hown2&#Hwand2)".
   iCombine "Hown1 Hown2" as "Hown".
@@ -206,24 +213,24 @@ Qed.
 Lemma own_discrete_wand Q1 Q2:
   □ (Q1 -∗ Q2) -∗ (own_discrete Q1 -∗ own_discrete Q2).
 Proof.
-  iIntros "#Hwand HQ1". iDestruct "HQ1" as (a1 HD) "(Ha1&#Hwand')".
+  iIntros "#Hwand HQ1". rewrite ?own_discrete_eq. iDestruct "HQ1" as (a1 HD) "(Ha1&#Hwand')".
   iExists a1, HD. iFrame. iModIntro. iIntros. iApply "Hwand". by iApply "Hwand'".
 Qed.
 
 Lemma own_discrete_pure (φ: Prop) (HD: Discrete (ε: M0)):
   φ → ⊢ own_discrete (⌜ φ ⌝).
 Proof.
-  intros. iExists ε, HD.
+  intros. rewrite own_discrete_eq. iExists ε, HD.
   rewrite ?uPred.ownM_unit' ?left_id. eauto.
 Qed.
 
 
 
 Global Instance own_discrete_ne : NonExpansive own_discrete.
-Proof. solve_proper. Qed.
+Proof. rewrite ?own_discrete_eq. solve_proper. Qed.
 Global Instance own_discrete_proper : Proper ((≡) ==> (≡)) own_discrete := ne_proper _.
 Global Instance own_discrete_mono' : Proper ((⊢) ==> (⊢)) own_discrete.
-Proof. solve_proper. Qed.
+Proof. rewrite ?own_discrete_eq. solve_proper. Qed.
 Global Instance own_discrete_flip_mono' :
   Proper (flip (⊢) ==> flip (⊢)) own_discrete.
 Proof. solve_proper. Qed.
@@ -232,7 +239,7 @@ Lemma own_discrete_ownM (a: M0):
   Discrete a →
   uPred_ownM a -∗ own_discrete (uPred_ownM a).
 Proof.
-  rewrite /own_discrete. iIntros (HD) "H". iExists a, HD. iFrame; eauto.
+  rewrite own_discrete_eq. iIntros (HD) "H". iExists a, HD. iFrame; eauto.
 Qed.
 
 End modal.
