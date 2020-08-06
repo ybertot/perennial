@@ -252,8 +252,9 @@ Proof.
   iIntros (Φ Φc) "_ HΦ".
   rewrite /Barrier.
   wpc_pures; auto.
-  iRight in "HΦ".
-  iApply ("HΦ" with "[//]").
+  - iRight in "HΦ".
+    iApply ("HΦ" with "[//]").
+  - by crash_case.
 Qed.
 
 Lemma wpc_Read stk k E1 E2 (a: u64) q b :
@@ -272,7 +273,9 @@ Proof.
   wp_apply (wp_ReadOp with "Hda").
   iIntros (l) "(Hda&Hl)".
   iDestruct (block_array_to_slice _ _ _ 4096 with "Hl") as "Hs".
-  iSplit; first (by iApply "HΦ").
+  iSplit.
+  { iDestruct "HΦ" as "(HΦ&_)".
+    iDestruct ("HΦ" with "[$]") as "H". repeat iModIntro; auto. }
   iModIntro. wpc_pures; first done.
   wpc_frame "Hda HΦ".
   { by crash_case. }
@@ -285,8 +288,8 @@ Qed.
 Theorem wpc_Write_fupd {stk k E1 E2} E1' (a: u64) s q b :
   ∀ Φ Φc,
     is_block s q b -∗
-    (Φc ∧ |={E1,E1'}=> ∃ b0, int.val a d↦ b0 ∗ ▷ (int.val a d↦ b ={E1',E1}=∗
-          Φc ∧ (is_block s q b -∗ Φ #()))) -∗
+    (<disc> ▷ Φc ∧ |={E1,E1'}=> ∃ b0, int.val a d↦ b0 ∗ ▷ (int.val a d↦ b ={E1',E1}=∗
+          <disc> ▷ Φc ∧ (is_block s q b -∗ Φ #()))) -∗
     WPC Write #a (slice_val s) @ stk;k; E1;E2 {{ Φ }} {{ Φc }}.
 Proof.
   iIntros (Φ Φc) "Hs Hfupd".
@@ -305,9 +308,9 @@ Proof.
   iIntros "[Hda Hmapsto]".
   iMod ("HQ" with "Hda") as "HQ".
   iModIntro.
-  iSplit; iModIntro.
-  - by iLeft in "HQ".
-  - iRight in "HQ". iApply "HQ".
+  iSplit.
+  - iDestruct "HQ" as "(HQ&_)". iModIntro. by repeat iModIntro.
+  - iModIntro. iRight in "HQ". iApply "HQ".
     iFrame.
     destruct s; simpl in Hsz.
     replace sz with (U64 4096).
@@ -319,7 +322,7 @@ Qed.
 
 Theorem wpc_Write_fupd_triple {stk k E1 E2} E1' (Q Qc: iProp Σ) (a: u64) s q b :
   {{{ is_block s q b ∗
-      (Qc ∧ |={E1,E1'}=> ∃ b0, int.val a d↦ b0 ∗ ▷ (int.val a d↦ b ={E1',E1}=∗ Q)) }}}
+      (<disc> ▷ Qc ∧ |={E1,E1'}=> ∃ b0, int.val a d↦ b0 ∗ ▷ (int.val a d↦ b ={E1',E1}=∗ Q)) }}}
     Write #a (slice_val s) @ stk;k; E1;E2
   {{{ RET #(); is_block s q b ∗ Q }}}
   {{{ Qc ∨ Q }}}.
@@ -334,6 +337,7 @@ Proof.
   { iLeft in "HΦ". iApply "HΦ". iFrame. }
   iRight in "HΦ". iIntros "Hblock". iApply "HΦ". iFrame.
 Qed.
+*)
 
 Theorem wpc_Write' stk k E1 E2 (a: u64) s q b0 b :
   {{{ int.val a d↦ b0 ∗ is_block s q b }}}
