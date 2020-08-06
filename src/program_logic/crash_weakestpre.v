@@ -401,7 +401,7 @@ Notation "'WPC' e @ k ; E1 ; E2 {{ v , Q } } {{ R } }" := (wpc NotStuck k%nat E1
 (* Texan triples *)
 Notation "'{{{' P } } } e @ s ; k ; E1 ; E2 {{{ x .. y , 'RET' pat ; Q } } } {{{ Qc } } }" :=
   (□ ∀ Φ Φc,
-      P -∗ (Qc -∗ Φc) ∧ ▷ (∀ x, .. (∀ y, Q -∗ Φ pat%V) .. ) -∗ WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }})%I
+      P -∗ (Qc -∗ <disc> Φc) ∧ ▷ (∀ x, .. (∀ y, Q -∗ Φ pat%V) .. ) -∗ WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }})%I
     (at level 20, x closed binder, y closed binder,
      format "'[hv' {{{  P  } } }  '/  ' e  '/' @  s ; k ;  E1 ; E2 '/' {{{  x  ..  y ,  RET  pat ;  Q  } } } '/' {{{  Qc  } } } ']'") : bi_scope.
 (*
@@ -428,7 +428,7 @@ Notation "'{{{' P } } } e ? {{{ x .. y , 'RET' pat ; Q } } }" :=
 *)
 
 Notation "'{{{' P } } } e @ s ; k ; E1 ; E2 {{{ 'RET' pat ; Q } } } {{{ Qc } } }" :=
-  (□ ∀ Φ Φc, P -∗ (Qc -∗ Φc) ∧ ▷ (Q -∗ Φ pat%V) -∗ WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }})%I
+  (□ ∀ Φ Φc, P -∗ (Qc -∗ <disc> ▷ Φc) ∧ ▷ (Q -∗ Φ pat%V) -∗ WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }})%I
     (at level 20,
      format "'[hv' {{{  P  } } }  '/  ' e  '/' @  s ; k ;  E1 ; E2 '/' {{{  RET  pat ;  Q  } } } '/' {{{  Qc  } } } ']'") : bi_scope.
 (*

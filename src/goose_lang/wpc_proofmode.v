@@ -42,6 +42,7 @@ Tactic Notation "wpc_expr_eval" tactic(t) :=
       [let x := fresh in intros x; t; unfold x; reflexivity|]
   end.
 
+(* XXX: this caches the wrong thing as compared to the old version *)
 Lemma tac_wpc_pure_ctx `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ} Δ Δ' s k E1 E2 K e1 e2 φ Φ Φc :
   PureExec φ 1 e1 e2 →
@@ -53,13 +54,9 @@ Lemma tac_wpc_pure_ctx `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
 Proof.
   rewrite envs_entails_eq=> ??? Hcrash HΔ'.
   rewrite -wpc_pure_step_later //. apply and_intro; auto.
-  - rewrite into_laterN_env_sound /=.
-    rewrite HΔ' //.
+  rewrite into_laterN_env_sound /=.
+  rewrite HΔ' //.
 Qed.
-(*
-  - rewrite into_laterN_env_sound /= Hcrash //. auto.
-Qed.
-*)
 
 Lemma tac_wpc_pure_no_later_ctx `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ}
@@ -81,7 +78,7 @@ Qed.
 Lemma tac_wpc_value `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ} Δ s k E1 E2 Φ Φc v :
   envs_entails Δ (Φ v) →
-  envs_entails Δ (<disc> Φc) →
+  envs_entails Δ (<disc> ▷ Φc) →
   envs_entails Δ (WPC (Val v) @ s; k; E1; E2 {{ Φ }} {{ Φc }}).
 Proof.
   rewrite envs_entails_eq -wpc_value => H1 H2.
@@ -110,7 +107,7 @@ Ltac solve_vals_compare_safe :=
 Tactic Notation "iCache" "with" constr(Hs) :=
   lazymatch goal with
   | [ |- envs_entails _ (wpc _ _ _ _ _ _ ?Φc) ] =>
-        iCache_go Φc Hs "#?"
+        iCache_go (<disc> ▷ Φc)%I Hs "#?"
   | _ => fail 1 "not a wpc goal"
   end.
 
@@ -168,10 +165,10 @@ Tactic Notation "wpc_pure" open_constr(efoc) simple_intropattern(H) :=
 
 Ltac crash_case :=
   try lazymatch goal with
-      | [ |- envs_entails (Envs ?ienv ?senv _) ?Φc ] =>
+      | [ |- envs_entails (Envs ?ienv ?senv _) (<disc> ▷ ?Φc) ] =>
         is_var Φc;
         lazymatch senv with
-        | context[Esnoc _ ?H ((_ -∗ Φc) ∧ _)%I] => iApply H
+        | context[Esnoc _ ?H ((_ -∗ <disc> ▷ Φc) ∧ _)%I] => iApply H
         end
       end.
 
@@ -256,7 +253,7 @@ Tactic Notation "wpc_frame" :=
   lazymatch goal with
   | [ |- envs_entails (Envs ?Γp _ _) (wpc _ _ _ _ _ _ ?Φc) ] =>
     first [ match Γp with
-            | context[Esnoc _ ?i (@cached _ Φc ?c)] =>
+            | context[Esnoc _ ?i (@cached _ (<disc> ▷ Φc)%I ?c)] =>
               apply (tac_wpc_wp_frame_cache Φc i c);
               [ reflexivity (* lookup should always succeed, found by context match *)
               | reduction.pm_reduce; split;

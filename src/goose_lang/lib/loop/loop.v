@@ -139,8 +139,16 @@ Proof.
     { lia. }
     iExists _; iFrame.
     auto. }
-  wpc_let Hcrash.
-  wpc_let Hcrash.
+  clear Hcrash.
+  wpc_pure _ Hcrash.
+  { crash_case.
+    iDestruct (Himpl with "[%] H0") as "H0".
+    { lia. }
+    iExists _; iFrame.
+    auto. }
+  wpc_pure _ _; auto.
+  wpc_pure _ _; auto.
+  wpc_pure _ _; auto.
   wpc_pure (Rec _ _ _) Hcrash.
   match goal with
   | |- context[RecV (BNamed "loop") _ ?body] => set (loop:=body)
@@ -154,7 +162,9 @@ Proof.
   iCache with "HΦ HIx".
   { crash_case.
     iDestruct (Himpl with "[] [$]") as "?"; eauto.
-    iPureIntro; lia. }
+    - iPureIntro. lia.
+  }
+  wpc_pures.
   wpc_pures.
   wpc_bind (load_ty _ _).
   wpc_frame.
