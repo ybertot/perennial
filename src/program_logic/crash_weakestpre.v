@@ -735,7 +735,7 @@ Proof.
 Qed.
 
 Lemma wpc_frame_l' s k E1 E2 e Φ Φc R R' :
-  (R ∧ <disc> R') ∗ WPC e @ s; k ; E1 ; E2 {{ Φ }} {{ Φc }}
+  (R ∧ <disc> ▷ R') ∗ WPC e @ s; k ; E1 ; E2 {{ Φ }} {{ Φc }}
   ⊢ WPC e @ s; k ; E1 ; E2 {{ v, R ∗ Φ v }} {{ R' ∗ Φc }}.
 Proof.
   iIntros "[HR H]". iApply (wpc_strong_mono' with "H"); rewrite ?difference_diag_L; auto.
@@ -1285,7 +1285,7 @@ Proof.
 Qed.
 
 Lemma wp_wpc_frame' s k E1 E2 e Φ Φc R :
-  (<disc> Φc ∧ R) ∗
+  (<disc> ▷ Φc ∧ R) ∗
   WP e @ s ; E1 {{ λ v, R -∗ Φ v }} ⊢
   WPC e @ s ; k; E1 ; E2 {{ Φ }} {{ Φc }}.
 Proof.
@@ -1306,7 +1306,7 @@ Lemma wp_wpc_frame s k E1 E2 e Φ Φc :
 Proof.
   iIntros "(HΦc&Hwp)".
   iApply (wp_wpc_frame' _ _ _ _ _ _ _ Φc).
-  iFrame "Hwp". iSplit; eauto. by iApply own_discrete_elim.
+  iFrame "Hwp". iSplit; try iModIntro; auto. by iApply own_discrete_elim.
 Qed.
 
 Lemma wpc_crash_frame_wand s k E2 E e Φ Φc Ψc :
@@ -1398,11 +1398,11 @@ Section proofmode_classes.
   Implicit Types P Q : iProp Σ.
   Implicit Types Φ : val Λ → iProp Σ.
 
-  Global Instance frame_wpc p s E1 E2 e R R' Φ Ψ Φc Ψc :
+  Global Instance frame_wpc p s k E1 E2 e R R' Φ Ψ Φc Ψc :
     (∀ v, Frame p R (Φ v) (Ψ v)) →
     IntoDiscrete R R' →
      Frame p R' Φc Ψc →
-    Frame p R (WPC e @ s; E1; E2 {{ Φ }} {{ Φc }}) (WPC e @ s; E1; E2 {{ Ψ }} {{ Ψc }}).
+    Frame p R (WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }}) (WPC e @ s; k; E1; E2 {{ Ψ }} {{ Ψc }}).
   Proof.
     rewrite /Frame=> HR Hdisc HRc.
     iIntros "(HR&Hwpc)".
@@ -1412,7 +1412,15 @@ Section proofmode_classes.
         rewrite (own_discrete_elim). do 2 iModIntro. eauto.
       - iModIntro. eauto.
     }
-    iPoseProof (wpc_frame_l' with "[$]") as "Hwpc". iApply (wpc_mono with "Hwpc"); [ apply HR | apply HRc ].
+    iPoseProof (wpc_frame_l' with "[$Hwpc HR]") as "Hwpc".
+    { iSplit.
+      * iApply "HR".
+      * iDestruct "HR" as "(_&HHR)". iModIntro. iNext. iApply "HHR".
+    }
+    iApply (wpc_mono with "Hwpc"); last done.
+    { iIntros (?) "(HR&HΨ)". iApply HR.
+      iFrame. iDestruct "HR" as "($&_)".
+    }
   Qed.
 
   Global Instance is_except_0_wpc s k E1 E2 e Φ Φc : IsExcept0 (WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }}).
@@ -1429,7 +1437,7 @@ Section proofmode_classes.
     ElimModal True p false (|={E1}=> P) P (WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }})
               (WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }}).
   Proof.
-    by rewrite /ElimModal intuitionistically_if_elim 
+    by rewrite /ElimModal intuitionistically_if_elim
       fupd_frame_r wand_elim_r fupd_wpc.
   Qed.
 

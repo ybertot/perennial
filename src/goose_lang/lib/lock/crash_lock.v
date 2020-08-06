@@ -159,7 +159,7 @@ Section proof.
     (S k ≤ k')%nat →
     is_crash_lock (S k') lk R Rcrash ∗
     (<disc> ▷ Φc ∧
-      (▷ R -∗ WPC e @ (S k); (⊤ ∖ ↑Ncrash); ∅ {{ λ v, (<disc> ▷ Φc ∧ Φ #()) ∗ ▷ R }} {{ Φc ∗ ▷ Rcrash }})) -∗
+      (▷ R -∗ WPC e @ (S k); (⊤ ∖ ↑Ncrash); ∅ {{ λ v, (<disc> ▷ Φc ∧ Φ #()) ∗ ▷ R }} {{ Φc ∗ Rcrash }})) -∗
     WPC (with_lock lk e) @ (S k) ; ⊤; E {{ Φ }} {{ Φc }}.
   Proof.
     iIntros (?) "(#Hcrash&Hwp)".
@@ -181,7 +181,7 @@ Section proof.
     iSpecialize ("H" with "[$]").
     iApply (wpc_strong_mono with "H"); eauto.
     iSplit; last first.
-    { iIntros. rewrite difference_diag_L. iApply step_fupdN_inner_later; eauto. }
+    { iIntros. rewrite difference_diag_L. iModIntro. iIntros "H". repeat iModIntro; auto. }
     iIntros (?) "(H&?)". iModIntro. iFrame.
     iIntros "Hlocked".
     iSplit.
@@ -202,15 +202,12 @@ End proof.
 
 End goose_lang.
 
+(* XXX: this probably doesn't work correctly anymore *)
 Ltac crash_lock_open H :=
   lazymatch goal with
   | [ |- envs_entails _ (wpc _ ?k _ _ _ _ _) ] =>
-    lazymatch k with
-    | LVL _ => idtac
-    | _ => fail 1 "crash_lock_open: wpc needs k of the form LVL (S (S ?k))"
-    end;
     match iTypeOf H with
-    | Some (_, crash_locked _ _ (LVL _) _ _ _) =>
+    | Some (_, crash_locked _ _ _ _ _ _) =>
       iApply (use_crash_locked with H);
       [ try lia (* LVL inequality *)
       | try solve_ndisj (* Ncrash namespace *)

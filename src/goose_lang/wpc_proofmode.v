@@ -66,8 +66,8 @@ Lemma tac_wpc_pure_no_later_ctx `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       Δ s k E1 E2 K e1 e2 φ Φ Φc :
   PureExec φ 1 e1 e2 →
   φ →
-  envs_entails Δ (<disc> Φc) →
-  (envs_entails Δ (<disc> Φc) → envs_entails Δ (WPC (fill K e2) @ s; k; E1; E2 {{ Φ }} {{ Φc }})) →
+  envs_entails Δ (<disc> ▷ Φc) →
+  (envs_entails Δ (<disc> ▷ Φc) → envs_entails Δ (WPC (fill K e2) @ s; k; E1; E2 {{ Φ }} {{ Φc }})) →
   envs_entails Δ (WPC (fill K e1) @ s; k; E1; E2 {{ Φ }} {{ Φc }}).
 Proof.
   rewrite envs_entails_eq=> ?? Hcrash HΔ'.
@@ -76,7 +76,6 @@ Proof.
   - iIntros "Henv".
     iModIntro.
     iApply HΔ'; iAssumption.
-  - rewrite Hcrash. iIntros "H". iModIntro; auto.
 Qed.
 
 Lemma tac_wpc_value `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
@@ -191,7 +190,7 @@ Proof. rewrite envs_entails_eq=> -> ->. by apply: wpc_bind. Qed.
 Lemma tac_wpc_wp_frame `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ} Δ d js s k E1 E2 e (Φ: _ -> iProp Σ) (Φc: iProp Σ) :
   match envs_split d js Δ with
-  | Some (Δ1, Δ2) => envs_entails Δ1 (<disc> Φc) ∧
+  | Some (Δ1, Δ2) => envs_entails Δ1 (<disc> ▷ Φc) ∧
                      envs_entails Δ2 (WP e @ s; E1
                              {{ v, (env_to_named_prop Δ1.(env_spatial) -∗ Φ v)%I }})
   | None => False
@@ -218,7 +217,7 @@ Qed.
 (* combines using [wpc_frame Hs] with [iFromCache], simultaneously framing and
    proving the crash condition using a cache *)
 Lemma tac_wpc_wp_frame_cache `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
-      `{!heapG Σ, !crashG Σ} (Φc: iProp Σ) i (* name of cache *) (c: cache (<disc> Φc)%I)
+      `{!heapG Σ, !crashG Σ} (Φc: iProp Σ) i (* name of cache *) (c: cache (<disc> ▷ Φc)%I)
       Δ stk k E1 E2 e (Φ: _ → iProp Σ)  :
   envs_lookup i Δ = Some (true, cached c) →
   match envs_split Left c.(cache_names) Δ with
