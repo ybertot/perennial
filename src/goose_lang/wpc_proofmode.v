@@ -168,14 +168,14 @@ Ltac crash_case :=
       | [ |- envs_entails (Envs ?ienv ?senv _) (<disc> ▷ ?Φc) ] =>
         is_var Φc;
         lazymatch senv with
-        | context[Esnoc _ ?H ((_ -∗ <disc> ▷ Φc) ∧ _)%I] => iApply H
+        | context[Esnoc _ ?H (<disc> (_ -∗ ▷ Φc) ∧ _)%I] => iLeft in H; iModIntro; iApply H
         end
       end.
 
 Ltac wpc_pures :=
   iStartProof;
   let Hcrash := fresh "Hcrash" in
-  wpc_pure _ Hcrash; [try iFromCache; crash_case ..  | repeat (wpc_pure_no_later _ Hcrash; []); clear Hcrash].
+  wpc_pure _ Hcrash; [try iFromCache .. | repeat (wpc_pure_no_later _ Hcrash; []); clear Hcrash].
 
 Lemma tac_wpc_bind `{ffi_sem: ext_semantics} `{!ffi_interp ffi}
       `{!heapG Σ, !crashG Σ} K Δ s k E1 E2 Φ Φc e f :

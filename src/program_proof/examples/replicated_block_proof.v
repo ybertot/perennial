@@ -83,7 +83,7 @@ Section goose.
     ∃ (d_ref m_ref: loc),
       "Hro_state" ∷ rblock_state l d_ref m_ref addr ∗
       (* lock protocol *)
-      "#Hlock" ∷ is_crash_lock N N (LVL k') #m_ref
+      "#Hlock" ∷ is_crash_lock N N k' #m_ref
         (∃ σ, "Hlkinv" ∷ rblock_linv addr σ ∗ "HP" ∷ P σ)
         (∃ σ, "Hclkinv" ∷ rblock_cinv addr σ ∗ "HP" ∷ P σ)
   .
@@ -108,8 +108,8 @@ Section goose.
   Theorem replicated_block_cfupd {l} k' addr σ0 :
     is_pre_rblock l addr σ0 -∗
     ▷ P σ0 ={⊤}=∗
-      is_rblock k' l addr ∗
-      |C={⊤,∅}_(LVL (S k'))=> ∃ σ, rblock_cinv addr σ ∗ P σ.
+      is_rblock (S k') l addr ∗
+      <disc> |C={⊤,∅}_(S k')=> ∃ σ, rblock_cinv addr σ ∗ P σ.
   Proof.
     iIntros "Hpre HP"; iNamed "Hpre".
 
@@ -132,31 +132,33 @@ Section goose.
   backup, going from the crash invariant to the lock invariant. *)
   Theorem wpc_Open {k E2} (d_ref: loc) addr σ :
     {{{ rblock_cinv addr σ }}}
-      Open #d_ref #addr @ NotStuck;LVL (S (S k)); ⊤;E2
+      Open #d_ref #addr @ NotStuck; (S k); ⊤;E2
     {{{ (l:loc), RET #l; is_pre_rblock l addr σ }}}
     {{{ rblock_cinv addr σ }}}.
   Proof.
     iIntros (Φ Φc) "Hpre HΦ"; iNamed "Hpre".
     iDeexHyp "Hbackup".
     wpc_call.
-    { eauto with iFrame. }
+    { iNext. eauto with iFrame. }
+    { iNext. eauto with iFrame. }
     iCache with "Hprimary Hbackup HΦ".
-    { crash_case. eauto with iFrame. }
+    { crash_case. iNext. eauto with iFrame. }
     (* read block content, write it to backup block *)
+    wpc_pures.
     wpc_apply (wpc_Read with "Hprimary").
     iSplit; [ | iNext ].
-    { iIntros "Hprimary".
-      iFromCache. }
+    { iLeft in "HΦ". iModIntro. iIntros "Hprimary".
+      (* Cached the wrong thing :( *)
+      iApply "HΦ". iNext. eauto with iFrame. }
     iIntros (s) "(Hprimary&Hb)".
     iDestruct (is_slice_to_small with "Hb") as "Hb".
     wpc_pures.
     wpc_apply (wpc_Write' with "[$Hbackup $Hb]").
     iSplit; [ | iNext ].
-    { iIntros "[Hbackup|Hbackup]"; try iFromCache.
-      crash_case. eauto with iFrame. }
+    { iLeft in "HΦ". iModIntro. iIntros "[Hbackup|Hbackup]"; iApply "HΦ"; iNext; eauto with iFrame. }
     iIntros "(Hbackup&_)".
     iCache with "HΦ Hprimary Hbackup".
-    { crash_case. eauto with iFrame. }
+    { iLeft in "HΦ". iModIntro. iIntros; iApply "HΦ"; iNext; eauto with iFrame. }
 
     (* allocate lock *)
     wpc_pures.
@@ -201,21 +203,23 @@ Section goose.
   Qed.
 
   Lemma wpc_RepBlock__Read {k E2} {k' l} addr (primary: bool) :
-    (S k < k')%nat →
+    (S k ≤ k')%nat →
     ∀ Φ Φc,
-        "Hrb" ∷ is_rblock k' l addr ∗
-        "Hfupd" ∷ (Φc (* crash condition before lin.point *) ∧
-                   ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ (Φc (* crash condition after lin.point *) ∧
+        "Hrb" ∷ is_rblock (S k') l addr ∗
+        "Hfupd" ∷ (<disc> ▷ Φc (* crash condition before lin.point *) ∧
+                   ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ (<disc> ▷ Φc (* crash condition after lin.point *) ∧
                                                  (∀ s, is_block s 1 σ -∗ Φ (slice_val s))))) -∗
-      WPC RepBlock__Read #l #primary @ NotStuck; LVL (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
+      WPC RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
   Proof.
     iIntros (? Φ Φc) "Hpre"; iNamed "Hpre".
     iNamed "Hrb".
     iNamed "Hro_state".
     wpc_call.
     { by iLeft in "Hfupd". }
+    { by iLeft in "Hfupd". }
     iCache with "Hfupd". (* after we stripped the later, cache proof *)
     { by iLeft in "Hfupd". }
+    wpc_pures.
     wpc_frame_seq.
     wp_loadField.
     wp_apply (crash_lock.acquire_spec with "Hlock"); auto.
@@ -228,7 +232,8 @@ Section goose.
 
     wpc_bind_seq.
     crash_lock_open "His_locked".
-    iNamed 1.
+    iDestruct 1 as (σ) "(>Hlkinv&HP)".
+    iNamed "Hlkinv".
     iAssert (int.val addr' d↦ σ ∗
                    (int.val addr' d↦ σ -∗ rblock_linv addr σ))%I
       with "[Hlkinv]" as "(Haddr'&Hlkinv)".
@@ -239,7 +244,7 @@ Section goose.
 
     wpc_apply (wpc_Read with "Haddr'").
     iSplit; [ | iNext ].
-    { iIntros "Hd".
+    { iLeft in "HQ". iIntros "Hd".
       iSpecialize ("Hlkinv" with "Hd").
       iSplitL "HQ".
       { by iLeft in "HQ". }
