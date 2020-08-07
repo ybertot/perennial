@@ -147,18 +147,18 @@ Section goose.
     wpc_pures.
     wpc_apply (wpc_Read with "Hprimary").
     iSplit; [ | iNext ].
-    { iLeft in "HΦ". iModIntro. iIntros "Hprimary".
+    { iLeft in "HΦ". iModIntro. iNext. iIntros "Hprimary".
       (* Cached the wrong thing :( *)
-      iApply "HΦ". iNext. eauto with iFrame. }
+      iApply "HΦ". eauto with iFrame. }
     iIntros (s) "(Hprimary&Hb)".
     iDestruct (is_slice_to_small with "Hb") as "Hb".
     wpc_pures.
     wpc_apply (wpc_Write' with "[$Hbackup $Hb]").
     iSplit; [ | iNext ].
-    { iLeft in "HΦ". iModIntro. iIntros "[Hbackup|Hbackup]"; iApply "HΦ"; iNext; eauto with iFrame. }
+    { iLeft in "HΦ". iModIntro. iNext. iIntros "[Hbackup|Hbackup]"; iApply "HΦ"; eauto with iFrame. }
     iIntros "(Hbackup&_)".
     iCache with "HΦ Hprimary Hbackup".
-    { iLeft in "HΦ". iModIntro. iIntros; iApply "HΦ"; iNext; eauto with iFrame. }
+    { iLeft in "HΦ". iModIntro. iNext. iApply "HΦ"; eauto with iFrame. }
 
     (* allocate lock *)
     wpc_pures.
@@ -247,8 +247,8 @@ Section goose.
     iMod ("HP").
     wpc_apply (wpc_Read with "Haddr'").
     iSplit; [ | iNext ].
-    { iLeft in "HQ". iModIntro. iIntros "Hd".
-      iNext. iFrame.
+    { iLeft in "HQ". iModIntro. iNext.
+      iFrame. iIntros.
       iExists _; iFrame.
       iApply rblock_linv_to_cinv; iFrame. iApply "Hlkinv". eauto. }
     iIntros (s) "(Haddr'&Hb)".
@@ -363,8 +363,8 @@ Section goose.
     wpc_apply (wpc_Write' with "[$Hb Hbackup]").
     { iFrame. }
     iSplit; [ | iNext ].
-    { iLeft in "HΦ". iModIntro. iIntros "[Hbackup|Hbackup]";
-      iFrame; iNext; eauto 10 with iFrame.
+    { iLeft in "HΦ". iModIntro. iNext. iIntros "[Hbackup|Hbackup]";
+      iFrame; eauto 10 with iFrame.
     }
     iIntros "(Hbackup&Hb)".
     iSplitR "Hprimary Hbackup HP"; last first.
@@ -415,15 +415,14 @@ Section goose.
     wpc_bind (Open _ _).
     wpc_apply (wpc_Open with "H").
     iSplit.
-    { iLeft in "HΦ". iModIntro. iIntros "H". iApply "HΦ". eauto with iFrame. }
+    { iLeft in "HΦ". iModIntro. iNext. iIntros "H". iApply "HΦ". eauto with iFrame. }
     iNext. iIntros (?) "Hpre".
     iMod (replicated_block_cfupd 1 with "Hpre HP") as "(#Hrblock&Hcfupd)".
     (* Here is the use of the cfupd to cancel out the rblock_cinv from crash condition,
        which is important because RepBlock__Read doesn't guarantee rblock_cinv! *)
     iMod "Hcfupd" as "_".
-    (* XXX: this suggests that the choice of notation for the triples is wrong *)
     iCache with "HΦ".
-    { iLeft in "HΦ". iModIntro. iNext. iIntros. admit. }
+    { iLeft in "HΦ". auto. }
     wpc_pures.
     (* Weaken the levels. *)
     iApply (wpc_idx_mono 1); first lia.
@@ -434,7 +433,7 @@ Section goose.
     iSplit; first iFromCache.
     iIntros. iRight in "HΦ". iApply "HΦ".
     eauto.
-  Admitted.
+  Qed.
 
 End goose.
 

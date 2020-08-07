@@ -373,7 +373,7 @@ Proof.
   iDestruct "Hpre" as (b0) "[Hda Hs]".
   wpc_apply (wpc_Write' with "[$Hda $Hs]").
   iSplit.
-  { iLeft in "HΦ". iModIntro. iIntros "[Hda|Hda]"; iApply "HΦ"; eauto. }
+  { iLeft in "HΦ". iModIntro. iNext. iIntros "[Hda|Hda]"; iApply "HΦ"; eauto. }
   iIntros "!> [Hda Hb]".
   iRight in "HΦ".
   iApply "HΦ"; iFrame.

@@ -168,7 +168,7 @@ Ltac crash_case :=
       | [ |- envs_entails (Envs ?ienv ?senv _) (<disc> ▷ ?Φc) ] =>
         is_var Φc;
         lazymatch senv with
-        | context[Esnoc _ ?H (<disc> (_ -∗ ▷ Φc) ∧ _)%I] => iLeft in H; iModIntro; iApply H
+        | context[Esnoc _ ?H (<disc> ▷ (_ -∗ Φc) ∧ _)%I] => iLeft in H; iModIntro; iApply H
         end
       end.
 
