@@ -202,6 +202,8 @@ Section goose.
       iApply "HΦ"; auto.
   Qed.
 
+  Context `{Htime: ∀ σ, Timeless (P σ)}.
+  Context `{Hdisc: ∀ σ, Discretizable (P σ)}.
   Lemma wpc_RepBlock__Read {k E2} {k' l} addr (primary: bool) :
     (S k ≤ k')%nat →
     ∀ Φ Φc,
@@ -210,7 +212,7 @@ Section goose.
                    ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ (<disc> ▷ Φc (* crash condition after lin.point *) ∧
                                                  (∀ s, is_block s 1 σ -∗ Φ (slice_val s))))) -∗
       WPC RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
-  Proof.
+  Proof using Hdisc Htime.
     iIntros (? Φ Φc) "Hpre"; iNamed "Hpre".
     iNamed "Hrb".
     iNamed "Hro_state".
@@ -235,29 +237,29 @@ Section goose.
     iDestruct 1 as (σ) "(>Hlkinv&HP)".
     iNamed "Hlkinv".
     iAssert (int.val addr' d↦ σ ∗
-                   (int.val addr' d↦ σ -∗ rblock_linv addr σ))%I
+                   <disc> (int.val addr' d↦ σ -∗ rblock_linv addr σ))%I
       with "[Hlkinv]" as "(Haddr'&Hlkinv)".
     { iNamed "Hlkinv".
-      destruct Haddr'_eq; subst; iFrame; auto. }
+      destruct Haddr'_eq; subst; iFrame; iModIntro; iFrame; auto. }
     iRight in "Hfupd".
     iMod ("Hfupd" with "HP") as "[HP HQ]".
 
+    iMod ("HP").
     wpc_apply (wpc_Read with "Haddr'").
     iSplit; [ | iNext ].
-    { iLeft in "HQ". iIntros "Hd".
-      iSpecialize ("Hlkinv" with "Hd").
-      iSplitL "HQ".
-      { by iLeft in "HQ". }
+    { iLeft in "HQ". iModIntro. iIntros "Hd".
+      iNext. iFrame.
       iExists _; iFrame.
-      iApply rblock_linv_to_cinv; iFrame. }
+      iApply rblock_linv_to_cinv; iFrame. iApply "Hlkinv". eauto. }
     iIntros (s) "(Haddr'&Hb)".
     iDestruct (is_slice_to_small with "Hb") as "Hb".
+    iDestruct (own_discrete_elim with "Hlkinv") as "Hlkinv".
     iSpecialize ("Hlkinv" with "Haddr'").
     iSplitR "HP Hlkinv"; last by eauto with iFrame.
     (* TODO: why is this the second goal?
        RALF: because use_crash_locked puts [R] to the right. *)
     iIntros "His_locked".
-    iCache Φc with "HQ".
+    iCache (<disc> ▷ Φc)%I with "HQ".
     { by iLeft in "HQ". }
     iSplit; first by iFromCache.
     wpc_pures.
@@ -272,41 +274,43 @@ Section goose.
   Qed.
 
   Theorem wpc_RepBlock__Read_triple (Q: Block → iProp Σ) (Qc: iProp Σ) {k E2} {k' l} addr (primary: bool) :
-    (S k < k')%nat →
-    {{{ "Hrb" ∷ is_rblock k' l addr ∗ (* replicated block protocol *)
-        "HQc" ∷ (∀ σ, Q σ -∗ Qc) ∗ (* crash condition after "linearization point" *)
-        "Hfupd" ∷ (Qc (* crash condition before "linearization point" *) ∧
+    (S k ≤ k')%nat →
+    {{{ "Hrb" ∷ is_rblock (S k') l addr ∗ (* replicated block protocol *)
+        "HQc" ∷ (∀ σ, Q σ -∗ <disc> Qc) ∗ (* crash condition after "linearization point" *)
+        "Hfupd" ∷ (<disc> Qc (* crash condition before "linearization point" *) ∧
                    (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ Q σ)) }}}
-      RepBlock__Read #l #primary @ NotStuck; LVL (S k); ⊤; E2
+      RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2
     {{{ s b, RET (slice_val s); is_block s 1 b ∗ Q b }}}
     {{{ Qc }}}.
-  Proof.
+  Proof using Hdisc Htime.
     iIntros (? Φ Φc) "Hpre HΦ"; iNamed "Hpre".
     iApply wpc_RepBlock__Read; first done.
     iFrame "Hrb".
     iSplit.
-    { iLeft in "Hfupd". iLeft in "HΦ". iApply "HΦ". done. }
+    { iLeft in "Hfupd". iLeft in "HΦ". iModIntro. iApply "HΦ". done. }
     iNext. iIntros (σ) "HP". iRight in "Hfupd". iMod ("Hfupd" with "HP") as "[HP HQ]".
     iModIntro. iFrame "HP". iSplit.
-    { iLeft in "HΦ". iApply "HΦ". iApply "HQc". done. }
+    { iLeft in "HΦ". iSpecialize ("HQc" with "[$]"). iModIntro; by iApply "HΦ". }
     iIntros (s) "Hblock". iRight in "HΦ". iApply "HΦ". iFrame.
   Qed.
 
   Lemma wpc_RepBlock__Write {k E2} l k' addr (s: Slice.t) q (b: Block) :
-    (S k < k')%nat →
+    (S k ≤ k')%nat →
     ∀ Φ Φc,
-        "Hrb" ∷ is_rblock k' l addr ∗
+        "Hrb" ∷ is_rblock (S k') l addr ∗
         "Hb" ∷ is_block s q b ∗
-        "Hfupd" ∷ (Φc ∧ ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ (Φc ∧ (is_block s q b -∗ Φ #())))) -∗
-    WPC  RepBlock__Write #l (slice_val s) @ NotStuck; LVL (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
-  Proof.
+        "Hfupd" ∷ (<disc> ▷ Φc ∧ ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ (<disc> ▷ Φc ∧ (is_block s q b -∗ Φ #())))) -∗
+    WPC  RepBlock__Write #l (slice_val s) @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
+  Proof using Hdisc Htime.
     iIntros (? Φ Φc) "Hpre"; iNamed "Hpre".
     iNamed "Hrb".
     iNamed "Hro_state".
     wpc_call.
     { iLeft in "Hfupd"; auto. }
+    { iLeft in "Hfupd"; auto. }
     iCache with "Hfupd".
     { iLeft in "Hfupd"; auto. }
+    wpc_pures.
     wpc_frame_seq.
     wp_loadField.
     wp_apply (crash_lock.acquire_spec with "Hlock"); auto.
@@ -316,11 +320,13 @@ Section goose.
     wpc_pures.
     wpc_bind_seq.
     crash_lock_open "His_locked".
-    iNamed 1.
+    iDestruct 1 as (σ) "(>Hlkinv&HP)".
     iNamed "Hlkinv".
-
+    iNamed "Hlkinv".
+    iMod "HP".
+    iNamed "HP".
     iCache with "HP Hprimary Hbackup Hfupd".
-    { iSplitL "Hfupd"; first by iFromCache.
+    { iLeft in "Hfupd". iModIntro. iFrame. iNext.
       eauto 10 with iFrame. }
 
     (* call to (lower-case) write, doing the actual writes *)
@@ -340,24 +346,26 @@ Section goose.
     iModIntro. iExists _; iFrame. iIntros "!> Hprimary".
     (* linearization/simulation point: run Hfupd. *)
     iRight in "Hfupd". iMod ("Hfupd" with "HP") as "[HP HΦ]".
+    iMod "HP".
     iModIntro. iSplit.
-    { iLeft in "HΦ". eauto 10 with iFrame. }
+    { iLeft in "HΦ". iModIntro. eauto 10 with iFrame. }
     iIntros "Hb".
-    iCache Φc with "HΦ".
+    iCache (<disc> ▷ Φc)%I with "HΦ".
     { by iLeft in "HΦ". }
 
     wpc_pures.
-    { iSplitL "HΦ"; first iFromCache. eauto 10 with iFrame. }
+    { iLeft in "HΦ". iModIntro. iNext. iFrame. eauto 10 with iFrame. }
     iCache with "HΦ Hprimary Hbackup HP".
-    { iSplitL "HΦ"; first iFromCache. eauto 10 with iFrame. }
+    { iLeft in "HΦ". iModIntro. iNext. iFrame. eauto 10 with iFrame. }
     wpc_loadField.
     wpc_pures.
     (* second write *)
     wpc_apply (wpc_Write' with "[$Hb Hbackup]").
     { iFrame. }
     iSplit; [ | iNext ].
-    { iIntros "[Hbackup|Hbackup]"; try iFromCache.
-      iSplitL "HΦ"; first by iFromCache. eauto 10 with iFrame. }
+    { iLeft in "HΦ". iModIntro. iIntros "[Hbackup|Hbackup]";
+      iFrame; iNext; eauto 10 with iFrame.
+    }
     iIntros "(Hbackup&Hb)".
     iSplitR "Hprimary Hbackup HP"; last first.
     { eauto with iFrame. }
@@ -372,22 +380,22 @@ Section goose.
   Qed.
 
   Theorem wpc_RepBlock__Write_triple (Q: iProp Σ) (Qc: iProp Σ) {k E2} l k' addr (s: Slice.t) q (b: Block) :
-    (S k < k')%nat →
-    {{{ "Hrb" ∷ is_rblock k' l addr ∗
+    (S k ≤ k')%nat →
+    {{{ "Hrb" ∷ is_rblock (S k') l addr ∗
         "Hb" ∷ is_block s q b ∗
-        "HQc" ∷ (Q -∗ Qc) ∗
-        "Hfupd" ∷ (Qc ∧ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ Q)) }}}
-      RepBlock__Write #l (slice_val s) @ NotStuck; LVL (S k); ⊤; E2
+        "HQc" ∷ (Q -∗ <disc> ▷ Qc) ∗
+        "Hfupd" ∷ (<disc> ▷ Qc ∧ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ Q)) }}}
+      RepBlock__Write #l (slice_val s) @ NotStuck; (S k); ⊤; E2
     {{{ RET #(); Q ∗ is_block s q b }}}
     {{{ Qc }}}.
-  Proof.
+  Proof using Hdisc Htime.
     iIntros (? Φ Φc) "Hpre HΦ"; iNamed "Hpre".
     iApply wpc_RepBlock__Write; first done.
     iFrame. iSplit.
-    { iLeft in "Hfupd". iLeft in "HΦ". iApply "HΦ". done. }
+    { iLeft in "Hfupd". iLeft in "HΦ". iModIntro. iApply "HΦ". done. }
     iNext. iIntros (σ) "HP". iRight in "Hfupd". iMod ("Hfupd" with "HP") as "[HP HQ]".
     iModIntro. iFrame "HP". iSplit.
-    { iLeft in "HΦ". iApply "HΦ". iApply "HQc". done. }
+    { iLeft in "HΦ". iSpecialize ("HQc" with "[$]"). iModIntro. iApply "HΦ". iApply "HQc". }
     iIntros "Hblock". iRight in "HΦ". iApply "HΦ". iFrame.
   Qed.
 
@@ -398,27 +406,27 @@ Section goose.
 
   Theorem wpc_OpenRead (d_ref: loc) {E2} addr σ:
     {{{ rblock_cinv addr σ ∗ P σ }}}
-      OpenRead d_ref addr @ NotStuck; LVL 100; ⊤; E2
+      OpenRead d_ref addr @ NotStuck; 2; ⊤; E2
     {{{ (x: val), RET x; True }}}
     {{{ ∃ σ, rblock_cinv addr σ ∗ P σ }}}.
-  Proof using stagedG0.
+  Proof using stagedG0 Hdisc Htime.
     rewrite /OpenRead.
     iIntros (??) "(H&HP) HΦ".
     wpc_bind (Open _ _).
     wpc_apply (wpc_Open with "H").
     iSplit.
-    { iIntros "H". iLeft in "HΦ". iApply "HΦ". eauto with iFrame. }
+    { iLeft in "HΦ". iModIntro. iIntros "H". iApply "HΦ". eauto with iFrame. }
     iNext. iIntros (?) "Hpre".
-    iMod (replicated_block_cfupd 98 with "Hpre HP") as "(#Hrblock&Hcfupd)".
+    iMod (replicated_block_cfupd 1 with "Hpre HP") as "(#Hrblock&Hcfupd)".
     (* Here is the use of the cfupd to cancel out the rblock_cinv from crash condition,
        which is important because RepBlock__Read doesn't guarantee rblock_cinv! *)
     iMod "Hcfupd" as "_".
+    (* XXX: this suggests that the choice of notation for the triples is wrong *)
     iCache with "HΦ".
-    { by iLeft in "HΦ". }
+    { iLeft in "HΦ". iModIntro. iNext. iIntros. admit. }
     wpc_pures.
     (* Weaken the levels. *)
-    iApply (wpc_idx_mono _ (LVL 50)).
-    { apply LVL_le. lia. }
+    iApply (wpc_idx_mono 1); first lia.
     wpc_apply (wpc_RepBlock__Read with "[HΦ $Hrblock]").
     { lia. }
     iSplit; first iFromCache.
@@ -426,7 +434,7 @@ Section goose.
     iSplit; first iFromCache.
     iIntros. iRight in "HΦ". iApply "HΦ".
     eauto.
-  Qed.
+  Admitted.
 
 End goose.
 
@@ -449,9 +457,9 @@ Section recov.
      use different heapG instances after crash *)
 
   (* Just a simple example of using idempotence *)
-  Theorem wpr_Open (d_ref: loc) k addr σ:
+  Theorem wpr_Open (d_ref: loc) addr σ:
     rblock_cinv addr σ -∗
-    wpr NotStuck (LVL (S (S k))) ⊤
+    wpr NotStuck 2 ⊤
         (Open #d_ref #addr)
         (Open #d_ref #addr)
         (λ _, True%I)
@@ -459,10 +467,10 @@ Section recov.
         (λ _ _, True%I).
   Proof.
     iIntros "Hstart".
-    iApply (idempotence_wpr _ (LVL (S (S k))) ⊤ ⊤ _ _ _ _ _ (λ _, ∃ σ, rblock_cinv addr σ)%I with "[Hstart]").
+    iApply (idempotence_wpr _ (S (S O)) ⊤ ⊤ _ _ _ _ _ (λ _, ∃ σ, rblock_cinv addr σ)%I with "[Hstart]").
     { auto. }
     { wpc_apply (wpc_Open with "Hstart").
-      iSplit; eauto.
+      iSplit; eauto. iModIntro. eauto.
     }
     iModIntro. iIntros (?????) "H".
     iDestruct "H" as (σ'') "Hstart".
@@ -470,15 +478,12 @@ Section recov.
     iIntros.
     iSplit; first done.
     wpc_apply (wpc_Open with "Hstart").
-    iSplit; eauto.
+    iSplit; try iModIntro; eauto.
   Qed.
-
-  Notation K := 100%nat.
-
 
   Theorem wpr_OpenRead (d_ref: loc) addr σ:
     rblock_cinv addr σ -∗
-    wpr NotStuck (LVL 100) ⊤
+    wpr NotStuck 2 ⊤
         (OpenRead d_ref addr)
         (OpenRead d_ref addr)
         (λ _, True%I)
@@ -486,19 +491,18 @@ Section recov.
         (λ _ _, True%I).
   Proof using stagedG0.
     iIntros "Hstart".
-    iApply (idempotence_wpr _ (LVL 100) ⊤ ⊤ _ _ _ _ _ (λ _, ∃ σ, rblock_cinv addr σ ∗ True)%I with "[Hstart]").
+    iApply (idempotence_wpr _ 2 ⊤ ⊤ _ _ _ _ _ (λ _, ∃ σ, rblock_cinv addr σ ∗ True)%I with "[Hstart]").
     { auto. }
     { wpc_apply (wpc_OpenRead (λ _, True)%I with "[$Hstart]").
-      iSplit; eauto.
+      iSplit; try iModIntro; eauto.
     }
     iModIntro. iIntros (?????) "H".
     iDestruct "H" as (σ'') "(Hstart&_)".
     iNext. iCrash.
-    (* XXX: iCrash should not have unfolded rblock_inv *)
     iIntros (??).
     iSplit; first done.
     wpc_apply (wpc_OpenRead (λ _, True)%I with "[$Hstart] []").
-    iSplit; eauto.
+    iSplit; try iModIntro; eauto.
   Qed.
 End recov.
 

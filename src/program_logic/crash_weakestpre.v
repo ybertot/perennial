@@ -677,6 +677,12 @@ Proof.
   - iIntros "!> ?". iApply fupd_level_mask_weaken; auto. set_solver+.
 Qed.
 
+Lemma wpc_idx_mono k1 k2 s E1 E2 e Φ Φc :
+  k1 ≤ k2 →
+  WPC e @ s; k1; E1 ; E2 {{ Φ }} {{ Φc }} -∗
+  WPC e @ s; k2; E1 ; E2 {{ Φ }} {{ Φc }}.
+Proof. iIntros (?). iApply wpc_subscript_mono; auto. Qed.
+
 Theorem wpc_crash_mono stk k E1 E2 e Φ Φc Φc' :
   <disc> (Φc' -∗ Φc) -∗
   WPC e @ stk; k; E1; E2 {{ Φ }} {{ Φc' }} -∗
