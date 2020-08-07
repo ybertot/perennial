@@ -520,7 +520,7 @@ Theorem OpenRead_adequate σ dref addr :
 Proof.
   rewrite ?elem_of_dom.
   intros (d1&Hin1) (d2&Hin2).
-  apply (heap_recv_adequacy (repΣ) _ (LVL 100) _ _ _ _ _ _ (λ _, True)%I).
+  apply (heap_recv_adequacy (repΣ) _ 2 _ _ _ _ _ _ (λ _, True)%I).
   { simpl. auto. }
   iIntros (??) "Hstart _ _".
   iModIntro.

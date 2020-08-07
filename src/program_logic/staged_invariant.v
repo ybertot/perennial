@@ -9,12 +9,14 @@ Set Default Proof Using "Type".
 Import uPred.
 
 Class stagedG (Σ : gFunctors) : Set := WsatG {
-                                           (*
-  staging_saved_inG :> inG Σ (agreeR (prodO gnameO gnameO));
-  staging_auth_inG :> inG Σ (authR (optionUR (exclR gnameO)));
-                                            *)
   staging_shot_inG :> inG Σ (csumR (fracR) (agreeR unitO));
 }.
+
+Definition stagedΣ : gFunctors :=
+    #[GFunctor (csumR fracR (agreeR unitO))].
+
+Instance subG_stagedG {Σ} : subG stagedΣ Σ → stagedG Σ.
+Proof. solve_inG. Qed.
 
 Definition staged_pending `{stagedG Σ} (q: Qp) (γ: gname) : iProp Σ :=
   own γ (Cinl q).
@@ -367,11 +369,11 @@ Qed.
 
 Lemma pending_split γ:
   staged_pending 1 γ ⊢ staged_pending (1/2)%Qp γ ∗ staged_pending (1/2)%Qp γ.
-Proof. Admitted.
+Proof. by rewrite /staged_pending -own_op -Cinl_op frac_op' Qp_div_2. Qed.
 
 Lemma pending_join γ:
  staged_pending (1/2)%Qp γ ∗ staged_pending (1/2)%Qp γ ⊢  staged_pending 1 γ.
-Proof. Admitted.
+Proof. by rewrite /staged_pending -own_op -Cinl_op frac_op' Qp_div_2. Qed.
 
 Lemma staged_inv_alloc k N1 N2 E E' P Q Qr:
   ▷ Q ∗ □ (C -∗ ▷ Q -∗ ▷ P ∗ ▷ Qr) -∗ |(S k)={E}=>
