@@ -33,7 +33,8 @@ Definition bi_sch_cfupd E E' P :=
 Definition bi_sch_staged_fupd (E: coPset) :=
   bi_sch_persistently
     (bi_sch_wand (bi_sch_var_mut O)
-                 (bi_sch_cfupd E ∅ (bi_sch_sep (bi_sch_var_fixed 1) (bi_sch_var_mut 1)))).
+                 (bi_sch_cfupd E ∅ (bi_sch_sep (bi_sch_or (bi_sch_var_fixed 1) (bi_sch_var_fixed 2))
+                                               (bi_sch_var_mut 1)))).
 
 Definition bi_sch_True := bi_sch_pure True.
 Definition bi_sch_inv' (N: namespace) (P: bi_schema) : bi_schema :=
@@ -102,7 +103,7 @@ Lemma bi_sch_staged_interp `{!invG Σ, !crashG Σ, !stagedG Σ} N E k γp γcanc
                    (bi_later <$> [C; P; staged_done γp])
                    (bi_later <$> [Qs; Qr; staged_done γcancel; staged_pending (1/2)%Qp γcancel])
                    (bi_sch_staged N E)
-  ⊣⊢ □ (▷ Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ ▷ Qr) ∗
+  ⊣⊢ □ (▷ Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> (▷ P ∨ ▷ staged_done γp) ∗ ▷ Qr) ∗
      □ (▷ staged_done γcancel -∗ ▷ staged_pending (1/2)%Qp γcancel -∗ |k={∅}=> False) ∗
      ▷ staged_pending (1/2)%Qp γcancel ∗
      inv_lvl k N ((Qs ∨ (Qr ∗ C ∗ (P ∨ staged_done γp))) ∨ staged_done γcancel)%I.
@@ -114,6 +115,8 @@ Proof.
   rewrite Hlvl.
   erewrite bi_sch_fupd_interp; last first.
   { eapply bi_sch_fupd_interp. eauto. }
+  do 1 rewrite bi_schema_interp_unfold.
+  do 1 rewrite bi_schema_interp_unfold.
   do 1 rewrite bi_schema_interp_unfold.
   do 1 rewrite bi_schema_interp_unfold.
   do 1 rewrite bi_schema_interp_unfold.
@@ -155,7 +158,7 @@ Lemma bi_sch_staged_interp_weak `{!invG Σ, !crashG Σ, !stagedG Σ} N E k γ Qs
      let Qr := default emp%I (Qs_mut !! 1) in
      let cancel_done := default emp%I (Qs_mut !! 2) in
      let cancel_pending := default emp%I (Qs_mut !! 3) in
-     □ (▷ Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ ▷ Qr) ∗
+     □ (▷ Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> (▷ P ∨ ▷ staged_done γ) ∗ ▷ Qr) ∗
      □ (▷ cancel_done -∗ ▷cancel_pending -∗ |k={∅}=> False) ∗
      ▷ cancel_pending ∗
      inv_lvl k N ((Qs ∨ (Qr ∗ C ∗ (P ∨ staged_done γ))) ∨ cancel_done)%I.
@@ -167,6 +170,8 @@ Proof.
   rewrite Hlvl.
   erewrite bi_sch_fupd_interp; last first.
   { eapply bi_sch_fupd_interp. eauto. }
+  do 1 rewrite bi_schema_interp_unfold.
+  do 1 rewrite bi_schema_interp_unfold.
   do 1 rewrite bi_schema_interp_unfold.
   do 1 rewrite bi_schema_interp_unfold.
   do 1 rewrite bi_schema_interp_unfold.
@@ -559,6 +564,8 @@ Proof.
     iMod (fupd_level_le with "Hwand") as "(HP&HQr)"; auto.
     iMod "Hclo'''" as "_".
     iMod "Hclo''" as "_".
+    iDestruct "HP" as "[HP|>Hfalse]"; last first.
+    { iDestruct (pending_done with "[$] Hfalse") as %[]. }
     iMod (pending_upd_done with "[$]") as "#Hdone".
     iSpecialize ("Hclo'" with "[HQr]").
     { iLeft. iRight. iFrame "# ∗". }
@@ -576,6 +583,78 @@ Proof.
     iMod ("Hclo" with "[Hpend]").
     { iApply bi_sch_staged_interp_weak. iFrame "Hwand0 Hwand1 Hpend Hinv0". }
     iModIntro; eauto.
+Qed.
+
+Lemma staged_inv_cancel E k N1 N2 E1 γ P Q Qr:
+  N1 ## N2 →
+  ↑N1 ⊆ E →
+  ↑N2 ⊆ E →
+  staged_value (S k) N1 N2 E1 γ Q Qr P -∗
+  staged_pending 1%Qp γ -∗ |(S k)={E,E}=>
+  ▷ Q ∨ (▷ Qr ∗ ▷ P ∗ C).
+Proof.
+  iIntros (???) "Hval Hpend0".
+  iDestruct "Hval" as (??) "(Hqr&Hcancel&#Hinv&Hval)".
+  iMod (inv_mut_full_acc with "Hval") as "(Hinterp&Hclo)"; auto.
+  iInv "Hinv" as "H" "Hclo'".
+  iDestruct "H" as "[HQ|>Hfalse]"; last first.
+  { iDestruct (pending_done with "Hcancel Hfalse") as %[]. }
+  iDestruct (bi_sch_staged_interp with "Hinterp") as "(#Hwand&_&>Hcancel2&_)".
+  iDestruct "HQ" as "[HQ|HQ]".
+  - iDestruct (pending_join with "[$Hcancel $Hcancel2]") as "Hcancel".
+    iMod (pending_upd_done with "Hcancel") as "Hcancel".
+    iMod ("Hclo'" with "[Hcancel]") as "_".
+    { iRight. eauto. }
+    iMod (pending_upd_done with "Hpend0") as "#Hdone0".
+    iMod (pending_alloc) as (γcancel') "Hc".
+    iMod (inv_alloc' _ N2 _
+        (((True ∨ ((True ∨ staged_done γr) ∗ C ∗ (P ∨ staged_done γ))) ∨ staged_done γcancel'))%I
+        with "[]") as "#Hinv0".
+    { repeat iLeft. auto. }
+    iDestruct (pending_split with "Hc") as "(Hc1&Hc2)".
+    iMod ("Hclo" $! [True%I; (True ∨ staged_done γr)%I;
+                     staged_done γcancel'; staged_pending (1/2)%Qp γcancel'] with "[Hc1]").
+    { rewrite bi_sch_staged_interp.
+      iSplitL ""; [| iSplitL ""].
+      - iIntros "!> HQ' >HC".  iModIntro. iModIntro. iFrame "#". eauto.
+      - iModIntro. iIntros ">H1 >H2". iModIntro. iApply (pending_done with "[$] [$]").
+      - iFrame.
+        rewrite /inv_lvl.
+        iModIntro. iIntros (E0 Hsub).
+        iInv "Hinv0" as "H" "Hclo".
+        iModIntro. iFrame.
+    }
+    iModIntro. eauto.
+  - iDestruct "HQ" as "(HQr&>#HC&HP)".
+    iDestruct "HQr" as "[HQr|>Hfalse]"; last first.
+    { iDestruct (pending_done with "Hqr [$]") as %[]. }
+    iDestruct "HP" as "[HP|>Hfalse]"; last first.
+    { iDestruct (pending_done with "Hpend0 [$]") as %[]. }
+    iMod (pending_upd_done with "Hqr") as "Hqr".
+    iMod (pending_upd_done with "Hpend0") as "#Hdone0".
+    iDestruct (pending_join with "[$Hcancel $Hcancel2]") as "Hcancel".
+    iMod (pending_upd_done with "Hcancel") as "Hcancel".
+    iMod ("Hclo'" with "[Hcancel]") as "_".
+    { iRight. eauto. }
+    iMod (pending_alloc) as (γcancel') "Hc".
+    iMod (inv_alloc' _ N2 _
+        (((True ∨ ((True ∨ staged_done γr) ∗ C ∗ (P ∨ staged_done γ))) ∨ staged_done γcancel'))%I
+        with "[]") as "#Hinv0".
+    { repeat iLeft; auto. }
+    iDestruct (pending_split with "Hc") as "(Hc1&Hc2)".
+    iMod ("Hclo" $! [True%I; (True ∨ staged_done γr)%I;
+                     staged_done γcancel'; staged_pending (1/2)%Qp γcancel'] with "[Hc1]").
+    { rewrite bi_sch_staged_interp.
+      iSplitL ""; [| iSplitL ""].
+      - iIntros "!> HQ' >_".  iModIntro. iModIntro. iFrame "#". eauto.
+      - iModIntro. iIntros ">H1 >H2". iModIntro. iApply (pending_done with "[$] [$]").
+      - iFrame.
+        rewrite /inv_lvl.
+        iModIntro. iIntros (E0 Hsub).
+        iInv "Hinv0" as "H" "Hclo".
+        iModIntro. iFrame.
+    }
+    iModIntro. iRight. iFrame "# ∗".
 Qed.
 
 End inv.
