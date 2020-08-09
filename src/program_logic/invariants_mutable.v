@@ -10,7 +10,7 @@ Import uPred.
 
 (** Semantic Invariants *)
 Definition inv_mut_def `{!invG Σ} (k: nat) (N : namespace) sch (Ps : list (iProp Σ)) : iProp Σ :=
-    ∃ i, ⌜i ∈ (↑N:coPset)⌝ ∧ ownI k i sch (list_to_vec Ps).
+    ∃ i, ⌜i ∈ MaybeEn (↑N:coPset)⌝ ∧ ownI k i sch (list_to_vec Ps).
 Definition inv_mut_aux : seal (@inv_mut_def). Proof. by eexists. Qed.
 Definition inv_mut {Σ i} := inv_mut_aux.(unseal) Σ i.
 Definition inv_mut_eq : @inv_mut = @inv_mut_def := inv_mut_aux.(seal_eq).
@@ -18,12 +18,15 @@ Instance: Params (@inv_mut) 3 := {}.
 Typeclasses Opaque inv_mut.
 
 Definition inv_mut_full_def `{!invG Σ} (k: nat) (N : namespace) sch (Qs Ps : list (iProp Σ)) : iProp Σ :=
-    ∃ i, ⌜i ∈ (↑N:coPset)⌝ ∗ ownI k i sch (list_to_vec Ps) ∗ ownI_mut k i (1/2)%Qp (list_to_vec Qs).
+    ∃ i, ⌜i ∈ MaybeEn (↑N:coPset)⌝ ∗ ownI k i sch (list_to_vec Ps) ∗ ownI_mut k i (1/2)%Qp (list_to_vec Qs).
 Definition inv_mut_full_aux : seal (@inv_mut_full_def). Proof. by eexists. Qed.
 Definition inv_mut_full {Σ i} := inv_mut_full_aux.(unseal) Σ i.
 Definition inv_mut_full_eq : @inv_mut_full = @inv_mut_full_def := inv_mut_full_aux.(seal_eq).
 Instance: Params (@inv_mut_full) 3 := {}.
 Typeclasses Opaque inv_mut_full.
+
+Local Hint Extern 0 (AE _ ## MaybeEn _) => apply AE_MaybeEn_disj : core.
+Local Hint Extern 0 (AlwaysEn ## MaybeEn _) => apply coPset_inl_inr_disj : core.
 
 Section inv_mut.
   Context `{!invG Σ}.
@@ -42,23 +45,26 @@ Section inv_mut.
     rewrite uPred_fupd_level_eq /uPred_fupd_level_def inv_mut_full_eq. iIntros (?).
     iDestruct 1 as (i) "[Hi [#HiP Hi_mut]]".
     iDestruct "Hi" as % ?%elem_of_subseteq_singleton.
-    rewrite {1}(union_difference_L (↑ N) E) // ownE_op; last set_solver.
-    rewrite {1}(union_difference_L {[ i ]} (↑ N)) // ownE_op; last set_solver.
-    iIntros "(Hw & [HE HE1'] & $) !> !>".
+    rewrite {1}(ownE_op (AE _)) //.
+    rewrite {1}(ownE_op (AE _)) //.
+    rewrite {1}(union_difference_L (↑ N) E) // ownE_op_MaybeEn; last set_solver.
+    rewrite {1}(union_difference_L {[ i ]} (MaybeEn (↑ N))) // ownE_op; last set_solver.
+    iIntros "(Hw & HAE & [HE HE1'] & $) !> !>".
     iDestruct (ownI_open k i with "[$Hw $HE $HiP]") as "($ & HI & HD)".
     iDestruct "HI" as (? Qs_mut) "(Hinterp&Hmut)".
     iDestruct (ownI_mut_agree with "Hi_mut Hmut") as (Hlen) "#Hequiv".
     iDestruct (bi_schema_interp_ctx_later with "[] Hequiv Hinterp") as "Hinterp".
     { iIntros. iNext. eauto. }
-    rewrite ?vec_to_list_to_vec. iFrame "Hinterp".
+    rewrite ?vec_to_list_to_vec. iFrame "Hinterp HAE".
     iIntros (Qs') "HP [Hw HE]".
     iDestruct (ownI_mut_combine  with "[$] [$]") as "Hmut". rewrite Qp_div_2.
     iMod (ownI_close_modify k _ _ (list_to_vec Ps) (list_to_vec Qs')
             with "[$Hw $HiP $Hmut $HD HP]") as "($&HE'&Hmut)".
     { rewrite ?vec_to_list_to_vec. iFrame "HP". }
-    iEval (rewrite (union_difference_L (↑ N) E) // ownE_op; last set_solver).
-    iEval (rewrite {1}(union_difference_L {[ i ]} (↑ N)) // ownE_op; last set_solver). iFrame.
-    do 2 iModIntro. iExists _. iFrame "# ∗". iPureIntro. set_solver.
+    rewrite ?(ownE_op (AE _)) //.
+    iEval (rewrite (union_difference_L (↑ N) E) // ownE_op_MaybeEn; last set_solver).
+    iEval (rewrite {1}(union_difference_L {[ i ]} (MaybeEn (↑ N))) // ownE_op; last set_solver). iFrame.
+    do 2 iModIntro. iFrame. iExists _. iFrame "# ∗". iPureIntro. set_solver.
   Qed.
 
   Lemma inv_mut_acc k E N sch Ps :
@@ -69,25 +75,29 @@ Section inv_mut.
     rewrite uPred_fupd_level_eq /uPred_fupd_level_def inv_mut_eq. iIntros (?).
     iDestruct 1 as (i) "[Hi #HiP]".
     iDestruct "Hi" as % ?%elem_of_subseteq_singleton.
-    rewrite {1}(union_difference_L (↑ N) E) // ownE_op; last set_solver.
-    rewrite {1}(union_difference_L {[ i ]} (↑ N)) // ownE_op; last set_solver.
-    iIntros "(Hw & [HE HE1'] & $) !> !>".
+    rewrite {1}(ownE_op (AE _)) //.
+    rewrite {1}(ownE_op (AE _)) //.
+    rewrite {1}(union_difference_L (↑ N) E) // ownE_op_MaybeEn; last set_solver.
+    rewrite {1}(union_difference_L {[ i ]} (MaybeEn (↑ N))) // ownE_op; last set_solver.
+    iIntros "(Hw & HAE & [HE HE1'] & $) !> !>".
     iDestruct (ownI_open k i with "[$Hw $HE $HiP]") as "($ & HI & HD)".
-    iDestruct "HI" as (? Qs_mut) "(Hinterp&Hmut)". iExists _.
+    iDestruct "HI" as (? Qs_mut) "(Hinterp&Hmut)". iFrame. iExists _.
     rewrite vec_to_list_to_vec. iFrame "Hinterp".
     iIntros "HP [Hw HE] !> !>".
     iDestruct (ownI_close k _ _ (list_to_vec Ps) with "[$Hw $HiP $Hmut $HD HP]") as "($&HE')".
     { by rewrite vec_to_list_to_vec. }
-    iEval (rewrite (union_difference_L (↑ N) E) // ownE_op; last set_solver).
-    iEval (rewrite {1}(union_difference_L {[ i ]} (↑ N)) // ownE_op; last set_solver). iFrame.
+    rewrite ?(ownE_op (AE _)) //.
+    iDestruct "HE" as "($&HE)".
+    iEval (rewrite (union_difference_L (↑ N) E) // ownE_op_MaybeEn; last set_solver).
+    iEval (rewrite {1}(union_difference_L {[ i ]} (MaybeEn (↑ N))) // ownE_op; last set_solver). iFrame.
   Qed.
 
-  Lemma fresh_inv_name (E : gset positive) N : ∃ i, i ∉ E ∧ i ∈ (↑N:coPset).
+  Lemma fresh_inv_name (E : gset positive) N : ∃ i, i ∉ E ∧ i ∈ MaybeEn (↑N:coPset).
   Proof.
-    exists (coPpick (↑ N ∖ gset_to_coPset E)).
+    exists (coPpick (MaybeEn (↑ N) ∖gset_to_coPset E)).
     rewrite -elem_of_gset_to_coPset (comm and) -elem_of_difference.
     apply coPpick_elem_of=> Hfin.
-    eapply nclose_infinite, (difference_finite_inv _ _), Hfin.
+    eapply (MaybeEn_infinite _ (nclose_infinite N)), (difference_finite_inv _ _), Hfin.
     apply gset_to_coPset_finite.
   Qed.
 
@@ -96,7 +106,7 @@ Section inv_mut.
     |k={E}=> inv_mut k N sch Ps ∗ inv_mut_full k N sch Qs Ps.
   Proof.
     rewrite uPred_fupd_level_eq ?inv_mut_eq ?inv_mut_full_eq. iIntros "HP [Hw $]".
-    iMod (ownI_alloc (.∈ (↑N : coPset)) sch k (list_to_vec Ps) (list_to_vec Qs)
+    iMod (ownI_alloc (.∈ MaybeEn (↑N : coPset)) sch k (list_to_vec Ps) (list_to_vec Qs)
             with "[HP $Hw]")
       as (i ?) "[$ [#HI ?]]"; auto using fresh_inv_name.
     { by rewrite ?vec_to_list_to_vec. }

@@ -139,6 +139,7 @@ Proof.
     iMod NC_alloc as (Hc) "HNC".
     iSpecialize ("H" $! Hinv Hc with "HNC").
     rewrite {1}uPred_fupd_eq {1}/uPred_fupd_def.
+    iDestruct (ownE_weaken _ (AlwaysEn ∪ MaybeEn ⊤) with "HE") as "HE"; first by set_solver.
     iMod ("H" with "[$]") as "[>Hw [>HE >H]]".
     iDestruct ("H") as (_) "H".
     iDestruct (step_fupdN_fresh_pattern_plain' _ (P)%I with "H") as "H".
@@ -148,6 +149,7 @@ Proof.
     iMod NC_alloc as (Hc) "HNC".
     iSpecialize ("H" $! Hinv).
     rewrite {1}uPred_fupd_eq {1}/uPred_fupd_def.
+    iDestruct (ownE_weaken _ (AlwaysEn ∪ MaybeEn ⊤) with "HE") as "HE"; first by set_solver.
     iMod ("H" with "HNC [$]") as "[>Hw [>HE >H]]".
     iDestruct "H" as (t) "H".
     rewrite /step_fupdN_fresh -/step_fupdN_fresh.
