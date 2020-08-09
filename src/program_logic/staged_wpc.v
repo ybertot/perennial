@@ -211,6 +211,8 @@ Proof.
   iModIntro. iNext.
   iMod "H" as "(Hσ&H&Hefs&HNC)".
   iEval (rewrite wpc_unfold /wpc_pre) in "H". iMod "H".
+  rewrite /cfupd.
+  rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
   iDestruct (own_discrete_elim_conj with "H") as (Q_keep Q_inv) "(HQ_keep&HQ_inv&#Hwand1&#Hwand2)".
   iSpecialize ("Hclo'" $! Q_inv Φc with "[HQ_inv]").
   {
@@ -218,6 +220,9 @@ Proof.
     iIntros "!> HQ". iSpecialize ("Hwand1" with "[$]").
     iMod "Hwand1". iIntros "HC". iSpecialize ("Hwand1" with "[$]").
     iMod (fupd_level_intro_mask' _ (E1 ∖ ↑N1 ∖ ↑N2)) as "Hclo"; first by set_solver.
+    iMod (fupd_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
+    iMod (fupd_level_le with "Hwand1") as "Hwand1"; first by lia.
+    iMod "Hclo_empty" as "_".
     iMod (fupd_level_le with "Hwand1") as "Hwand1"; first by lia.
     iMod (fupd_level_intro_mask' _ ∅) as "Hclo'"; first by set_solver.
     iMod (fupd_level_le with "Hwand1") as "(HΦc&HP)"; first by lia.
@@ -227,9 +232,12 @@ Proof.
   iMod (fupd_level_fupd with "Hclo'") as "H".
   iMod ("IH" with "HNC [H HQ_keep]") as "(Hwp&HNC)".
   { iExists _. iFrame "H".  iSplitL "HQ_keep".
-    - iIntros "HQ". iApply "Hwand2"; iFrame.
+    - iIntros "HQ". rewrite /wpc_no_fupd own_discrete_fupd_eq. iApply "Hwand2"; iFrame.
     - iModIntro. iIntros "HQ >HC". iMod ("Hwand1" with "[$]") as "H".
       iSpecialize ("H" with "[$]").
+      iMod (fupd_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
+      iMod (fupd_level_le with "H") as "H"; first by lia.
+      iMod "Hclo_empty" as "_".
       iMod "H". iModIntro.
       iMod "H" as "($&$)". eauto.
   }
@@ -308,6 +316,7 @@ Proof.
   iModIntro. iNext.
   iMod "H" as "(Hσ&H&Hefs&HNC)".
   iEval (rewrite wpc_unfold /wpc_pre) in "H". iMod "H".
+  rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
   iDestruct (own_discrete_elim_conj with "H") as (Q_keep Q_inv) "(HQ_keep&HQ_inv&#Hwand1&#Hwand2)".
   iSpecialize ("Hclo" $! Q_inv Φc with "[HQ_inv]").
   {
@@ -315,6 +324,9 @@ Proof.
     iIntros "!> HQ". iSpecialize ("Hwand1" with "[$]").
     iMod "Hwand1". iIntros "HC". iSpecialize ("Hwand1" with "[$]").
     iMod (fupd_level_intro_mask' _ (E1 ∖ ↑N1 ∖ ↑N2)) as "Hclo"; first by set_solver.
+    iMod (fupd_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
+    iMod (fupd_level_le with "Hwand1") as "Hwand1"; first by lia.
+    iMod ("Hclo_empty") as "_".
     iMod (fupd_level_le with "Hwand1") as "Hwand1"; first by lia.
     iMod (fupd_level_intro_mask' _ ∅) as "Hclo'"; first by set_solver.
     iMod (fupd_level_le with "Hwand1") as "(HΦc&HP)"; first by lia.
@@ -325,9 +337,14 @@ Proof.
   iPoseProof (wpc_staged_inv_open_aux' γ s k k' k'' E1 E1'
                 _ e2 Φ Φc P Qnew N1 N2 with "[H HQ_keep HNC]") as "H"; try assumption.
   { iFrame. iExists _. iFrame "H".  iSplitL "HQ_keep".
-    - iIntros "HQ". iMod ("Hwand2" with "[$]") as "H". iExact "H".
+    - iIntros "HQ". iMod ("Hwand2" with "[$]") as "H".
+      rewrite /wpc_no_fupd own_discrete_fupd_eq.
+      iExact "H".
     - iModIntro. iIntros "HQ >HC". iMod ("Hwand1" with "[$]") as "H".
       iSpecialize ("H" with "[$]").
+      iMod (fupd_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
+      iMod (fupd_level_le with "H") as "H"; first by lia.
+      iMod "Hclo_empty" as "_".
       iMod "H". iModIntro.
       iMod "H" as "($&$)". eauto.
   }

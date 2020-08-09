@@ -60,7 +60,7 @@ Proof. rewrite wpr_eq. apply (fixpoint_unfold (wpr_pre s k)). Qed.
 (* There's a stronger version of this *)
 Lemma wpr_strong_mono s k Hi Hc t E e rec Φ Ψ Φinv Ψinv Φr Ψr :
   wpr s k Hi Hc t E e rec Φ Φinv Φr -∗
-  (∀ v, Φ v ==∗ Ψ v) ∧ <disc> ((∀ Hi t, Φinv Hi t -∗ Ψinv Hi t) ∧ (∀ Hi t v, Φr Hi t v ==∗ Ψr Hi t v)) -∗
+  (∀ v, Φ v ==∗ Ψ v) ∧ <bdisc> ((∀ Hi t, Φinv Hi t -∗ Ψinv Hi t) ∧ (∀ Hi t v, Φr Hi t v ==∗ Ψr Hi t v)) -∗
   wpr s k Hi Hc t E e rec Ψ Ψinv Ψr.
 Proof.
   iIntros "H HΦ". iLöb as "IH" forall (e t Hi Hc E Φ Ψ Φinv Ψinv Φr Ψr).

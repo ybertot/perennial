@@ -1,3 +1,5 @@
+From iris.algebra Require Import auth agree excl csum.
+From iris.base_logic Require Import ae_invariants.
 From iris.proofmode Require Import base tactics classes.
 From iris.base_logic Require Export invariants fupd_level.
 From iris.program_logic Require Export weakestpre.
@@ -477,7 +479,7 @@ Notation "'{{{' P } } } e ? {{{ 'RET' pat ; Q } } }" :=
 *)
 
 Section wpc.
-Context `{!irisG Λ Σ} `{crashG Σ}.
+Context `{!irisG Λ Σ} `{CRASH: crashG Σ}.
 Implicit Types s : stuckness.
 Implicit Types P : iProp Σ.
 Implicit Types Φ : val Λ → iProp Σ.
@@ -756,7 +758,7 @@ Lemma wpc_frame_l s k E1 E2 e Φ Φc R :
 Proof.
   iIntros "[? H]". iApply (wpc_strong_mono' with "H"); rewrite ?difference_diag_L; auto.
   iSplit; iIntros; iFrame.
-  - by iPoseProof (own_discrete_elim with "[$]") as "$".
+  - by iApply (own_disc_fupd_elim).
   - iModIntro. iIntros "$". eauto.
 Qed.
 
@@ -1005,12 +1007,12 @@ Lemma wpc_atomic s k E1 E2 e Φ Φc `{!Atomic StronglyAtomic e} :
   WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
   iIntros "H". iApply (wpc_atomic_crash_modality); iApply (and_mono with "H").
-  { apply own_discrete_mono'. eapply fupd_mask_open_cfupd. }
+  { f_equiv. eapply fupd_mask_open_cfupd. }
   iIntros "H HNC". iFrame "HNC".
   iApply (wp_mono with "H"). iIntros (?).
   iIntros "H". iModIntro.
   iApply (and_mono with "H"); auto.
-  { apply own_discrete_mono'. eapply fupd_mask_open_cfupd. }
+  { f_equiv. eapply fupd_mask_open_cfupd. }
 Qed.
 
 (* note that this also reverses the postcondition and crash condition, so we
@@ -1311,8 +1313,12 @@ Lemma wp_wpc_frame s k E1 E2 e Φ Φc :
   WPC e @ s ; k ; E1 ; E2 {{ Φ }} {{ Φc }}.
 Proof.
   iIntros "(HΦc&Hwp)".
-  iApply (wp_wpc_frame' _ _ _ _ _ _ _ Φc).
-  iFrame "Hwp". iSplit; try iModIntro; auto. by iApply own_discrete_elim.
+  iApply wpc_fupd.
+  iApply (wp_wpc_frame' _ _ _ _ _ _ _ (<disc> Φc)%I).
+  iSplitL "HΦc".
+  { iSplit; by iModIntro. }
+  iApply (wp_mono with "Hwp").
+  iIntros (?) "H Hdisc". iMod (own_disc_fupd_elim with "Hdisc"). by iApply "H".
 Qed.
 
 Lemma wpc_crash_frame_wand s k E2 E e Φ Φc Ψc :
@@ -1325,6 +1331,31 @@ Proof.
   { iApply (wpc_mono with "Hwp"); auto. rewrite wand_elim_l //. }
   by iApply (wpc_strong_crash_frame with "[$]").
 Qed.
+
+Lemma fupd_level_later_to_disc k E P:
+  ▷ P -∗ |k={E}=> <disc> ▷ P.
+Proof using CRASH.
+  iMod (own_alloc (Cinl (Excl ()))) as (γ) "H".
+  { econstructor. }
+  iIntros "HP".
+  iPoseProof (ae_inv_alloc' O E (P ∨ own γ (Cinl (Excl ()))) with "[HP]") as "Hinv".
+  { by iLeft. }
+  iMod (fupd_level_le with "Hinv") as "#Hinv"; first lia.
+  iModIntro. rewrite own_discrete_fupd_eq /own_discrete_fupd_def. iModIntro.
+  iMod (ae_inv_acc_bupd _ _ _ (▷ P) with "Hinv [H]").
+  { iDestruct 1 as "[HP|>Hfalse]"; do 2 iModIntro; last first.
+    { by iDestruct (own_valid_2 with "H Hfalse") as %?. }
+    iFrame "H". eauto.
+  }
+  iModIntro; eauto.
+Qed.
+
+Lemma fupd_later_to_disc E P:
+  ▷ P -∗ |={E}=> <disc> ▷ P.
+Proof using CRASH.
+  iIntros "H". iApply (fupd_level_fupd _ _ _ O). by iApply fupd_level_later_to_disc.
+Qed.
+
 
 (*
 Lemma wp_stuck_mono s1 s2 E e Φ :
@@ -1404,7 +1435,32 @@ Section proofmode_classes.
   Implicit Types P Q : iProp Σ.
   Implicit Types Φ : val Λ → iProp Σ.
 
-  Global Instance frame_wpc p s k E1 E2 e R R' Φ Ψ Φc Ψc :
+  Global Instance frame_wpc s k E1 E2 e R R' Φ Ψ Φc Ψc :
+    (∀ v, Frame false R (Φ v) (Ψ v)) →
+    IntoDiscreteFupd R R' →
+     Frame false R' Φc Ψc →
+    Frame false R (WPC e @ s; k; E1; E2 {{ Φ }} {{ Φc }}) (WPC e @ s; k; E1; E2 {{ Ψ }} {{ Ψc }}).
+  Proof.
+    rewrite /Frame=> HR Hdisc HRc.
+    iIntros "(HR&Hwpc)".
+    iAssert (R ∧ <disc>  R')%I with "[HR]" as "HR".
+    { iSplit; auto.
+      - rewrite (into_discrete_fupd R). rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
+        eauto.
+    }
+    iPoseProof (wpc_frame_l' with "[$Hwpc HR]") as "Hwpc".
+    { iSplit.
+      * iApply "HR".
+      * iDestruct "HR" as "(_&HHR)". iModIntro. iNext. iApply "HHR".
+    }
+    iApply (wpc_mono with "Hwpc"); last done.
+    { iIntros (?) "(HR&HΨ)". iApply HR.
+      iFrame. iDestruct "HR" as "($&_)".
+    }
+  Qed.
+
+
+  Global Instance frame_wpc' p s k E1 E2 e R R' Φ Ψ Φc Ψc :
     (∀ v, Frame p R (Φ v) (Ψ v)) →
     IntoDiscrete R R' →
      Frame p R' Φc Ψc →
@@ -1415,8 +1471,9 @@ Section proofmode_classes.
     iAssert (□?p R ∧ <disc> □?p R')%I with "[HR]" as "HR".
     { iSplit; auto. destruct p => //=.
       - rewrite (into_discrete R). iDestruct "HR" as "#HR".
-        rewrite (own_discrete_elim). do 2 iModIntro. eauto.
-      - iModIntro. eauto.
+        rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
+        iModIntro. iModIntro. rewrite own_discrete_elim; eauto.
+      - rewrite (into_discrete R). by iModIntro.
     }
     iPoseProof (wpc_frame_l' with "[$Hwpc HR]") as "Hwpc".
     { iSplit.

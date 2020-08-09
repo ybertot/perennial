@@ -148,7 +148,7 @@ Proof.
   iApply step_fupd_fupd. iApply step_fupd_intro; first done. iNext.
   iMod (NC_upd_C with "HNC") as "#HC".
   iMod (wpc_crash with "Hwp") as "H".
-  rewrite own_discrete_elim.
+  iMod (own_disc_fupd_elim with "H") as "H".
   iModIntro.
   iSpecialize ("H" with "[$]").
   iMod (fupd_level_fupd with "H") as "H".

@@ -1,6 +1,6 @@
 From iris.bi Require Export bi.
 From iris.base_logic Require upred.
-From iris.base_logic Require Export base_logic own.
+From iris.base_logic Require Export base_logic own fupd_level.
 From Perennial.Helpers Require Import ipm.
 From Perennial.algebra Require Import atleast.
 Set Default Proof Using "Type".
@@ -388,7 +388,7 @@ Section instances_iProp.
 
 End instances_iProp.
 
-Notation "'<disc>' P" := (own_discrete P) (at level 20, right associativity) : bi_scope.
+Notation "'<bdisc>' P" := (own_discrete P) (at level 20, right associativity) : bi_scope.
 
 Section test.
 
@@ -397,6 +397,184 @@ Section test.
   Context {HP: Discretizable P}.
   Context {HQ: IntoDiscrete Q Q'}.
 
+  Goal P -∗ Q -∗ <bdisc> (P ∗ Q').
+  Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
+
+  Goal ∀ R, P -∗ own_discrete R -∗ <bdisc> (P ∗ R).
+  Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
+
+End test.
+
+Definition own_discrete_fupd_def `{!invG Σ} (P: iProp Σ) := own_discrete (|0={∅}=> P).
+Definition own_discrete_fupd_aux `{!invG Σ} : seal own_discrete_fupd_def. Proof. by eexists. Qed.
+Definition own_discrete_fupd `{!invG Σ} := own_discrete_fupd_aux.(unseal).
+Definition own_discrete_fupd_eq `{!invG Σ} : own_discrete_fupd = own_discrete_fupd_def :=
+  own_discrete_fupd_aux.(seal_eq).
+Arguments own_discrete_fupd {_ _} _%I.
+
+Class IntoDiscreteFupd `{!invG Σ} (P Q : iProp Σ) :=
+  into_discrete_fupd : P ⊢ own_discrete_fupd Q.
+Arguments IntoDiscreteFupd {_ _} _%I _%I.
+Arguments into_discrete_fupd {_ _} _%I _%I {_}.
+Hint Mode IntoDiscreteFupd + + ! - : typeclass_instances.
+
+
+Notation "'<disc>' P" := (own_discrete_fupd P) (at level 20, right associativity) : bi_scope.
+
+Section own_disc_fupd_props.
+  Context `{!invG Σ}.
+  Implicit Types P Q : iProp Σ.
+
+  Global Instance own_discrete_fupd_ne : NonExpansive own_discrete_fupd.
+  Proof. rewrite ?own_discrete_fupd_eq. solve_proper. Qed.
+  Global Instance own_discrete_fupd_proper : Proper ((≡) ==> (≡)) own_discrete_fupd := ne_proper _.
+  Global Instance own_discrete_fupd_mono' : Proper ((⊢) ==> (⊢)) own_discrete_fupd.
+  Proof. rewrite ?own_discrete_fupd_eq. solve_proper. Qed.
+  Global Instance own_discrete_fupd_flip_mono' :
+    Proper (flip (⊢) ==> flip (⊢)) own_discrete_fupd.
+  Proof. solve_proper. Qed.
+
+  Lemma own_disc_own_disc_fupd P:
+    <bdisc> P -∗ <disc> P.
+  Proof.
+    iIntros "H". rewrite own_discrete_fupd_eq /=. iModIntro; eauto.
+  Qed.
+
+  Lemma own_disc_fupd_level_elim E k P:
+    <disc> P -∗ |k={E}=> P.
+  Proof.
+    rewrite own_discrete_fupd_eq /own_discrete_fupd_def /= own_discrete_elim.
+    iIntros "H". iMod (fupd_level_intro_mask' _ ∅) as "Hclo"; first set_solver.
+    iMod (fupd_level_le with "H"); first lia. iMod "Hclo". eauto.
+  Qed.
+
+  Lemma own_disc_fupd_elim E P:
+    <disc> P -∗ |={E}=> P.
+  Proof.
+    iIntros. iApply (fupd_level_fupd _ _ _ 0). by iApply own_disc_fupd_level_elim. Qed.
+
+  Lemma own_disc_fupd_to_own_disc E1 E2 k P:
+    <disc> (|k={E1,E2}=> P) ⊣⊢ <bdisc> (|k={E1,E2}=> P).
+  Proof.
+    rewrite own_discrete_fupd_eq /own_discrete_fupd_def /=.
+    f_equiv.
+    iSplit.
+    - iIntros "H".
+      iMod (fupd_level_intro_mask' _ ∅) as "Hclo"; first set_solver.
+      iMod (fupd_level_le with "H"); first lia.
+      iMod "Hclo". eauto.
+    - iIntros "H". iModIntro; eauto.
+  Qed.
+
+  Lemma own_disc_fupd_idemp  Q:
+    own_discrete_fupd Q ⊣⊢ own_discrete_fupd (own_discrete_fupd Q).
+  Proof.
+    rewrite !own_discrete_fupd_eq /own_discrete_fupd_def.
+    iSplit.
+    - iIntros "H". iEval (rewrite own_discrete_idemp) in "H".
+      do 2 iModIntro. eauto.
+    - iIntros "H". iModIntro. iMod "H". rewrite own_discrete_elim //=.
+  Qed.
+
+  (*
+  Lemma later_to_own_disc_fupd E P:
+    ▷ P -∗ |0={E}=> (<disc> ▷ P).
+  Proof.
+    iIntros "HP".
+    iMod (pending_alloc) as (γcancel) "Hc".
+    iMod (inv_alloc' O N _ (P ∨ staged_done γcancel) with "[HP]") as "#Hinv".
+    { by iLeft. }
+    iModIntro. iModIntro. iInv "Hinv" as "H" "Hclo".
+    iDestruct "H" as "[H|>Hfalse]"; last first.
+    { iDestruct (pending_done with "[$] [$]") as %[]. }
+    iMod (pending_upd_done with "Hc") as "Hd".
+    iMod ("Hclo" with "[Hd]"); first by iRight.
+    iModIntro; eauto.
+  Qed.
+  *)
+  Lemma modality_own_discrete_fupd_mixin :
+    modality_mixin (@own_discrete_fupd Σ _)
+                   (MIEnvId)
+                   (MIEnvTransform (IntoDiscreteFupd)).
+  Proof.
+    split; red.
+    - iIntros. iApply own_disc_own_disc_fupd. by iModIntro.
+    - iIntros (?? Hfupd). rewrite Hfupd. auto.
+    - iIntros. iApply own_disc_own_disc_fupd. by iModIntro.
+    - iIntros (???) "H". rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
+      iModIntro. iMod "H". iModIntro. by iApply H.
+    - iIntros (??) "(H1&H2)". rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
+      iModIntro. iMod "H1". iMod "H2". by iFrame.
+  Qed.
+  Definition modality_own_discrete_fupd :=
+    Modality _ (modality_own_discrete_fupd_mixin).
+
+  (*
+  Lemma modality_own_discrete_fupd_mixin :
+    modality_mixin (@own_discrete_fupd Σ _)
+                   (MIEnvId)
+                   (MIEnvTransform (IntoDiscrete)).
+  Proof.
+    split; red.
+    - iIntros. iApply own_disc_own_disc_fupd.
+      iDestruct (own_discrete_pure True) as "Htrue"; auto.
+      iApply (own_discrete_wand with "[] Htrue").
+      iModIntro. eauto.
+    - iIntros. iApply own_disc_own_disc_fupd. by iModIntro.
+    - iIntros. iApply own_disc_own_disc_fupd. by iModIntro.
+    - iIntros (???) "H". rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
+      iModIntro. iMod "H". iModIntro. by iApply H.
+    - iIntros (??) "(H1&H2)". rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
+      iModIntro. iMod "H1". iMod "H2". by iFrame.
+  Qed.
+  Definition modality_own_discrete_fupd :=
+    Modality _ (modality_own_discrete_fupd_mixin).
+   *)
+
+  Global Instance from_modal_own_discrete_fupd (P: iProp Σ):
+    FromModal modality_own_discrete_fupd (own_discrete_fupd P) (own_discrete_fupd P) P.
+  Proof. rewrite /FromModal//=. Qed.
+
+  (*
+  Global Instance is_atleast_own_discrete (k: nat) (P: iProp Σ):
+    IsAtLeast k P →
+    IsAtLeast k (own_discrete_fupd P).
+  Proof.
+    rewrite /IsAtLeast own_discrete_fupd_eq /own_discrete_fupd_def.
+    iIntros (?) "H". iDestruct (own_discrete_at_least with "H") as "H". iApply own_discrete_atleast. => ->. Qed.
+   *)
+
+  Global Instance own_discrete_fupd_into_discrete_fupd P:
+    IntoDiscreteFupd (own_discrete_fupd P) P.
+  Proof. rewrite /IntoDiscreteFupd//=. Qed.
+
+  Global Instance own_discrete_into_discrete_fupd P:
+    IntoDiscreteFupd (own_discrete P) P.
+  Proof. rewrite /IntoDiscreteFupd//=. apply own_disc_own_disc_fupd. Qed.
+
+  Global Instance into_discrete_into_discrete_fupd P P':
+    IntoDiscrete P P' →
+    IntoDiscreteFupd P P'.
+  Proof.
+    rewrite /Discretizable/IntoDiscreteFupd//=.
+    iIntros (?) "HP". rewrite (into_discrete P). iModIntro. auto.
+  Qed.
+
+End own_disc_fupd_props.
+
+Section test.
+
+  Context `{invG Σ}.
+  Context (P Q Q' R: iProp Σ).
+  Context {HP: Discretizable P}.
+  Context {HQ: IntoDiscrete Q Q'}.
+
+  Goal P -∗ Q -∗ <disc> (P ∗ Q').
+  Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
+
+  Goal <disc> R -∗ <disc> R.
+  Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
+
   Goal P -∗ Q -∗ <disc> (P ∗ Q').
   Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
 
@@ -404,4 +582,3 @@ Section test.
   Proof using HP HQ. iIntros. iModIntro. iFrame. Qed.
 
 End test.
-

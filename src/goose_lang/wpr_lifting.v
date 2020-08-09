@@ -42,7 +42,7 @@ Implicit Types e : expr.
 
 Lemma wpr_strong_mono s k E e rec Φ Ψ Φinv Ψinv Φr Ψr :
   wpr s k E e rec Φ Φinv Φr -∗
-  (∀ v, Φ v ==∗ Ψ v) ∧ <disc> ((∀ hG, Φinv hG -∗ Ψinv hG) ∧ (∀ hG v, Φr hG v ==∗ Ψr hG v)) -∗
+  (∀ v, Φ v ==∗ Ψ v) ∧ <bdisc> ((∀ hG, Φinv hG -∗ Ψinv hG) ∧ (∀ hG v, Φr hG v ==∗ Ψr hG v)) -∗
   wpr s k E e rec Ψ Ψinv Ψr.
 Proof.
   rewrite /wpr. iIntros "Hwpr Himpl".

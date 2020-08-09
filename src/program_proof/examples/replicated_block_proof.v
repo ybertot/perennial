@@ -202,8 +202,6 @@ Section goose.
       iApply "HΦ"; auto.
   Qed.
 
-  Context `{Htime: ∀ σ, Timeless (P σ)}.
-  Context `{Hdisc: ∀ σ, Discretizable (P σ)}.
   Lemma wpc_RepBlock__Read {k E2} {k' l} addr (primary: bool) :
     (S k ≤ k')%nat →
     ∀ Φ Φc,
@@ -212,7 +210,7 @@ Section goose.
                    ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ (<disc> ▷ Φc (* crash condition after lin.point *) ∧
                                                  (∀ s, is_block s 1 σ -∗ Φ (slice_val s))))) -∗
       WPC RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
-  Proof using Hdisc Htime.
+  Proof.
     iIntros (? Φ Φc) "Hpre"; iNamed "Hpre".
     iNamed "Hrb".
     iNamed "Hro_state".
@@ -237,14 +235,14 @@ Section goose.
     iDestruct 1 as (σ) "(>Hlkinv&HP)".
     iNamed "Hlkinv".
     iAssert (int.val addr' d↦ σ ∗
-                   <disc> (int.val addr' d↦ σ -∗ rblock_linv addr σ))%I
+                   <bdisc> (int.val addr' d↦ σ -∗ rblock_linv addr σ))%I
       with "[Hlkinv]" as "(Haddr'&Hlkinv)".
     { iNamed "Hlkinv".
       destruct Haddr'_eq; subst; iFrame; iModIntro; iFrame; auto. }
     iRight in "Hfupd".
     iMod ("Hfupd" with "HP") as "[HP HQ]".
-
-    iMod ("HP").
+    iMod (fupd_later_to_disc with "HP") as "HP".
+    iApply wpc_fupd.
     wpc_apply (wpc_Read with "Haddr'").
     iSplit; [ | iNext ].
     { iLeft in "HQ". iModIntro. iNext.
@@ -252,13 +250,14 @@ Section goose.
       iExists _; iFrame.
       iApply rblock_linv_to_cinv; iFrame. iApply "Hlkinv". eauto. }
     iIntros (s) "(Haddr'&Hb)".
-    iDestruct (is_slice_to_small with "Hb") as "Hb".
     iDestruct (own_discrete_elim with "Hlkinv") as "Hlkinv".
+    iDestruct (is_slice_to_small with "Hb") as "Hb".
+    iMod (own_disc_fupd_elim with "HP") as "HP".
     iSpecialize ("Hlkinv" with "Haddr'").
     iSplitR "HP Hlkinv"; last by eauto with iFrame.
     (* TODO: why is this the second goal?
        RALF: because use_crash_locked puts [R] to the right. *)
-    iIntros "His_locked".
+    iIntros "!> His_locked".
     iCache (<disc> ▷ Φc)%I with "HQ".
     { by iLeft in "HQ". }
     iSplit; first by iFromCache.
@@ -282,7 +281,7 @@ Section goose.
       RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2
     {{{ s b, RET (slice_val s); is_block s 1 b ∗ Q b }}}
     {{{ Qc }}}.
-  Proof using Hdisc Htime.
+  Proof.
     iIntros (? Φ Φc) "Hpre HΦ"; iNamed "Hpre".
     iApply wpc_RepBlock__Read; first done.
     iFrame "Hrb".
@@ -301,7 +300,7 @@ Section goose.
         "Hb" ∷ is_block s q b ∗
         "Hfupd" ∷ (<disc> ▷ Φc ∧ ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ (<disc> ▷ Φc ∧ (is_block s q b -∗ Φ #())))) -∗
     WPC  RepBlock__Write #l (slice_val s) @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
-  Proof using Hdisc Htime.
+  Proof.
     iIntros (? Φ Φc) "Hpre"; iNamed "Hpre".
     iNamed "Hrb".
     iNamed "Hro_state".
@@ -323,8 +322,7 @@ Section goose.
     iDestruct 1 as (σ) "(>Hlkinv&HP)".
     iNamed "Hlkinv".
     iNamed "Hlkinv".
-    iMod "HP".
-    iNamed "HP".
+    iMod (fupd_later_to_disc with "HP") as "HP".
     iCache with "HP Hprimary Hbackup Hfupd".
     { iLeft in "Hfupd". iModIntro. iFrame. iNext.
       eauto 10 with iFrame. }
@@ -345,8 +343,10 @@ Section goose.
     wpc_apply (wpc_Write_fupd (⊤ ∖ ↑N) with "Hb").
     iModIntro. iExists _; iFrame. iIntros "!> Hprimary".
     (* linearization/simulation point: run Hfupd. *)
-    iRight in "Hfupd". iMod ("Hfupd" with "HP") as "[HP HΦ]".
-    iMod "HP".
+    iRight in "Hfupd".
+    iMod (own_disc_fupd_elim with "HP") as "HP".
+    iMod ("Hfupd" with "HP") as "[HP HΦ]".
+    iMod (fupd_later_to_disc with "HP") as "HP".
     iModIntro. iSplit.
     { iLeft in "HΦ". iModIntro. eauto 10 with iFrame. }
     iIntros "Hb".
@@ -359,6 +359,7 @@ Section goose.
     { iLeft in "HΦ". iModIntro. iNext. iFrame. eauto 10 with iFrame. }
     wpc_loadField.
     wpc_pures.
+    iApply wpc_fupd.
     (* second write *)
     wpc_apply (wpc_Write' with "[$Hb Hbackup]").
     { iFrame. }
@@ -368,8 +369,8 @@ Section goose.
     }
     iIntros "(Hbackup&Hb)".
     iSplitR "Hprimary Hbackup HP"; last first.
-    { eauto with iFrame. }
-    iIntros "His_locked".
+    { iMod (own_disc_fupd_elim with "HP"). eauto with iFrame. }
+    iIntros "!> His_locked".
     iSplit; first iFromCache.
     wpc_pures.
     wpc_frame.
@@ -388,7 +389,7 @@ Section goose.
       RepBlock__Write #l (slice_val s) @ NotStuck; (S k); ⊤; E2
     {{{ RET #(); Q ∗ is_block s q b }}}
     {{{ Qc }}}.
-  Proof using Hdisc Htime.
+  Proof.
     iIntros (? Φ Φc) "Hpre HΦ"; iNamed "Hpre".
     iApply wpc_RepBlock__Write; first done.
     iFrame. iSplit.
@@ -409,14 +410,17 @@ Section goose.
       OpenRead d_ref addr @ NotStuck; 2; ⊤; E2
     {{{ (x: val), RET x; True }}}
     {{{ ∃ σ, rblock_cinv addr σ ∗ P σ }}}.
-  Proof using stagedG0 Hdisc Htime.
+  Proof using stagedG0.
     rewrite /OpenRead.
     iIntros (??) "(H&HP) HΦ".
     wpc_bind (Open _ _).
+    iAssert (▷ P σ)%I with "[HP]" as "HP"; first by eauto.
+    iMod (fupd_later_to_disc with "HP") as "HP".
     wpc_apply (wpc_Open with "H").
     iSplit.
     { iLeft in "HΦ". iModIntro. iNext. iIntros "H". iApply "HΦ". eauto with iFrame. }
     iNext. iIntros (?) "Hpre".
+    iMod (own_disc_fupd_elim with "HP") as "HP".
     iMod (replicated_block_cfupd 1 with "Hpre HP") as "(#Hrblock&Hcfupd)".
     (* Here is the use of the cfupd to cancel out the rblock_cinv from crash condition,
        which is important because RepBlock__Read doesn't guarantee rblock_cinv! *)

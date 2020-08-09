@@ -171,20 +171,4 @@ Proof.
    - iRight. iFrame.
 Qed.
 
-(** XXX TODO: this suggests we could redefine disc so that one can convert any ▷ into <disc> ▷ *)
-Lemma fupd_later_to_disc N E P:
-  ▷ P -∗ |0={E}=> (<disc> (|0={↑N}=> ▷ P)).
-Proof using STAGED.
-  iIntros "HP".
-  iMod (pending_alloc) as (γcancel) "Hc".
-  iMod (inv_alloc' O N _ (P ∨ staged_done γcancel) with "[HP]") as "#Hinv".
-  { by iLeft. }
-  iModIntro. iModIntro. iInv "Hinv" as "H" "Hclo".
-  iDestruct "H" as "[H|>Hfalse]"; last first.
-  { iDestruct (pending_done with "[$] [$]") as %[]. }
-  iMod (pending_upd_done with "Hc") as "Hd".
-  iMod ("Hclo" with "[Hd]"); first by iRight.
-  iModIntro; eauto.
-Qed.
-
 End ci.
