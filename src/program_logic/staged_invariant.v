@@ -44,21 +44,24 @@ Definition bi_sch_staged E :=
 
 Lemma bi_sch_staged_interp `{!invG Σ, !crashG Σ, !stagedG Σ} E k Qs Qr P :
   bi_schema_interp (S k) (bi_later <$> [C; P]) (bi_later <$> [Qs; Qr]) (bi_sch_staged E)
-  ⊣⊢ (□ (▷ Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ ▷ Qr) ∗ (▷ Qs ∨ (▷ Qr ∗ ▷ C ∗ ▷ P)))%I.
-Proof.
+  ⊣⊢ (((▷ Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ ▷ Qr) ∗ ▷ Qs) ∨ (▷ Qr ∗ ▷ C ∗ ▷ P))%I.
+Proof. Admitted.
+(*
   remember (S k) as k' eqn:Hlvl.
   repeat (rewrite ?bi_schema_interp_unfold //=).
   rewrite /cfupd ?uPred_fupd_level_eq /uPred_fupd_level_def.
   rewrite Hlvl /bi_except_0 intuitionistically_into_persistently.
   done.
 Qed.
+*)
 
 Lemma bi_sch_staged_interp_weak `{!invG Σ, !crashG Σ, !stagedG Σ} E k Qs_mut P :
   bi_schema_interp (S k) (bi_later <$> [C; P]) (bi_later <$> Qs_mut) (bi_sch_staged E)
   ⊣⊢ let Qs := default emp%I (bi_later <$> (Qs_mut !! O)) in
      let Qr := default emp%I (bi_later <$> (Qs_mut !! 1)) in
-     (□ (Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ Qr) ∗ (Qs ∨ (Qr ∗ ▷ C ∗ ▷ P)))%I.
-Proof.
+     ((((Qs -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ Qr) ∗ Qs) ∨ (Qr ∗ ▷ C ∗ ▷ P)))%I.
+Proof. Admitted.
+(*
   remember (S k) as k' eqn:Hlvl.
   repeat (rewrite ?bi_schema_interp_unfold //=).
   rewrite /cfupd ?uPred_fupd_level_eq /uPred_fupd_level_def.
@@ -66,6 +69,7 @@ Proof.
   rewrite /default. rewrite ?list_lookup_fmap.
   destruct (Qs_mut !! O); destruct (Qs_mut !! 1); auto.
 Qed.
+*)
 
 Section staged_inv_defns.
 
@@ -137,35 +141,36 @@ Lemma pending_join γ:
 Proof. by rewrite /staged_pending -own_op -Cinl_op frac_op' Qp_div_2. Qed.
 
 Lemma staged_inv_alloc k E E' P Q Qr:
-  ▷ Q ∗ □ (C -∗ ▷ Q -∗ ▷ P ∗ ▷ Qr) -∗ |(S k)={E}=>
+  ▷ Q ∗ (C -∗ ▷ Q -∗ ▷ P ∗ ▷ Qr) -∗ |(S k)={E}=>
   ∃ γ, staged_inv (S k) E' γ P ∗ staged_value (S k) E' γ true Q Qr P ∗ staged_pending 1%Qp γ.
 Proof.
   iMod (pending_alloc) as (γ) "H".
   iMod (pending_alloc) as (γr) "Hr".
-  iIntros "(HQ&#HQP)".
+  iIntros "(HQ&HQP)".
   iMod (ae_inv_mut_alloc (S k) E (bi_sch_staged E')
                    [C; (P ∨ staged_done γ)%I]
                    [Q; (Qr ∨ staged_done γr)%I]
-          with "[HQ]")
+          with "[HQ HQP]")
       as "(#Hi&Hmut)".
   { simpl fmap. rewrite bi_sch_staged_interp.
-    iSplitL "".
-    - iModIntro. iIntros "HQ >HC". iModIntro.
+    iLeft.
+    iSplitL "HQP".
+    - iIntros "HQ >HC". iModIntro.
       iApply fupd_level_mask_weaken; first by set_solver+.
       iDestruct ("HQP" with "[$] [$]") as "($&$)".
-    - iLeft. eauto.
+    - eauto.
   }
   iModIntro. iExists _. iFrame "# ∗". iExists _; eauto. iFrame.
 Qed.
 
+(* TODO: need t o be able to get something back if we don't fire the view shift. And what about the Qr case? *)
 Lemma staged_inv_open_modify_ae E k E1 γ P Q Qr Q' Qr' R:
   staged_value (S k) E1 γ true Q Qr P -∗
-  □ (▷ Q' -∗ |C={E1, ∅}_k=> P ∗ Qr') -∗
-  (▷ Q -∗ |k={E}=> ▷ Q' ∗ R) -∗
+  (▷ Q -∗ |k={E}=> (▷ Q' -∗ |C={E1, ∅}_k=> P ∗ Qr') ∗  ▷ Q' ∗ R) -∗
   |(S k)={E}=> (R ∗ staged_value (S k) E1 γ true Q' Qr' P) ∨
                (▷ Qr ∗ C ∗ staged_value (S k) E1 γ false Q' Qr' P).
 Proof.
-  iIntros "Hval #Hwand Hshift".
+  iIntros "Hval Hshift".
   rewrite /staged_value/=.
   iDestruct "Hval" as (γr) "(Hγr&Hval)" => //=.
   iMod (ae_inv_mut_full_acc _ _ _ _ ([Q'; (Qr' ∨ staged_done γr)%I]) _
@@ -177,16 +182,14 @@ Proof.
     - iRight. iFrame. iExists _. iFrame; eauto.
   }
   iIntros "HQ".
-  iDestruct (bi_sch_staged_interp with "HQ") as "(#Hwand'&HQ)".
-  iDestruct "HQ" as "[HQ|HQ]".
-  - iMod ("Hshift" with "HQ") as "(HQ&HR)".
-    iSplitL "HQ".
+  iDestruct (bi_sch_staged_interp with "HQ") as "HQ".
+  iDestruct "HQ" as "[(Hwand&HQ)|HQ]".
+  - iMod ("Hshift" with "HQ") as "(Hwand2&HQ&HR)".
+    iSplitL "HQ Hwand2".
     { iModIntro. erewrite bi_sch_staged_interp.
-      iSplitL "".
-      { iIntros "!> HQ' >HC". iMod ("Hwand" with "[$] [$]") as "H".
-        iModIntro. by iMod "H" as "($&$)".
-      }
-      by iLeft.
+      iLeft. iFrame "HQ".
+      iIntros "HQ' >HC". iMod ("Hwand2" with "[$] [$]") as "H".
+      iModIntro. by iMod "H" as "($&$)".
     }
     iModIntro. iLeft. iFrame.
   - iDestruct "HQ" as "(HQr&>#HC&HP)".
@@ -196,19 +199,22 @@ Proof.
     iModIntro.
     iSplitL "Hshift HP".
     { rewrite bi_sch_staged_interp.
-      iSplitL "".
-      { iIntros "!> HQ' _". iMod ("Hwand" with "[$] [$]") as "H". iModIntro.
-        by iMod "H" as "($&$)". }
       iRight. iFrame. eauto.
     }
     iRight. iFrame "# ∗".
 Qed.
 
+(* XXX: this is not currently true, but a better encoding of inv_mut should enable that *)
+Lemma staged_value_into_disc k E γ P Q Qr :
+  staged_value k E γ true Q Qr P -∗
+  <disc> staged_value k E γ true Q Qr P.
+Proof. Admitted.
+
 Lemma staged_inv_open_crash k E γ P Q Qr:
-  □ (▷ Q -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ ▷ Qr) -∗
+  (▷ Q -∗ ▷ C -∗ |k={E}=> |k={∅, ∅}=> ▷ P ∗ ▷ Qr) -∗
   staged_value (S k) E γ true Q Qr P -∗ C -∗ |(S k)={E,E}=> ▷ Qr.
 Proof.
-  iIntros "#Hwand".
+  iIntros "Hwand".
   iDestruct 1 as (?) "(Hγr&Hval)". iIntros "#HC".
   iMod (ae_inv_mut_full_acc _ _ _ _ ([Q; (Qr ∨ staged_done γr)%I]) _
                             (▷ Qr)%I
@@ -216,24 +222,23 @@ Proof.
     last first.
   { iModIntro. auto. }
   iIntros "HQ".
-  iDestruct (bi_sch_staged_interp with "HQ") as "(#Hwand'&HQ)".
-  iDestruct "HQ" as "[HQ|HQ]".
-  - iMod ("Hwand" with "[$] [$]") as "H".
+  iDestruct (bi_sch_staged_interp with "HQ") as "HQ".
+  iDestruct "HQ" as "[(Hwand'&HQ)|HQ]".
+  - iMod ("Hwand'" with "[$] [$]") as "H".
     iMod (fupd_level_intro_mask' _ ∅) as "Hclo''"; first by set_solver+.
-    iMod ("H") as "(HP&$)".
+    iMod ("H") as "(HP&Hdone)".
     iMod "Hclo''" as "_".
+    iDestruct "Hdone" as "[HQR|>Hfalse]"; last first.
+    { iDestruct (pending_done with "[$] [$]") as %[]. }
     iMod (pending_upd_done with "Hγr") as "Hγr".
-    iModIntro. rewrite bi_sch_staged_interp. iFrame "#". iRight. iFrame.
+    iModIntro. rewrite bi_sch_staged_interp. iFrame "#". iFrame.
   - iDestruct "HQ" as "([HQr|>Hfalse]&_&HP)"; last first.
     { iDestruct (pending_done with "Hγr [$]") as %[]. }
     iMod (pending_upd_done with "Hγr") as "#Hγr".
     iModIntro.
     iSplitL "HP".
     { rewrite bi_sch_staged_interp.
-      iSplitL "".
-      { iIntros "!> HQ' _". iMod ("Hwand" with "[$] [$]") as "H". iModIntro.
-        by iMod "H" as "($&$)". }
-      iRight. iFrame. eauto.
+      iRight. iFrame "# ∗".
     }
     eauto.
 Qed.
@@ -247,10 +252,10 @@ Proof.
   iIntros (?) "(#Hinv&Hpending&#HC)".
   iMod (ae_inv_mut_acc _ _ _ _ (▷ P) with "Hinv [Hpending]"); last done.
   iIntros (Qs) "Hinv0".
-  iDestruct (bi_sch_staged_interp_weak with "Hinv0") as "(#Hwand0&H)".
-  iDestruct "H" as "[HQ|HQ]".
+  iDestruct (bi_sch_staged_interp_weak with "Hinv0") as "H".
+  iDestruct "H" as "[(Hwand&HQ)|HQ]".
   - iMod (fupd_level_intro_mask' _ E1) as "Hclo''"; auto.
-    iDestruct ("Hwand0" with "[$] [$]") as "Hwand".
+    iDestruct ("Hwand" with "[$] [$]") as "Hwand".
     iMod (fupd_level_le with "Hwand") as "Hwand"; auto.
     iMod (fupd_level_intro_mask' _ ∅) as "Hclo'''"; first by set_solver.
     iMod (fupd_level_le with "Hwand") as "(HP&HQr)"; auto.
@@ -260,13 +265,13 @@ Proof.
     { iDestruct (pending_done with "[$] Hfalse") as %[]. }
     iMod (pending_upd_done with "[$]") as "#Hdone".
     iModIntro. iSplitR "HP"; last done.
-    iApply bi_sch_staged_interp_weak. iFrame "Hwand0". iFrame "# ∗".
+    iApply bi_sch_staged_interp_weak. iFrame "# ∗".
   - iDestruct "HQ" as "(HQr&_&[HP|>Hfalse])"; last first.
     { iDestruct (pending_done with "Hpending [$]") as %[]. }
     iMod (pending_upd_done with "[$]") as "#Hdone".
     iFrame.
     iModIntro.
-    iApply bi_sch_staged_interp_weak. iFrame "Hwand0". iFrame "# ∗".
+    iApply bi_sch_staged_interp_weak. iRight. iFrame "# ∗".
 Qed.
 
 End inv.
