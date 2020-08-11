@@ -26,14 +26,14 @@ Fixpoint step_fupdN_fresh (ns: list nat) Hi0 (Hc0: crashG Σ) t0
   match ns with
   | [] => P Hi0 Hc0 t0
   | (n :: ns) =>
-    (|={⊤}[∅]▷=>^(S (S n)) |={⊤, ∅}_2=> 
-     ∀ Hi' Hc', NC ={⊤}=∗ (∃ t' : pbundleG T Σ, step_fupdN_fresh ns Hi' Hc' t' P))%I
+    (|={⊤}[∅]▷=>^(S (S n)) |={⊤, ∅}_2=>
+     ∀ Hi' Hc', NC 1 ={⊤}=∗ (∃ t' : pbundleG T Σ, step_fupdN_fresh ns Hi' Hc' t' P))%I
   end.
 
 Lemma step_fupdN_fresh_snoc (ns: list nat) n Hi0 Hc0 t0 Q:
   step_fupdN_fresh (ns ++ [n]) Hi0 Hc0 t0 Q ≡
   step_fupdN_fresh (ns) Hi0 Hc0 t0
-    (λ Hi Hc' _, |={⊤}[∅]▷=>^(S (S n)) |={⊤, ∅}_2=> ∀ Hi' Hc', NC ={⊤}=∗ ∃ t', Q Hi' Hc' t')%I.
+    (λ Hi Hc' _, |={⊤}[∅]▷=>^(S (S n)) |={⊤, ∅}_2=> ∀ Hi' Hc', NC 1={⊤}=∗ ∃ t', Q Hi' Hc' t')%I.
 Proof.
   apply (anti_symm (⊢)%I).
   - revert Hi0 Hc0 t0 Q.
@@ -127,7 +127,7 @@ Fixpoint fresh_later_count (ns: list nat) :=
   end.
 
 Lemma step_fupdN_fresh_plain `{!invPreG Σ} `{!crashPreG Σ} P `{!Plain P} ns n:
-  (∀ Hinv' Hc', NC -∗ |={⊤}=> ∃ t, step_fupdN_fresh ns Hinv' Hc' t
+  (∀ Hinv' Hc', NC 1-∗ |={⊤}=> ∃ t, step_fupdN_fresh ns Hinv' Hc' t
                   (λ _ _ _, |={⊤}[∅]▷=>^(S n) |={⊤, ∅}_2=> P)) -∗
   ▷^(fresh_later_count ns + S n) P.
 Proof.
@@ -165,7 +165,7 @@ Qed.
 
 (* XXX this probably needs to be tweaked. *)
 Lemma step_fupdN_fresh_soundness `{!invPreG Σ} `{!crashPreG Σ} (φ : Prop) ns n:
-  (∀ (Hinv : invG Σ) (Hc: crashG Σ), NC -∗ (|={⊤}=> (∃ t0, step_fupdN_fresh ns Hinv Hc t0
+  (∀ (Hinv : invG Σ) (Hc: crashG Σ), NC 1-∗ (|={⊤}=> (∃ t0, step_fupdN_fresh ns Hinv Hc t0
                              (λ _ _ _, |={⊤}[∅]▷=>^((S (S n))) |={⊤, ∅}_2=> ⌜φ⌝)))%I) →
   φ.
 Proof.
@@ -186,7 +186,7 @@ Lemma wptp_recv_strong_normal_adequacy Φ Φinv Φr κs' s k Hi Hc t n ns r1 e1 
   nrsteps (CS := CS) r1 (ns ++ [n]) (e1 :: t1, σ1) κs (t2, σ2) Normal →
   state_interp σ1 (κs ++ κs') (length t1) -∗
   wpr s k Hi Hc t ⊤ e1 r1 Φ Φinv Φr -∗
-  wptp s k t1 -∗ NC -∗ step_fupdN_fresh ns Hi Hc t (λ Hi' Hc' t',
+  wptp s k t1 -∗ NC 1-∗ step_fupdN_fresh ns Hi Hc t (λ Hi' Hc' t',
     ⌜ Hi' = Hi ∧ Hc' = Hc ∧ t' = t ⌝ ∗
     (|={⊤}[∅]▷=>^(S n) ∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
@@ -194,7 +194,7 @@ Lemma wptp_recv_strong_normal_adequacy Φ Φinv Φr κs' s k Hi Hc t n ns r1 e1 
     state_interp σ2 κs' (length t2') ∗
     from_option Φ True (to_val e2) ∗
     ([∗ list] v ∈ omap to_val t2', fork_post v) ∗
-    NC)).
+    NC 1)).
 Proof.
   iIntros (Hstep) "Hσ He Ht HNC".
   inversion Hstep. subst.
@@ -215,7 +215,7 @@ Lemma wptp_recv_strong_crash_adequacy Φ Φinv Φinv' Φr κs' s k Hi Hc t ns n 
   state_interp σ1 (κs ++ κs') (length t1) -∗
   wpr s k Hi Hc t ⊤ e1 r1 Φ Φinv Φr -∗
   □ (∀ Hi' t', Φinv Hi' t' -∗ □ Φinv' Hi' t') -∗
-  wptp s k t1 -∗ NC -∗ step_fupdN_fresh ns Hi Hc t (λ Hi' Hc' t',
+  wptp s k t1 -∗ NC 1-∗ step_fupdN_fresh ns Hi Hc t (λ Hi' Hc' t',
     (|={⊤}[∅]▷=>^(S (S n)) ∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
     ⌜ ∀ e2, s = NotStuck → e2 ∈ t2 → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝ ∗
@@ -223,7 +223,7 @@ Lemma wptp_recv_strong_crash_adequacy Φ Φinv Φinv' Φr κs' s k Hi Hc t ns n 
     from_option (Φr Hi' t') True (to_val e2) ∗
     □ Φinv' Hi' t' ∗
     ([∗ list] v ∈ omap to_val t2', fork_post v) ∗
-    NC)).
+    NC 1)).
 Proof.
   revert Hi Hc t e1 t1 κs κs' t2 σ1 σ2 Φ.
   induction ns as [|n' ns' IH] => Hi Hc t e1 t1 κs κs' t2 σ1 σ2 Φ.
@@ -276,7 +276,7 @@ Lemma wptp_recv_strong_adequacy Φ Φinv Φinv' Φr κs' s k Hi Hc t ns n r1 e1 
   state_interp σ1 (κs ++ κs') (length t1) -∗
   wpr s k Hi Hc t ⊤ e1 r1 Φ Φinv Φr -∗
   □ (∀ Hi' t', Φinv Hi' t' -∗ □ Φinv' Hi' t') -∗
-  wptp s k t1 -∗ NC -∗ step_fupdN_fresh ns Hi Hc t (λ Hi' Hc' t',
+  wptp s k t1 -∗ NC 1-∗ step_fupdN_fresh ns Hi Hc t (λ Hi' Hc' t',
     (|={⊤}[∅]▷=>^(S (S n)) ∃ e2 t2',
     ⌜ t2 = e2 :: t2' ⌝ ∗
     ⌜ ∀ e2, s = NotStuck → e2 ∈ t2 → (is_Some (to_val e2) ∨ reducible e2 σ2) ⌝ ∗
@@ -286,7 +286,7 @@ Lemma wptp_recv_strong_adequacy Φ Φinv Φinv' Φr κs' s k Hi Hc t ns n r1 e1 
      | Crashed => from_option (Φr Hi' t') True (to_val e2) ∗ □ Φinv' Hi' t'
      end)  ∗
     ([∗ list] v ∈ omap to_val t2', fork_post v) ∗
-    NC)).
+    NC 1)).
 Proof.
   intros. destruct stat.
   - iIntros. iDestruct (wptp_recv_strong_crash_adequacy with "[$] [$] [$] [$] [$]") as "H"; eauto.
