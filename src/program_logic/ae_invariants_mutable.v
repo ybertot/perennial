@@ -31,7 +31,6 @@ Local Hint Extern 0 (AlwaysEn ## MaybeEn _) => apply coPset_inl_inr_disj : core.
 Section ae_inv_mut.
   Context `{!invG Σ}.
   Implicit Types i : positive.
-  Implicit Types N : namespace.
   Implicit Types E : coPset.
   Implicit Types P Q R : iProp Σ.
   Implicit Types Ps Qs Rs : list (iProp Σ).
@@ -127,7 +126,7 @@ Section ae_inv_mut.
       iFrame. eauto.
   Qed.
 
-  Lemma ae_inv_mut_alloc k N E sch Ps Qs :
+  Lemma ae_inv_mut_alloc k E sch Ps Qs :
     bi_schema_interp k (bi_later <$> Ps) (bi_later <$> Qs) sch -∗
     |k={E}=> ae_inv_mut k sch Ps ∗ ae_inv_mut_full k sch Qs Ps.
   Proof.
@@ -139,7 +138,7 @@ Section ae_inv_mut.
     do 2 iModIntro. iSplitL ""; iExists _; iFrame "# ∗"; eauto.
   Qed.
 
-  Global Instance ae_inv_mut_persistent k N sch Ps : Persistent (ae_inv_mut k sch Ps).
+  Global Instance ae_inv_mut_persistent k sch Ps : Persistent (ae_inv_mut k sch Ps).
   Proof. rewrite ae_inv_mut_eq. apply _. Qed.
 
   (** ** Proof mode integration *)
