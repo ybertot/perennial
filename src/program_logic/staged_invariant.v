@@ -45,7 +45,7 @@ Definition bi_sch_staged E :=
 Lemma bi_sch_staged_interp `{!invG Σ, !crashG Σ, !stagedG Σ} E k Qs P γ :
   bi_schema_interp (S k) (bi_later <$> [C; P; staged_pending 1%Qp γ])
                    (bi_later <$> [Qs]) (bi_sch_staged E)
-  ⊣⊢ ((▷ Qs ∧ (▷ C -∗ staged_pending 1%Qp γ -∗ |k,Some O={E}=> |k, Some O={∅, ∅}=> ▷ P)))%I.
+  ⊣⊢ ((▷ Qs ∧ □ (▷ Qs -∗ ▷ C -∗ staged_pending 1%Qp γ -∗ |k,Some O={E}=> |k, Some O={∅, ∅}=> ▷ P ∗ ▷ Qs)))%I.
 Proof. Admitted.
 
 (*
@@ -64,7 +64,7 @@ Qed.
 Lemma bi_sch_staged_interp_weak `{!invG Σ, !crashG Σ, !stagedG Σ} E k Qs_mut P γ :
   bi_schema_interp (S k) (bi_later <$> [C; P; staged_pending 1%Qp γ]) (bi_later <$> Qs_mut) (bi_sch_staged E)
                    ⊣⊢ let Qs := default emp%I (bi_later <$> (Qs_mut !! O)) in
-                      (((Qs ∧  (▷ C -∗ staged_pending 1%Qp γ -∗ |k,Some O={E}=> |k, Some O={∅, ∅}=> ▷ P))))%I.
+                      (((Qs ∧ □ (Qs -∗ ▷ C -∗ staged_pending 1%Qp γ -∗ |k,Some O={E}=> |k, Some O={∅, ∅}=> ▷ P ∗ Qs))))%I.
 Proof. Admitted.
 (*
   remember (S k) as k' eqn:Hlvl.
@@ -155,7 +155,7 @@ Lemma pending_join γ:
 Proof. by rewrite /staged_pending -own_op -Cinl_op frac_op' Qp_div_2. Qed.
 
 Lemma staged_inv_alloc k E E' P Q Qr:
-  ▷ Q ∗ (C -∗ ▷ Q -∗ ▷ P ∗ ▷ Qr) -∗ |(S k)={E}=>
+  ▷ Q ∗ □ (C -∗ ▷ Q -∗ ▷ P ∗ ▷ Qr) -∗ |(S k)={E}=>
   ∃ γ, staged_inv (S k) E' γ P ∗ staged_value (S k) O O E' γ Q Qr P ∗ staged_pending 1%Qp γ.
 Proof.
   iMod (pending_alloc) as (γp) "Hp".
@@ -178,21 +178,22 @@ Proof.
     as "(#Hi&Hmut)".
   { simpl fmap. rewrite bi_sch_staged_interp.
     iSplit; first iFrame.
-    iIntros ">#HC Hpend".
-    iPoseProof (ae_inv_acc E' _ _ _ (▷ P) with "Hinv0 [Hc1 HQP Hpend]") as "H".
+    iDestruct "HQP" as "#HQP". iModIntro.
+    iIntros ">Hc1 >#HC Hpend".
+    iPoseProof (ae_inv_acc E' _ _ _ (▷ P ∗ staged_pending (1/2) γcancel) with "Hinv0 [Hc1 HQP Hpend]") as "H".
     { iIntros "[HQ|>Hfalse]"; last first.
       { iDestruct (pending_done with "Hc1 [$]") as %[]. }
       iDestruct "HQ" as "[HQ|H]".
       { iDestruct ("HQP" with "[$] [$]") as "($&HQr)".
         iMod (pending_upd_done with "Hpend") as "#Hdone".
-        iModIntro. iLeft. iRight. iFrame "# ∗".
+        iModIntro. iFrame "Hc1". iLeft. iRight. iFrame "# ∗".
       }
       iDestruct "H" as "(HQ&_&[HP|>Hfalse])"; last first.
       { iDestruct (pending_done with "Hpend [$]") as %[]. }
       iMod (pending_upd_done with "Hpend") as "#Hdone".
-      iModIntro. iFrame "HP". iLeft. iFrame "# ∗".
+      iModIntro. iFrame "Hc1". iFrame "HP". iLeft. iFrame "# ∗".
     }
-    iMod (fupd_split_level_le with "H"); first (naive_solver lia).
+    iMod (fupd_split_level_le with "H") as "(?&?)"; first (naive_solver lia).
     iFrame. eauto.
   }
   iModIntro. iExists _. iFrame "# ∗". iExists _, _. iFrame "# ∗".
@@ -202,7 +203,7 @@ Lemma staged_inv_open_modify_ae E k k2 k2' j j' E1 γ P Q Qr Q' Qr' R:
   k2 ≤ k →
   k2' ≤ k →
   staged_value (S k) k2 j E1 γ Q Qr P -∗
-  (▷ Q -∗ |k,Some O={E}=> (▷ Q' -∗ C -∗ |k2',Some (S j')={E1}=> |k2',Some (S j')={∅, ∅}=> P ∗ Qr') ∗  ▷ Q' ∗ R) -∗
+  (▷ Q -∗ |k,Some O={E}=> □ (▷ Q' -∗ C -∗ |k2',Some (S j')={E1}=> |k2',Some (S j')={∅, ∅}=> P ∗ Qr') ∗  ▷ Q' ∗ R) -∗
   |(S k)={E}=> (R ∗ staged_value (S k) k2' j' E1 γ Q' Qr' P) ∨
                (▷ Qr ∗ C).
 Proof.
@@ -253,28 +254,29 @@ Proof.
     iSplitR "HR Hγr"; last first.
     { iLeft. by iFrame. }
     iSplit; first iFrame.
-    iIntros ">#HC Hpend".
+    iDestruct "Hwand" as "#Hwand".
+    iModIntro. iIntros ">Hc1 >#HC Hpend".
 
-    iPoseProof (ae_inv_acc E1 _ _ _ (▷ P) with "Hinv [Hc1 Hpend Hwand]") as "H".
+    iPoseProof (ae_inv_acc E1 _ _ _ (▷ P ∗ staged_pending (1/2) γcancel') with "Hinv [Hc1 Hpend Hwand]") as "H".
     { iIntros "HQ".
       iDestruct "HQ" as "[HQ|>Hfalse]"; last first.
       { iDestruct (pending_done with "Hc1 Hfalse") as %[]. }
       iDestruct "HQ" as "[HQ|HQ]".
-      * iMod ("Hwand" with "[$] [$]") as "Hwand".
+      * iMod ("Hwand" with "[$] [$]") as "H".
         iMod (fupd_split_level_intro_mask' _ ∅) as "Hclo''"; first by set_solver+.
-        iMod ("Hwand") as "(HP&HQr')".
+        iMod ("H") as "(HP&HQr')".
         iMod (pending_upd_done with "Hpend").
         iMod "Hclo''" as "_".
-        iModIntro. iFrame "HP". iNext. iFrame "HC". iLeft.
+        iModIntro. iFrame "Hc1 HP". iNext. iFrame "HC". iLeft.
         iRight. iFrame.
       * iDestruct "HQ" as "(HQr&_&[HP|>Hfalse])"; last first.
         { iDestruct (pending_done with "Hpend Hfalse") as %[]. }
         iMod (pending_upd_done with "Hpend").
-        iModIntro. iFrame "HP". iNext. iFrame "HC". iLeft.
+        iModIntro. iFrame "Hc1 HP". iNext. iFrame "HC". iLeft.
         iRight. iFrame.
     }
-    iMod (fupd_split_level_le with "H"); first (naive_solver lia).
-    do 2 iModIntro; eauto.
+    iMod (fupd_split_level_le with "H") as "(?&?)"; first (naive_solver lia).
+    do 2 iModIntro; eauto. iFrame.
   - iDestruct "HQ" as "([HQr|>Hfalse]&#>HC&HP)"; last first.
     { iDestruct (pending_done with "Hγr Hfalse") as %[]. }
     iMod (pending_upd_done with "Hγr") as "#Hγr".
@@ -289,19 +291,20 @@ Proof.
     iSplitR "HQr Hγr"; last first.
     { iRight. iFrame "# ∗". }
     iSplit; first iFrame.
-    iIntros "_ Hpend".
-    iPoseProof (ae_inv_acc E1 _ _ _ (▷ P) with "Hinv [Hc1 Hpend]") as "H".
+    iModIntro.
+    iIntros ">Hc1 _ Hpend".
+    iPoseProof (ae_inv_acc E1 _ _ _ (▷ P ∗ staged_pending (1/2) γcancel') with "Hinv [Hc1 Hpend]") as "H".
     { iIntros "HQ".
       iDestruct "HQ" as "[HQ|>Hfalse]"; last first.
       { iDestruct (pending_done with "Hc1 Hfalse") as %[]. }
       iDestruct "HQ" as "(HQr&_&[HP|>Hfalse])"; last first.
       { iDestruct (pending_done with "Hpend Hfalse") as %[]. }
       iMod (pending_upd_done with "Hpend").
-      iModIntro. iFrame "HP". iNext. iFrame "HC". iLeft.
+      iModIntro. iFrame "Hc1 HP". iNext. iFrame "HC". iLeft.
       iFrame.
     }
-    iMod (fupd_split_level_le with "H"); first (naive_solver lia).
-    do 2 iModIntro; eauto.
+    iMod (fupd_split_level_le with "H") as "(?&?)"; first (naive_solver lia).
+    do 2 iModIntro; by iFrame.
 Qed.
 
 Lemma staged_value_into_disc k k2 mj2 E γ P Q Qr :
@@ -350,25 +353,16 @@ Proof.
   iMod (ae_inv_mut_acc _ _ _ _ _ (▷ P) with "Hinv [Hpending]"); last done.
   iIntros (Qs) "Hinv0".
   iDestruct (bi_sch_staged_interp_weak with "Hinv0") as "H".
-  iDestruct "H" as "(_&Hwand)".
-  - iMod (fupd_level_intro_mask' _ E1) as "Hclo''"; auto.
-    iDestruct ("Hwand" with "[$] [$]") as "Hwand".
-    iMod (fupd_level_le with "Hwand") as "Hwand"; auto.
-    iMod (fupd_level_intro_mask' _ ∅) as "Hclo'''"; first by set_solver.
-    iMod (fupd_level_le with "Hwand") as "(HP&HQr)"; auto.
-    iMod "Hclo'''" as "_".
-    iMod "Hclo''" as "_".
-    iDestruct "HP" as "[HP|>Hfalse]"; last first.
-    { iDestruct (pending_done with "[$] Hfalse") as %[]. }
-    iMod (pending_upd_done with "[$]") as "#Hdone".
-    iModIntro. iSplitR "HP"; last done.
-    iApply bi_sch_staged_interp_weak. iFrame "# ∗".
-  - iDestruct "HQ" as "(HQr&_&[HP|>Hfalse])"; last first.
-    { iDestruct (pending_done with "Hpending [$]") as %[]. }
-    iMod (pending_upd_done with "[$]") as "#Hdone".
-    iFrame.
-    iModIntro.
-    iApply bi_sch_staged_interp_weak. iRight. iFrame "# ∗".
+  iDestruct "H" as "(Hc&#Hwand)".
+  iMod (fupd_split_level_intro_mask' _ E1) as "Hclo''"; auto.
+  iDestruct ("Hwand" with "[$] [$] [$]") as "Hwand0".
+  iMod (fupd_split_level_le with "Hwand0") as "Hwand0"; first (naive_solver lia).
+  iMod (fupd_split_level_intro_mask' _ ∅) as "Hclo'''"; first by set_solver.
+  iMod (fupd_split_level_le with "Hwand0") as "(HP&HQr)"; first (naive_solver lia).
+  iMod "Hclo'''" as "_".
+  iMod "Hclo''" as "_".
+  iModIntro. iSplitR "HP"; last done.
+  iApply bi_sch_staged_interp_weak. iFrame "# ∗".
 Qed.
 
 End inv.
