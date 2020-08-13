@@ -30,6 +30,7 @@ Lemma wpc_step s k e1 σ1 κ κs e2 σ2 efs m Φ Φc :
 Proof.
   rewrite {1}wpc_unfold /wpc_pre. iIntros (?) "Hσ H HNC".
   rewrite (val_stuck e1 σ1 κ e2 σ2 efs) //.
+  iSpecialize ("H" $! O).
   iMod "H". iDestruct "H" as "(H&_)".
   iMod ("H" $! _ σ1 with "Hσ HNC") as "(_&H)".
   iMod ("H" $! e2 σ2 efs with "[//]") as "H".
@@ -81,7 +82,7 @@ Lemma wpc_safe E k κs m e σ Φ Φc :
   WPC e @ k ; ⊤ ; E {{ Φ }} {{ Φc }} -∗ NC 1 ={⊤}=∗
   ⌜is_Some (to_val e) ∨ reducible e σ⌝.
 Proof.
-  rewrite wpc_unfold /wpc_pre. iIntros "Hσ >(H&_) HNC".
+  rewrite wpc_unfold /wpc_pre. iIntros "Hσ H HNC". iDestruct ("H" $! O) as ">(H&_)".
   destruct (to_val e) as [v|] eqn:?; first by eauto.
   iSpecialize ("H" $! _ σ [] κs with "Hσ HNC"). rewrite sep_elim_l.
   iMod (fupd_plain_mask with "H") as %?; eauto.
@@ -147,12 +148,13 @@ Proof.
     - iDestruct "Ht" as "(_ & He' & _)". by iMod (wpc_safe with "Hσ He' HNC"). }
   iApply step_fupd_fupd. iApply step_fupd_intro; first done. iNext.
   iMod (NC_upd_C with "HNC") as "#HC".
-  iMod (wpc_crash with "Hwp") as "H".
+  iPoseProof (wpc_crash with "Hwp") as "H".
+  iMod ("H" $! O) as "H".
   iMod (own_disc_fupd_elim with "H") as "H".
   iModIntro.
   iSpecialize ("H" with "[$]").
-  iMod (fupd_level_fupd with "H") as "H".
-  iMod (fupd_level_fupd with "H") as "H". iModIntro.
+  iMod (fupd_split_level_fupd with "H") as "H".
+  iMod (fupd_split_level_fupd with "H") as "H". iModIntro.
   iNext.
   iExists _, _. iSplitL ""; first done. iFrame "# ∗".
 Qed.
