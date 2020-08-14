@@ -85,7 +85,7 @@ Proof.
                         heap_ffi_names := ffi_names;
                         heap_trace_names := name_trace |}).
       iModIntro.
-      iNext. iIntros (Hi' ?) "HNC".
+      iNext. iIntros (Hi' ??) "HNC".
       set (hG' := (heap_update _ _ Hi' hnames)).
       iSpecialize ("Hidemp" $! σ_pre_crash.(world) σ_post_crash.(world) hG' with "[Hcrel] [Hc]").
       { rewrite //= ffi_update_update //=. }

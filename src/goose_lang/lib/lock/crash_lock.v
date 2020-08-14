@@ -205,7 +205,7 @@ Ltac crash_lock_open H :=
   lazymatch goal with
   | [ |- envs_entails _ (wpc _ ?k _ _ _ _ _) ] =>
     match iTypeOf H with
-    | Some (_, crash_locked _ _ _ _ _ _) =>
+    | Some (_, crash_locked _ _ _ _ _) =>
       iApply (use_crash_locked with H);
       [ try lia (* LVL inequality *)
       | iSplit; [ try iFromCache | ]

@@ -83,7 +83,7 @@ Section goose.
     ∃ (d_ref m_ref: loc),
       "Hro_state" ∷ rblock_state l d_ref m_ref addr ∗
       (* lock protocol *)
-      "#Hlock" ∷ is_crash_lock N N k' #m_ref
+      "#Hlock" ∷ is_crash_lock N k' #m_ref
         (∃ σ, "Hlkinv" ∷ rblock_linv addr σ ∗ "HP" ∷ P σ)
         (∃ σ, "Hclkinv" ∷ rblock_cinv addr σ ∗ "HP" ∷ P σ)
   .
@@ -114,7 +114,7 @@ Section goose.
     iIntros "Hpre HP"; iNamed "Hpre".
 
     (* actually initialize the lock *)
-    iMod (alloc_crash_lock_cfupd N N k'
+    iMod (alloc_crash_lock_cfupd N k'
                              (∃ σ, "Hlkinv" ∷ rblock_linv addr σ ∗ "HP" ∷ P σ)%I
                              (∃ σ, "Hclkinv" ∷ rblock_cinv addr σ ∗ "HP" ∷ P σ)%I
             with "Hfree_lock [] [Hlinv HP]") as "(Hlk&$)".
@@ -207,7 +207,7 @@ Section goose.
     ∀ Φ Φc,
         "Hrb" ∷ is_rblock (S k') l addr ∗
         "Hfupd" ∷ (<disc> ▷ Φc (* crash condition before lin.point *) ∧
-                   ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ (<disc> ▷ Φc (* crash condition after lin.point *) ∧
+                   ▷ (∀ σ, ▷ P σ ={⊤}=∗ ▷ P σ ∗ (<disc> ▷ Φc (* crash condition after lin.point *) ∧
                                                  (∀ s, is_block s 1 σ -∗ Φ (slice_val s))))) -∗
       WPC RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
   Proof.
@@ -277,7 +277,7 @@ Section goose.
     {{{ "Hrb" ∷ is_rblock (S k') l addr ∗ (* replicated block protocol *)
         "HQc" ∷ (∀ σ, Q σ -∗ <disc> Qc) ∗ (* crash condition after "linearization point" *)
         "Hfupd" ∷ (<disc> Qc (* crash condition before "linearization point" *) ∧
-                   (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P σ ∗ Q σ)) }}}
+                   (∀ σ, ▷ P σ ={⊤}=∗ ▷ P σ ∗ Q σ)) }}}
       RepBlock__Read #l #primary @ NotStuck; (S k); ⊤; E2
     {{{ s b, RET (slice_val s); is_block s 1 b ∗ Q b }}}
     {{{ Qc }}}.
@@ -298,7 +298,7 @@ Section goose.
     ∀ Φ Φc,
         "Hrb" ∷ is_rblock (S k') l addr ∗
         "Hb" ∷ is_block s q b ∗
-        "Hfupd" ∷ (<disc> ▷ Φc ∧ ▷ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ (<disc> ▷ Φc ∧ (is_block s q b -∗ Φ #())))) -∗
+        "Hfupd" ∷ (<disc> ▷ Φc ∧ ▷ (∀ σ, ▷ P σ ={⊤}=∗ ▷ P b ∗ (<disc> ▷ Φc ∧ (is_block s q b -∗ Φ #())))) -∗
     WPC  RepBlock__Write #l (slice_val s) @ NotStuck; (S k); ⊤; E2 {{ Φ }} {{ Φc }}.
   Proof.
     iIntros (? Φ Φc) "Hpre"; iNamed "Hpre".
@@ -340,7 +340,7 @@ Section goose.
     requires helping due to the possibility of losing the first disk block
     between crash and recovery - the commit cannot happen until recovery
     succesfully synchronizes the disks. *)
-    wpc_apply (wpc_Write_fupd (⊤ ∖ ↑N) with "Hb").
+    wpc_apply (wpc_Write_fupd ⊤ with "Hb").
     iModIntro. iExists _; iFrame. iIntros "!> Hprimary".
     (* linearization/simulation point: run Hfupd. *)
     iRight in "Hfupd".
@@ -385,7 +385,7 @@ Section goose.
     {{{ "Hrb" ∷ is_rblock (S k') l addr ∗
         "Hb" ∷ is_block s q b ∗
         "HQc" ∷ (Q -∗ <disc> ▷ Qc) ∗
-        "Hfupd" ∷ (<disc> ▷ Qc ∧ (∀ σ, ▷ P σ ={⊤ ∖ ↑N}=∗ ▷ P b ∗ Q)) }}}
+        "Hfupd" ∷ (<disc> ▷ Qc ∧ (∀ σ, ▷ P σ ={⊤}=∗ ▷ P b ∗ Q)) }}}
       RepBlock__Write #l (slice_val s) @ NotStuck; (S k); ⊤; E2
     {{{ RET #(); Q ∗ is_block s q b }}}
     {{{ Qc }}}.
