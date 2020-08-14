@@ -255,93 +255,128 @@ Proof.
   iApply fupd_level_mask_weaken; eauto. set_solver+.
 Qed.
 
-Lemma wpc_staged_inv_open' γ s k k' k'' E1 E1' E2 e Φ Φc Q Qrest Qnew P N1 N2 :
+Lemma wpc_staged_inv_open' γ s k k' k'' k2 mj E1 E1' E2 e Φ Φc Q Qrest Qnew P :
   E1 ⊆ E1' →
-  N1 ## N2 →
-  ↑N1 ⊆ E1 →
-  ↑N2 ⊆ E1 →
   k'' ≤ k' →
   k'' ≤ (S k) →
-  staged_value (S k') N1 N2 (E1' ∖ ↑ N1 ∖ ↑N2) γ Q Qrest P ∗
+  k2 ≤ k' →
+  staged_value (S k') k2 mj E1' γ Q Qrest P ∗
   (<disc> ▷ Φc ∧
   (▷ Q -∗
-   WPC e @ NotStuck; k''; (E1 ∖ ↑N1 ∖ ↑N2); ∅
+   WPC e @ NotStuck; k''; E1; ∅
       {{λ v, ▷ Qnew v ∗
              ▷ □ (Qnew v -∗ P) ∗
-            (staged_value (S k') N1 N2 (E1' ∖ ↑ N1 ∖ ↑N2) γ (Qnew v) True P -∗  (<disc> ▷ Φc ∧ Φ v))}}
+            (staged_value (S k') k2 mj E1' γ (Qnew v) True P -∗  (<disc> ▷ Φc ∧ Φ v))}}
       {{ Φc ∗ P }}))
   ⊢
   WPC e @ s; (S k); E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
-  iIntros (??????) "(Hval&Hwp)".
+  iIntros (????) "(Hval&Hwp)".
+  rewrite wpc_unfold.
+  iIntros (j').
   destruct (to_val e) as [v|] eqn:Hval.
   {
-    iPoseProof (staged_inv_open_modify E1 with "Hval") as "H"; try auto.
-    rewrite wpc_unfold /wpc_pre. iModIntro.
-    rewrite Hval.
+    rewrite /wpc_pre.
+    rewrite Hval. iModIntro.
     iSplit.
-    - iIntros "HNC". iMod (fupd_level_fupd with "H") as "[(H&Hclo')|Hcrash]"; last first.
+    - iIntros (?) "HNC".
+      iDestruct (NC_split with "HNC") as "(Hnc1&Hnc2)".
+      (* Swap in NC *)
+      iPoseProof (staged_inv_open_modify_ae E1 _ _ _ _ _ _ _ _ _ _ (NC (q/2)) True%I (▷Q)%I
+                  with "Hval [Hnc2]") as "H"; try auto.
       {
-        iDestruct "Hcrash" as "(HΦc&HC&Hclo')".
+        iIntros "$". iFrame. iModIntro. iIntros "!> >HNC HC".
+        iDestruct (NC_C with "[$] [$]") as %[].
+      }
+
+      iMod (fupd_level_fupd with "H") as "[(H&Hclo')|Hcrash]"; last first.
+      {
+        iDestruct "Hcrash" as "(HΦc&HC)".
         iDestruct (NC_C with "[$] [$]") as "[]".
       }
       iDestruct "Hwp" as "(_&Hwp)".
-      iMod (fupd_intro_mask' _ (E1 ∖ ↑N1 ∖ ↑N2)) as "Hclo"; first by set_solver+.
       rewrite wpc_unfold /wpc_pre.
       rewrite Hval.
-      iMod ("Hwp" with "[$]") as "(H&_)".
-      iMod ("H" with "[$]") as "((HQ&#HQP&Hwand)&$)".
-      iMod "Hclo".
-      iSpecialize ("Hclo'" $! (Qnew v)%I True%I with "[HQ]").
-      { iFrame. iIntros "!> HQ". iModIntro. iSplitR ""; last done.
-        iNext. iApply "HQP"; eauto. }
-      iMod (fupd_level_fupd with "Hclo'") as "Hval".
-      iModIntro. iDestruct ("Hwand" with "[$]") as "(_&$)".
-    - iDestruct "Hwp" as "(Hwp&_)". iModIntro. iModIntro. eauto.
+      iSpecialize ("Hwp" with "[$]").
+      iMod ("Hwp" $! (S j')) as "(H&_)".
+      iMod ("H" $! _ with "[$]") as "((HQ&#HQP&Hwand)&Hnc)".
+      iPoseProof (staged_inv_open_modify_ae E1 _ _ k2 _ mj _ _ _ _ _ (Qnew v) True%I (NC (q/2))%I
+                  with "Hclo' [HQ]") as "H"; try auto.
+      {
+        iIntros ">$". iFrame. iModIntro. iIntros "!> HQ HC".
+        iModIntro. iModIntro. iSplitR ""; last done. by iApply "HQP".
+      }
+      iMod (fupd_level_fupd with "H") as "[(H&Hclo')|Hcrash]"; last first.
+      {
+        iDestruct "Hcrash" as "(HΦc&HC)".
+        iDestruct (NC_C with "[$] [$]") as "[]".
+      }
+      iDestruct ("Hwand" with "[$]") as "(_&$)".
+      iModIntro.
+      iApply (NC_join with "[$]").
+    - iDestruct "Hwp" as "(Hwp&_)". iModIntro. iIntros. iModIntro.
+      iApply fupd_split_level_mask_weaken; auto. set_solver.
     }
-  rewrite !wpc_unfold /wpc_pre.
+  iEval (rewrite /wpc_pre).
   iModIntro.
   iSplit; last first.
   {
-    iDestruct "Hwp" as "(Hwp&_)". do 2 iModIntro. auto.
+    iDestruct "Hwp" as "(Hwp&_)". iModIntro. iIntros. iModIntro.
+    iApply fupd_split_level_mask_weaken; auto. set_solver.
   }
   rewrite Hval.
-  iIntros (????) "Hstate HNC".
-  iPoseProof (staged_inv_open_modify with "[$]") as "H"; try eassumption.
-  iMod (fupd_level_fupd with "H") as "[(H&Hclo)|Hfalse]"; last first.
-  { iDestruct "Hfalse" as "(_&HC&_)".
+  iIntros (?????) "Hstate HNC".
+  iDestruct (NC_split with "HNC") as "(Hnc1&Hnc2)".
+
+  iPoseProof (staged_inv_open_modify_ae E1 _ _ _ _ _ _ _ _ _ _ (NC (q/2)) True%I (▷Q)%I
+              with "Hval [Hnc2]") as "H"; try auto.
+  {
+    iIntros "$". iFrame. iModIntro. iIntros "!> >HNC HC".
+    iDestruct (NC_C with "[$] [$]") as %[].
+  }
+  iMod (fupd_level_fupd with "H") as "[(H&Hclo')|Hcrash]"; last first.
+  {
+    iDestruct "Hcrash" as "(HΦc&HC)".
     iDestruct (NC_C with "[$] [$]") as "[]".
   }
-  iDestruct ("Hwp") as "(_&Hwp)".
-  iMod (fupd_intro_mask' (E1 ∖ ↑N1) (E1 ∖ ↑N1 ∖ ↑N2)) as "Hclo0"; first by set_solver+.
-  iMod ("Hwp" with "[$] [$] [$]") as ">(%&H)".
+  iDestruct "Hwp" as "(_&Hwp)".
+  rewrite wpc_unfold /wpc_pre.
+  rewrite Hval.
+  iSpecialize ("Hwp" with "[$]").
+  iMod ("Hwp" $! (S j')) as "(H&_)".
+  iMod ("H" with "[$] [$]") as "(%&H)".
   iSplitL "".
   { destruct s; eauto. }
   iModIntro. iIntros.
   iMod ("H" with "[//]") as "H".
   iModIntro. iNext.
   iMod "H" as "(Hσ&H&Hefs&HNC)".
-  iEval (rewrite wpc_unfold /wpc_pre) in "H". iMod "H".
+  iEval (rewrite wpc0_unfold /wpc_pre) in "H". iMod "H".
   rewrite own_discrete_fupd_eq /own_discrete_fupd_def.
   iDestruct (own_discrete_elim_conj with "H") as (Q_keep Q_inv) "(HQ_keep&HQ_inv&#Hwand1&#Hwand2)".
-  iSpecialize ("Hclo" $! Q_inv Φc with "[HQ_inv]").
+  iPoseProof (staged_inv_open_modify_ae E1 _ _ k'' j' j' E1' γ _ _ _
+                                        Q_inv Φc (NC (q/2))
+                with "Hclo' [HQ_inv]") as "H"; try lia.
   {
-    iFrame.
-    iIntros "!> HQ". iSpecialize ("Hwand1" with "[$]").
-    iMod "Hwand1". iIntros "HC". iSpecialize ("Hwand1" with "[$]").
-    iMod (fupd_level_intro_mask' _ (E1 ∖ ↑N1 ∖ ↑N2)) as "Hclo"; first by set_solver.
-    iMod (fupd_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
-    iMod (fupd_level_le with "Hwand1") as "Hwand1"; first by lia.
-    iMod ("Hclo_empty") as "_".
-    iMod (fupd_level_le with "Hwand1") as "Hwand1"; first by lia.
-    iMod (fupd_level_intro_mask' _ ∅) as "Hclo'"; first by set_solver.
-    iMod (fupd_level_le with "Hwand1") as "(HΦc&HP)"; first by lia.
-    iMod "Hclo'". iMod "Hclo". do 2 iModIntro. by iFrame.
+    iIntros ">HNC".
+    iFrame. do 2 iModIntro.
+    iIntros "HQ HC".
+    iDestruct ("Hwand1" with "[$]") as ">H".
+    iEval (rewrite uPred_fupd_level_eq) in "H".
+    iMod (fupd_split_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
+    iMod (fupd_split_level_le with "H") as "H"; first by (naive_solver lia).
+    iMod "Hclo_empty" as "_".
+    iMod (fupd_split_level_intro_mask' _ E1) as "Hclo"; first by set_solver.
+    iMod ("H" with "[$]") as "H".
+    iMod "Hclo".
+    iModIntro. iMod "H" as "($&$)". eauto.
   }
-  iMod "Hclo0" as "_".
-  iMod (fupd_level_fupd with "Hclo") as "H".
-  iPoseProof (wpc_staged_inv_open_aux' γ s k k' k'' E1 E1'
-                _ e2 Φ Φc P Qnew N1 N2 with "[H HQ_keep HNC]") as "H"; try assumption.
+  iMod (fupd_level_fupd with "H") as "[(HNC2&Hval)|(_&Hfalse)]"; last first.
+  { iDestruct (NC_C with "[$] [$]") as %[]. }
+  iDestruct (NC_join with "[$]") as "HNC".
+  iFrame "Hσ".
+  iPoseProof (wpc_staged_inv_open_aux' γ s k k' k'' j' E1 E1'
+                _ e2 Φ Φc P Qnew with "[Hval HQ_keep HNC]") as "H"; try assumption.
   { iFrame. iExists _. iFrame "H".  iSplitL "HQ_keep".
     - iIntros "HQ". iMod ("Hwand2" with "[$]") as "H".
       rewrite /wpc_no_fupd own_discrete_fupd_eq.
