@@ -19,14 +19,14 @@ Context `{!ffi_interp ffi}.
 Context {ext_tys: ext_types ext}.
 
 Section proof.
-  Context `{!heapG Σ, !crashG Σ, stagedG Σ} (Nlock Ncrash: namespace).
+  Context `{!heapG Σ, !crashG Σ, stagedG Σ} (Nlock: namespace).
 
   Definition is_crash_lock k (lk: val) (R Rcrash: iProp Σ) : iProp Σ :=
-    is_lock Nlock lk (na_crash_inv Ncrash k R Rcrash).
+    is_lock Nlock lk (na_crash_inv k R Rcrash).
 
   Definition crash_locked k lk R Rcrash : iProp Σ :=
-    (na_crash_inv Ncrash k R Rcrash ∗
-     is_lock Nlock lk (na_crash_inv Ncrash k R Rcrash) ∗
+    (na_crash_inv k R Rcrash ∗
+     is_lock Nlock lk (na_crash_inv k R Rcrash) ∗
      locked lk)%I.
 
   (*
@@ -58,7 +58,7 @@ Section proof.
 
   Lemma alloc_crash_lock' k E lk (R Rcrash : iProp Σ):
     is_free_lock lk -∗
-    na_crash_inv Ncrash k R Rcrash
+    na_crash_inv k R Rcrash
     ={E}=∗ is_crash_lock k #lk R Rcrash.
   Proof.
     clear.
@@ -76,8 +76,7 @@ Section proof.
   Proof.
     clear.
     iIntros "Hfree #HRcrash HR".
-    iPoseProof (na_crash_inv_alloc Ncrash k' ⊤ Rcrash R with "[HR] HRcrash") as "H".
-    { set_solver. }
+    iPoseProof (na_crash_inv_alloc k' ⊤ Rcrash R with "[HR] HRcrash") as "H".
     { iFrame "HR". }
     iMod (fupd_level_fupd with "H") as "(Hfull&?)".
     iMod (alloc_crash_lock' with "Hfree Hfull") as "Hlk".
@@ -115,14 +114,13 @@ Section proof.
 
   Lemma use_crash_locked E1 E2 k k' e lk R Rcrash Φ Φc:
     (S k ≤ k')%nat →
-    ↑Ncrash ⊆ E1 →
     crash_locked (S k') lk R Rcrash -∗
     <disc> ▷ Φc ∧ (▷ R -∗
-         WPC e @ (S k); (E1 ∖ ↑Ncrash); ∅ {{ λ v, (crash_locked (S k') lk R Rcrash -∗ (<disc> ▷ Φc ∧ Φ v)) ∗ ▷ R }}
+         WPC e @ (S k); E1; ∅ {{ λ v, (crash_locked (S k') lk R Rcrash -∗ (<disc> ▷ Φc ∧ Φ v)) ∗ ▷ R }}
                                          {{ Φc ∗ Rcrash }}) -∗
     WPC e @ (S k); E1; E2 {{ Φ }} {{ Φc }}.
   Proof.
-    iIntros (??) "Hcrash_locked H".
+    iIntros (?) "Hcrash_locked H".
     iDestruct "Hcrash_locked" as "(Hfull&#His_lock&Hlocked)".
     iApply (wpc_na_crash_inv_open _ k k' (S k) with "[$] [H Hlocked]"); try iFrame; auto.
     iSplit.
@@ -159,7 +157,7 @@ Section proof.
     (S k ≤ k')%nat →
     is_crash_lock (S k') lk R Rcrash ∗
     (<disc> ▷ Φc ∧
-      (▷ R -∗ WPC e @ (S k); (⊤ ∖ ↑Ncrash); ∅ {{ λ v, (<disc> ▷ Φc ∧ Φ #()) ∗ ▷ R }} {{ Φc ∗ Rcrash }})) -∗
+      (▷ R -∗ WPC e @ (S k); ⊤; ∅ {{ λ v, (<disc> ▷ Φc ∧ Φ #()) ∗ ▷ R }} {{ Φc ∗ Rcrash }})) -∗
     WPC (with_lock lk e) @ (S k) ; ⊤; E {{ Φ }} {{ Φc }}.
   Proof.
     iIntros (?) "(#Hcrash&Hwp)".

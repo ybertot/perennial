@@ -31,7 +31,6 @@ Proof.
   rewrite {1}wpc_unfold /wpc_pre. iIntros (?) "Hσ H HNC".
   rewrite (val_stuck e1 σ1 κ e2 σ2 efs) //.
   iSpecialize ("H" $! O).
-  Search _ bi_forall bi_sep.
   iMod "H". iDestruct "H" as "(H&_)".
   iMod ("H" $! _ σ1 with "Hσ HNC") as "(_&H)".
   iMod ("H" $! e2 σ2 efs with "[//]") as "H".

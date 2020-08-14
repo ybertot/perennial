@@ -111,25 +111,26 @@ Proof.
   { iModIntro. iRight. iFrame. }
 Qed.
 
-Lemma wpc_staged_inv_open_aux' γ s k k' k'' j E1 E1' E2 e Φ Φc P Q q:
+Lemma wpc_staged_inv_open_aux' γ s k k' k'' k0post j jpost E1 E1' E2 e Φ Φc P Q q:
   E1 ⊆ E1' →
   (* The level we move to (k'') must be < (S k'), the level of the staged invariant.
      However, it may be the same as (S k), the wpc we were originally proving. Thus,
      no "fuel" is lost except what is needed to be "below" the invariant's universe level *)
   k'' ≤ k' →
   k'' ≤ (S k) →
-  (S k) ≤ k' →
+  (S k ≤ k') →
+  (k0post ≤ k') →
   NC q ∗
   staged_value_later (S k') k'' j E1' E1 γ
                (wpc_no_fupd NotStuck k'' (S j) E1 ∅ e
-                   (λ v, ▷ Q v ∗ ▷ □ (Q v -∗ P) ∗ (staged_value (S k') k j E1' γ
+                   (λ v, ▷ Q v ∗ ▷ □ (Q v -∗ P) ∗ (staged_value (S k') k0post jpost E1' γ
                                                                 (Q v) True (P) -∗ <disc> ▷ Φc ∧ Φ v))%I
                    (Φc ∗ P))
                 Φc
                 (P)%I
   ⊢ |={E1}=> wpc0 s (S k) j E1 E2 e Φ Φc ∗ NC q.
 Proof.
-  iIntros (? Hle1 Hle2 Hle3) "(HNC&Hwp)".
+  iIntros (?? Hle1 Hle2 Hle3) "(HNC&Hwp)".
   iLöb as "IH" forall (e q).
   destruct (to_val e) as [v|] eqn:Hval.
   {
@@ -150,7 +151,7 @@ Proof.
       rewrite Hval.
       iDestruct "H" as "(H&_)".
       iMod ("H" with "[$]") as "((HQ&#HQP&HΦ)&HNC)".
-      iPoseProof (staged_inv_open_modify_ae E1 _ k'' k j j _ _ _ _ _ (Q v) True%I (NC (q/2))
+      iPoseProof (staged_inv_open_modify_ae E1 _ _ k0post j jpost _ _ _ _ _ (Q v) True%I (NC (q/2))
                   with "Hval [HQ]") as "H"; try lia.
       { iIntros ">$". iModIntro. iFrame. iModIntro.
         iIntros "HQ HC". do 2 iModIntro. iSplitR ""; last done. iNext. by iApply "HQP". }
@@ -259,6 +260,7 @@ Lemma wpc_staged_inv_open' γ s k k' k'' k2 mj E1 E1' E2 e Φ Φc Q Qrest Qnew P
   E1 ⊆ E1' →
   k'' ≤ k' →
   k'' ≤ (S k) →
+  (S k) ≤ k' →
   k2 ≤ k' →
   staged_value (S k') k2 mj E1' γ Q Qrest P ∗
   (<disc> ▷ Φc ∧
@@ -271,7 +273,7 @@ Lemma wpc_staged_inv_open' γ s k k' k'' k2 mj E1 E1' E2 e Φ Φc Q Qrest Qnew P
   ⊢
   WPC e @ s; (S k); E1; E2 {{ Φ }} {{ Φc }}.
 Proof.
-  iIntros (????) "(Hval&Hwp)".
+  iIntros (?????) "(Hval&Hwp)".
   rewrite wpc_unfold.
   iIntros (j').
   destruct (to_val e) as [v|] eqn:Hval.
@@ -300,7 +302,7 @@ Proof.
       iSpecialize ("Hwp" with "[$]").
       iMod ("Hwp" $! (S j')) as "(H&_)".
       iMod ("H" $! _ with "[$]") as "((HQ&#HQP&Hwand)&Hnc)".
-      iPoseProof (staged_inv_open_modify_ae E1 _ _ k2 _ mj _ _ _ _ _ (Qnew v) True%I (NC (q/2))%I
+      iPoseProof (staged_inv_open_modify_ae E1 _ _ k2 mj mj _ _ _ _ _ (Qnew v) True%I (NC (q/2))%I
                   with "Hclo' [HQ]") as "H"; try auto.
       {
         iIntros ">$". iFrame. iModIntro. iIntros "!> HQ HC".
@@ -375,24 +377,26 @@ Proof.
   { iDestruct (NC_C with "[$] [$]") as %[]. }
   iDestruct (NC_join with "[$]") as "HNC".
   iFrame "Hσ".
-  iPoseProof (wpc_staged_inv_open_aux' γ s k k' k'' j' E1 E1'
+  iPoseProof (wpc_staged_inv_open_aux' γ s k k' k'' k2 j' mj E1 E1'
                 _ e2 Φ Φc P Qnew with "[Hval HQ_keep HNC]") as "H"; try assumption.
-  { iFrame. iExists _. iFrame "H".  iSplitL "HQ_keep".
+
+  { iFrame. iExists _. iFrame "Hval".  iSplitL "HQ_keep".
     - iIntros "HQ". iMod ("Hwand2" with "[$]") as "H".
       rewrite /wpc_no_fupd own_discrete_fupd_eq.
       iExact "H".
     - iModIntro. iIntros "HQ >HC". iMod ("Hwand1" with "[$]") as "H".
       iSpecialize ("H" with "[$]").
-      iMod (fupd_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
-      iMod (fupd_level_le with "H") as "H"; first by lia.
+      rewrite uPred_fupd_level_eq.
+      iMod (fupd_split_level_intro_mask' _ ∅) as "Hclo_empty"; first by set_solver.
+      iMod (fupd_split_level_le with "H") as "H"; first by (naive_solver lia).
       iMod "Hclo_empty" as "_".
       iMod "H". iModIntro.
       iMod "H" as "($&$)". eauto.
   }
   iMod "H" as "($&$)".
-  iModIntro. iFrame.
   iApply (big_sepL_mono with "Hefs").
-  iIntros. iApply (wpc_strong_mono' with "[$]"); eauto.
+  iIntros. iApply (wpc0_strong_mono with "[$]"); eauto.
+  - naive_solver lia.
   - set_solver+.
   - iSplit; first auto. iModIntro. iIntros "H". iApply fupd_level_mask_weaken; eauto; set_solver.
 Qed.
