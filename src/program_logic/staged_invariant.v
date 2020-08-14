@@ -203,7 +203,7 @@ Lemma staged_inv_open_modify_ae E k k2 k2' j j' E1 γ P Q Qr Q' Qr' R:
   k2 ≤ k →
   k2' ≤ k →
   staged_value (S k) k2 j E1 γ Q Qr P -∗
-  (▷ Q -∗ |k,Some O={E}=> □ (▷ Q' -∗ C -∗ |k2',Some (S j')={E1}=> |k2',Some (S j')={∅, ∅}=> P ∗ Qr') ∗  ▷ Q' ∗ R) -∗
+  (▷ Q -∗ |k,Some O={E}=> □ (▷ Q' -∗ C -∗ |k2',Some (S j')={E1}=> |k2',Some (S j')={∅, ∅}=> ▷ P ∗ ▷ Qr') ∗  ▷ Q' ∗ R) -∗
   |(S k)={E}=> (R ∗ staged_value (S k) k2' j' E1 γ Q' Qr' P) ∨
                (▷ Qr ∗ C).
 Proof.
