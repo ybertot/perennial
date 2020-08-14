@@ -933,12 +933,22 @@ Proof.
   - iDestruct "H" as "(_&H)". by do 2 iModIntro.
 Qed.
 
+Lemma wpc0_value_inv' s k mj E1 E2 q Φ Φc v :
+  wpc0 s k mj E1 E2 (of_val v) Φ Φc -∗ NC q -∗ |={E1}=> Φ v ∗ NC q.
+Proof.
+  rewrite wpc0_unfold /wpc_pre to_of_val.
+  iIntros "H". iMod "H" as "(?&_)"; auto.
+Qed.
+
 Lemma wpc_value_inv' s k E1 E2 q Φ Φc v :
   WPC of_val v @ s; k ; E1; E2 {{ Φ }} {{ Φc }} -∗ NC q -∗ |={E1}=> Φ v ∗ NC q.
+Proof. rewrite wpc_eq. iIntros "H ?". iSpecialize ("H" $! 0). iApply (wpc0_value_inv' with "[$] [$]"). Qed.
+
+Lemma wpc0_value_inv_option s k mj E1 E2 q Φ Φc e :
+  wpc0 s k mj E1 E2 e Φ Φc -∗ NC q -∗ |={E1}=> from_option Φ True (to_val e) ∗ NC q.
 Proof.
-  rewrite wpc_unfold /wpc_pre to_of_val.
-  iIntros "H". iSpecialize ("H" $! O).
-  iMod "H" as "(?&_)"; auto.
+  iIntros. destruct (to_val e) as [v|] eqn:He; last by iFrame.
+  apply of_to_val in He as <-. by iMod (wpc0_value_inv' with "[$] [$]") as "($&$)".
 Qed.
 
 Lemma wpc_value_inv_option s k E1 E2 q Φ Φc e :
@@ -977,6 +987,11 @@ Proof.
   - eauto.
   - iModIntro. eauto.
 Qed.
+
+Lemma wpc0_crash s k mj E1 E2 e Φ Φc:
+  wpc0 s k mj E1 E2 e Φ Φc -∗
+  |={E1}=> <disc> (C -∗ |k,(Some mj)={E1}=> |k,(Some mj)={E2, ∅}=> ▷ Φc).
+Proof. rewrite wpc0_unfold /wpc_pre. by iIntros ">(_&$)". Qed.
 
 Lemma wpc_crash s k E1 E2 e Φ Φc:
   WPC e @ s; k; E1 ; E2 {{ Φ }} {{ Φc }} -∗

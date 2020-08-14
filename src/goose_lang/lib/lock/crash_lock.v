@@ -208,7 +208,6 @@ Ltac crash_lock_open H :=
     | Some (_, crash_locked _ _ _ _ _ _) =>
       iApply (use_crash_locked with H);
       [ try lia (* LVL inequality *)
-      | try solve_ndisj (* Ncrash namespace *)
       | iSplit; [ try iFromCache | ]
       ]
     | Some (_, crash_locked _ _ _ _ _ _) =>
