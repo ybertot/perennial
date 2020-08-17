@@ -440,6 +440,13 @@ Section own_disc_fupd_props.
     iIntros "H". rewrite own_discrete_fupd_eq /=. iModIntro; eauto.
   Qed.
 
+  Lemma own_disc_fupd_sep P1 P2:
+    (<disc> P1) ∗ (<disc> P2) ⊢ <disc> (P1 ∗ P2).
+  Proof.
+    rewrite own_discrete_fupd_eq /own_discrete_fupd_def own_discrete_sep.
+    iIntros "H !>". by iDestruct "H" as "(>$&>$)".
+  Qed.
+
   Lemma own_disc_fupd_level_elim E k P:
     <disc> P -∗ |k={E}=> P.
   Proof.
@@ -559,6 +566,24 @@ Section own_disc_fupd_props.
     rewrite /Discretizable/IntoDiscreteFupd//=.
     iIntros (?) "HP". rewrite (into_discrete P). iModIntro. auto.
   Qed.
+
+  Lemma big_sepL_own_disc_fupd {A} (Φ: nat → A → iProp Σ) (l: list A) :
+    ([∗ list] k↦x∈l, <disc> Φ k x) -∗ <disc> ([∗ list] k↦x∈l, Φ k x).
+  Proof.
+    cut (∀ n, ([∗ list] k↦x∈l, <disc> Φ (n + k) x) -∗ <disc> ([∗ list] k↦x∈l, Φ (n + k) x)).
+    { intros Hcut. eapply (Hcut O). }
+    induction l => n.
+    - rewrite /=. iIntros; iModIntro; eauto.
+    - rewrite /=.
+      iIntros "(H1&H2)".
+      assert (forall k, n + S k = S n + k) as Harith by lia.
+      setoid_rewrite Harith.
+      iApply own_disc_fupd_sep; iFrame. by iApply IHl.
+  Qed.
+
+  Lemma big_sepS_own_disc_fupd `{Countable A} (Φ: A → iProp Σ) (l: gset A) :
+    ([∗ set] x∈l, <disc> Φ x) -∗ <disc> ([∗ set] x∈l, Φ x).
+  Proof. rewrite big_opS_eq. apply big_sepL_own_disc_fupd. Qed.
 
 End own_disc_fupd_props.
 

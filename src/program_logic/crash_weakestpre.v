@@ -328,6 +328,35 @@ Section cfupd.
     iMod "Hfupd". iModIntro. iApply Hframe; by iFrame.
   Qed.
 
+  Lemma cfupd_big_sepL_aux {A} (l: list A) (Φ: nat → A → iProp Σ) n k E1 :
+    ([∗ list] i↦a ∈ l, cfupd k E1 ∅ (Φ (n + i) a)) -∗
+    cfupd k E1 ∅ ([∗ list] i↦a ∈ l, Φ (n + i) a).
+  Proof.
+    iIntros "H".
+    iInduction l as [| x l] "IH" forall (n).
+    - iModIntro. iNext.
+      simpl; auto.
+    - rewrite -> !big_sepL_cons by set_solver.
+      simpl.
+      iDestruct "H" as "(Hx & Hrest)".
+      iMod "Hx".
+      iFrame "Hx".
+      assert (forall k, n + S k = S n + k) as Harith by lia.
+      setoid_rewrite Harith.
+      iMod ("IH" with "Hrest") as "Hrest".
+      iModIntro. eauto.
+  Qed.
+
+  Lemma cfupd_big_sepL {A} (l: list A) (Φ: nat → A → iProp Σ) k E1 :
+    ([∗ list] i↦a ∈ l, cfupd k E1 ∅ (Φ i a)) -∗
+    cfupd k E1 ∅ ([∗ list] i↦a ∈ l, Φ i a).
+  Proof. iApply (cfupd_big_sepL_aux _ _ 0). Qed.
+
+  Lemma cfupd_big_sepS `{Countable A} (σ: gset A)(P: A → iProp Σ) k E1  :
+    ([∗ set] a ∈ σ, cfupd k E1 ∅ (P a)) -∗
+    cfupd k E1 ∅ ([∗ set] a ∈ σ, P a).
+  Proof. rewrite big_opS_eq. apply cfupd_big_sepL. Qed.
+
 End cfupd.
 
 (* Open to alternative notation for this. *)
