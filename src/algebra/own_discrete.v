@@ -386,6 +386,55 @@ Section instances_iProp.
     IsAtLeast k (own_discrete P).
   Proof. by rewrite /IsAtLeast own_discrete_atleast => ->. Qed.
 
+  (* Unfortunately, the fact that Discretizable is not preserved by wand means we need the following
+     forms of accessor lemmas to preserve discretizability. Many more of these lemmas are missing *)
+  Lemma big_sepL_insert_acc_disc {A} (Φ: nat → A → iProp Σ) (l: list A) i x :
+    (∀ k x, Discretizable (Φ k x)) →
+    l !! i = Some x →
+    ([∗ list] k↦y ∈ l, Φ k y) ⊢ Φ i x ∗ own_discrete (∀ y, Φ i y -∗ ([∗ list] k↦y ∈ <[i:=y]>l, Φ k y)).
+  Proof.
+    intros ? Hli. assert (i ≤ length l) by eauto using lookup_lt_Some, Nat.lt_le_incl.
+    rewrite -(take_drop_middle l i x) // big_sepL_app /=.
+    rewrite Nat.add_0_r take_length_le //.
+    rewrite assoc -!(comm _ (Φ _ _)) -assoc.
+    iIntros "($&H1&H2)". iModIntro. iIntros (y).
+    rewrite insert_app_r_alt ?take_length_le //.
+    rewrite Nat.sub_diag /=. iIntros "H".
+    rewrite big_sepL_app /=. iFrame. rewrite Nat.add_0_r take_length_le; auto. iFrame.
+  Qed.
+
+  Lemma big_sepL_lookup_acc_disc {A} (Φ: nat → A → iProp Σ) (l: list A) i x :
+    (∀ k x, Discretizable (Φ k x)) →
+    l !! i = Some x →
+    ([∗ list] k↦y ∈ l, Φ k y) ⊢ Φ i x ∗ own_discrete (Φ i x -∗ ([∗ list] k↦y ∈ l, Φ k y)).
+  Proof.
+    intros. rewrite {1}big_sepL_insert_acc_disc //. iIntros "($&H) !>".
+    iSpecialize ("H" $! x). rewrite list_insert_id //.
+  Qed.
+
+  Lemma big_sepL2_insert_acc_disc {A B} (Φ : nat → A → B → iProp Σ) (l1: list A) (l2: list B) i x1 x2 :
+    (∀ k x1 x2, Discretizable (Φ k x1 x2)) →
+    l1 !! i = Some x1 → l2 !! i = Some x2 →
+    ([∗ list] k↦y1;y2 ∈ l1;l2, Φ k y1 y2) ⊢
+    Φ i x1 x2 ∗ own_discrete (∀ y1 y2, Φ i y1 y2 -∗ ([∗ list] k↦y1;y2 ∈ <[i:=y1]>l1;<[i:=y2]>l2, Φ k y1 y2)).
+  Proof.
+    intros Hdisc Hl1 Hl2. rewrite big_sepL2_alt. iIntros "(%&H)".
+    rewrite {1}big_sepL_insert_acc_disc; last by rewrite lookup_zip_with; simplify_option_eq.
+    iDestruct "H" as "($&H)". iModIntro. iIntros. rewrite big_sepL2_alt !insert_length.
+    iSplit; first done. rewrite -insert_zip_with. by iApply "H".
+  Qed.
+
+  Lemma big_sepL2_lookup_acc_disc {A B} (Φ : nat → A → B → iProp Σ) (l1: list A) (l2: list B) i x1 x2 :
+    (∀ k x1 x2, Discretizable (Φ k x1 x2)) →
+    l1 !! i = Some x1 → l2 !! i = Some x2 →
+    ([∗ list] k↦y1;y2 ∈ l1;l2, Φ k y1 y2) ⊢
+    Φ i x1 x2 ∗ own_discrete (Φ i x1 x2 -∗ ([∗ list] k↦y1;y2 ∈ l1;l2, Φ k y1 y2)).
+  Proof.
+    intros. rewrite {1}big_sepL2_insert_acc_disc //.
+    iIntros "($&H) !> ?". iSpecialize ("H" $! x1 x2).
+    rewrite !list_insert_id //=. by iApply "H".
+  Qed.
+
 End instances_iProp.
 
 Notation "'<bdisc>' P" := (own_discrete P) (at level 20, right associativity) : bi_scope.
