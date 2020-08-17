@@ -115,6 +115,10 @@ Definition pre_inode l addr σ : iProp Σ :=
     "Hfree_lock" ∷ is_free_lock lref ∗
     "Hlockinv" ∷ inode_linv l addr σ.
 
+Global Instance into_disc_pre_inode l addr σ :
+  IntoDiscrete (pre_inode l addr σ) (inode_cinv addr σ).
+Proof. rewrite /IntoDiscrete. iNamed 1. iModIntro. iFrame. Qed. 
+
 Global Instance is_inode_crash l addr σ :
   IntoCrash (inode_linv l addr σ) (λ _, ∃ addrs, is_inode_durable addr σ addrs)%I.
 Proof.

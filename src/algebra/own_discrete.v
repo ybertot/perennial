@@ -2,7 +2,7 @@ From iris.bi Require Export bi.
 From iris.base_logic Require upred.
 From iris.base_logic Require Export base_logic own fupd_level.
 From Perennial.Helpers Require Import ipm.
-From Perennial.algebra Require Import atleast.
+From Perennial.algebra Require Import atleast big_op.
 Set Default Proof Using "Type".
 
 (* TODO: upstream *)
@@ -433,6 +433,33 @@ Section instances_iProp.
     intros. rewrite {1}big_sepL2_insert_acc_disc //.
     iIntros "($&H) !> ?". iSpecialize ("H" $! x1 x2).
     rewrite !list_insert_id //=. by iApply "H".
+  Qed.
+
+  Lemma big_sepL2_lookup_acc_and_disc {A B} (Φ Φc: nat → A → B → iProp Σ) l1 l2 i x1 x2 :
+    (∀ k x1 x2, Discretizable (Φc k x1 x2)) →
+    (* this is a pure assumption (instead of a persistent implication) because
+    that's how big_sepL2_mono is written *)
+    (∀ k y1 y2, l1 !! k = Some y1 → l2 !! k = Some y2 → Φ k y1 y2 -∗ Φc k y1 y2) →
+    l1 !! i = Some x1 →
+    l2 !! i = Some x2 →
+    big_sepL2 Φ l1 l2 -∗
+    Φ i x1 x2 ∗ (Φ i x1 x2 -∗ big_sepL2 Φ l1 l2) ∧ own_discrete ((Φc i x1 x2 -∗ big_sepL2 Φc l1 l2)).
+  Proof.
+    iIntros (? Himpl Hx1 Hx2) "H".
+    rewrite big_sepL2_delete; eauto.
+    iDestruct "H" as "[HΦ Hl]"; iFrame "HΦ".
+    iSplit.
+    { iIntros. iFrame. }
+    { iDestruct (big_sepL2_mono _ (λ k y1 y2, if decide (k = i) then emp%I else Φc k y1 y2)
+                   with "Hl") as "Hl".
+      { intros. simpl. destruct decide; try auto. }
+      assert (Discretizable ([∗ list] k↦y1;y2 ∈ l1;l2, if decide (k = i) then emp%I else Φc k y1 y2)).
+      { apply big_sepL2_discretizable. intros. destruct decide; apply _. }
+      iModIntro.
+      iIntros "HΦ".
+      iDestruct (big_sepL2_delete Φc with "[HΦ Hl]") as "H"; [ apply Hx1 | apply Hx2 | | eauto ].
+      iFrame "HΦ". eauto.
+    }
   Qed.
 
 End instances_iProp.
