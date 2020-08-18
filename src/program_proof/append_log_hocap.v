@@ -144,9 +144,9 @@ Proof. apply _. Qed.
 
 Theorem wpc_Log__Reset k k' E2 l Q Qc:
   (S (S k) < k')%nat →
-  (Q -∗ Qc) →
+  (Q -∗ <disc> Qc) →
   {{{ is_log k' l ∗
-     ((∀ bs, ▷ P (Opened bs l) ={⊤ ∖↑ N2}=∗ ▷ P (Opened [] l) ∗ Q) ∧
+     ((∀ bs, ▷ P (Opened bs l) ={⊤}=∗ ▷ P (Opened [] l) ∗ Q) ∧
              <disc> ▷ Qc)
   }}}
     Log__Reset #l @ NotStuck; (S k); ⊤; E2
@@ -187,39 +187,38 @@ Proof.
   { iLeft in "HΦ". iRight in "Hvs". do 2 iModIntro. by iApply "HΦ". }
 
   iIntros "H". iDestruct "H" as (bs) "(>Hpts&HP)".
-  iApply wpc_fupd.
   iMod (fupd_later_to_disc with "HP") as "HP".
-  wpc_apply (wpc_Log__reset with "[$] [-]").
+  iApply wpc_fupd.
+  wpc_apply (wpc_Log__reset_fupd with "[$] [-]").
   iSplit.
-  { iRight in "Hvs".  iMo iIntros "H".
-    iDestruct "H" as "[H|H]".
-    * iDestruct "Hvs" as "(_&Hvs)".
-      iModIntro.
-      iSplitL "HΦ Hvs".
-      ** iDestruct "HΦ" as "(H&_)". by iApply "H".
-      ** iExists _. do 2 iFrame.
-    * iDestruct "Hvs" as "(Hvs&_)".
-      iDestruct ("Hvs" $! bs) as "Hvs".
-      iMod ("Hvs" with "[$]") as "(Hclo&HQc)".
-      iModIntro.
-      iSplitL "HΦ HQc".
-      ** iDestruct "HΦ" as "(H&_)". iApply "H". by iApply Hwand.
+  { iRight in "Hvs". iLeft in "HΦ". iModIntro.
+    iIntros "H".
+    * iNext. iSplitL "HΦ Hvs".
+      ** by iApply "HΦ".
       ** iExists _. do 2 iFrame.
   }
   iNext. iIntros "Hpts".
-  (* Linearization point *)
-  iDestruct "Hvs" as "(Hvs&_)".
+  iLeft in "Hvs".
+  iMod (own_disc_fupd_elim with "HP") as "HP".
   iMod ("Hvs" with "[$]") as "(HP&HQ)".
-  iSplitR "Hpts HP"; last first.
-  { iExists _; iFrame. eauto. }
-  iModIntro. iIntros.
+  iMod (fupd_later_to_disc with "HP") as "HP".
+  iModIntro. iSplit.
+  { iDestruct (Hwand with "HQ") as "HQc".
+    iLeft in "HΦ". iDestruct "Hpts" as (??) "(?&H)". iModIntro.
+    iNext. iSplitR "HP H".
+      ** by iApply "HΦ".
+      ** iExists _. do 2 iFrame. rewrite //=. iExists _, _. iFrame. }
+  iSplitR "HP Hpts"; last first.
+  { iMod (own_disc_fupd_elim with "HP") as "HP".
+    iModIntro. iNext. iExists _. iFrame. }
+  iModIntro. iIntros "Hc".
   iSplit.
-  { iApply "HΦ"; by iApply Hwand. }
+  { iLeft in "HΦ". iDestruct (Hwand with "HQ") as "HQc". iModIntro. iNext. by iApply "HΦ". }
   wpc_pures.
-  { by iApply Hwand. }
+  { iLeft in "HΦ". iDestruct (Hwand with "HQ") as "HQc". iModIntro. iNext. by iApply "HΦ". }
 
   wpc_frame "HQ HΦ".
-  { crash_case. by iApply Hwand. }
+  { iLeft in "HΦ". iDestruct (Hwand with "HQ") as "HQc". iModIntro. iNext. by iApply "HΦ". }
 
   wp_bind (struct.loadF _ _ _).
   wp_loadField.
