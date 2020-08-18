@@ -210,6 +210,11 @@ Proof.
   { by iApply "Hwand2". }
 Qed.
 
+(* TODO: could probably make this provable by redefining own_discrete to be
+         a *conjunction* of ownership of discrete things? *)
+Lemma own_discrete_and P Q: own_discrete P ∧ own_discrete Q ⊣⊢ own_discrete (P ∧ Q).
+Proof. Abort.
+
 Lemma own_discrete_wand Q1 Q2:
   □ (Q1 -∗ Q2) -∗ (own_discrete Q1 -∗ own_discrete Q2).
 Proof.
@@ -371,6 +376,12 @@ Section instances_iProp.
   Global Instance from_modal_own_discrete (P: iProp Σ):
     FromModal modality_own_discrete (own_discrete P) (own_discrete P) P.
   Proof. rewrite /FromModal//=. Qed.
+
+  Lemma into_forall_disc {A: Type} P (Φ: A → iProp Σ):
+    IntoForall P Φ → IntoForall (own_discrete P) (λ a : A, own_discrete (Φ a)%I).
+  Proof.
+    rewrite /IntoForall => ->. iIntros. iModIntro. eauto.
+  Qed.
 
   Lemma own_discrete_atleast k (Q: iProp Σ):
     ◇_k (own_discrete Q) ⊢ own_discrete (◇_k Q).
