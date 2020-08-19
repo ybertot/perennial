@@ -238,14 +238,14 @@ Theorem wpc_Open k k' E2 Qc Q:
   (S k < k')%nat →
   (∀ l, Q l -∗ Qc) →
   {{{ log_inv k'
-      ∗ ((P (UnInit) ={⊤ ∖ ↑N ∖ ↑N2}=∗ False)
+      ∗ ((P (UnInit) ={⊤ ∖ ↑N}=∗ False)
         ∧ (PStartedIniting ∨ PStartedOpening ∨ POpened ={⊤ ∖ ↑N}=∗ False)
-        ∧ (∀ vs, P (Closed vs) ={⊤ ∖ ↑N ∖ ↑N2}=∗
+        ∧ (∀ vs, P (Closed vs) ={⊤ ∖ ↑N}=∗
                  PStartedOpening ∗ P (Opening vs)
                  ∗ (Qc ∧ ∀ l, P (Opening vs) -∗ PStartedOpening ={⊤ ∖ ↑N2 ∖ ↑N}=∗
                               Q l ∗ P (Opened vs l) ∗ POpened))
         ∧ Qc) }}}
-    Open #() @ NotStuck; LVL (S (S k)); ⊤; E2
+    Open #() @ NotStuck; (S k); ⊤; E2
   {{{ lptr, RET #lptr; is_log k' lptr ∗ Q lptr }}}
   {{{ Qc }}}.
 Proof using PStartedOpening_Timeless.
@@ -253,16 +253,14 @@ Proof using PStartedOpening_Timeless.
   iApply wpc_fupd.
   rewrite /log_inv.
   iDestruct "Hlog_inv" as (γ2) "#Hinv".
-  iApply wpc_step_fupdN_inner3; first done.
+  iApply fupd_wpc.
   iInv "Hinv" as "Hinner" "Hclo".
-  iMod (fupd_intro_mask' _ ∅) as "Hclo'"; first by set_solver+.
-  do 2 iModIntro. iNext. iMod "Hclo'" as "_".
-  rewrite /log_inv_inner.
   iDestruct "Hinner" as (s) "(Hstate_to_inv&Hauth_state)".
   destruct s;
-    try (iDestruct "Hvs" as "(_&(Hbad&_))";
-         iMod ("Hbad" with "[Hstate_to_inv]") as %[];
-         eauto; done).
+  try (iDestruct "Hvs" as "(_&(Hbad&_))";
+      iMod "Hstate_to_inv";
+      iMod ("Hbad" with "[Hstate_to_inv]") as %[];
+      eauto; done).
   (* UnInit case *)
   { iDestruct "Hstate_to_inv" as "(Hbundle&Hfrag_state)".
     iApply (na_crash_inv_open_modify _ _ O (⊤ ∖ ↑N) ⊤ with "Hbundle").
