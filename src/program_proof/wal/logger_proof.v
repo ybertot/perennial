@@ -213,7 +213,7 @@ Proof.
   iMod (ghost_var_update_halves nextDiskEnd_txn_id with "HownLoggerTxn_logger HownLoggerTxn_linv") as
         "[HownLoggerTxn_logger HownLoggerTxn_linv]".
 
-  iAssert (ghost_var γ.(txns_name) (1 / 2) txns ={⊤}=∗ ghost_var γ.(txns_name) (1 / 2) txns ∗ txn_pos γ σ.(locked_diskEnd_txn_id) σ.(diskEnd))%I as "HdiskEnd_pos_helper".
+  iAssert (ghost_var γ.(txns_name) (1 / 2) txns -∗ |NC={⊤}=> ghost_var γ.(txns_name) (1 / 2) txns ∗ txn_pos γ σ.(locked_diskEnd_txn_id) σ.(diskEnd))%I as "HdiskEnd_pos_helper".
   {
     iIntros "Howntxns".
     iDestruct "Hwal" as "[Hwal Hcirc]".
