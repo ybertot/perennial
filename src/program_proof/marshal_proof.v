@@ -486,8 +486,16 @@ Proof.
   (* we split the decoder state into one half used to serve the client and one
      half to reconstruct the decoder (now with half the fraction) *)
   iDestruct (fractional.fractional_half with "Hs") as "[Hs1 Hs2]".
-  wp_pures.
-  wp_apply (wp_SliceSubslice_drop_rest with "Hs1"); first by word.
+
+  iStartProof;
+ (* The `;[]` makes sure that no side-condition
+                             magically spawns. *)
+  first [ (wp_pure _; []); repeat (wp_pure_no_later _; [])
+        | wp_finish ].
+
+  wp_apply (wp_SliceSubslice_drop_rest with "[Hs1]"). 2:{
+Set Printing All.
+ first by word.
   iIntros (s') "Hbs".
   wp_pures.
   wp_load; wp_store.
