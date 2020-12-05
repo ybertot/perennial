@@ -104,7 +104,7 @@ Definition is_fs γ (nfs: loc) dinit : iProp Σ :=
     "#Hislm" ∷ is_crash_lockMap 10 lm γ.(simple_lockmapghs) covered_inodes
                                 (is_inode_stable γ.(simple_src) γ.(simple_buftxn))
                                 (is_inode_stable γ.(simple_src) γ.(simple_buftxn_next)) ∗
-    "#Hsrc" ∷ inv N (is_source γ.(simple_src)) ∗
+    "#Hsrc" ∷ ncinv N (is_source γ.(simple_src)) ∗
     "#Htxnsys" ∷ is_txn_system Nbuftxn γ.(simple_buftxn) ∗
     "#Htxncrash" ∷ txn_cinv Nbuftxn γ.(simple_buftxn) γ.(simple_buftxn_next).
 

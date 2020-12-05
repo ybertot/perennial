@@ -90,7 +90,7 @@ Proof using Ptimeless.
     iIntros "Hreply".
 
     (* Simulate to get Q *)
-    iApply fupd_wp.
+    iApply ncfupd_wp.
     iInv "Hsrc" as ">Hopen" "Hclose".
     iNamed "Hopen".
     iDestruct ("Hfupd" with "[] HP") as "Hfupd".
@@ -220,7 +220,11 @@ Proof using Ptimeless.
   iIntros (ok) "Hcommit".
   destruct ok; subst.
   - (* Simulate to get Q *)
-    iApply fupd_wpc.
+    iApply ncfupd_wpc.
+    iSplit.
+    { iModIntro.
+      iMod (is_inode_crash_prev_own with "Htxncrash [$Hinode_state $Hcommit]") as "H".
+      iModIntro. iFrame. eauto. }
     iInv "Hsrc" as ">Hopen" "Hclose".
     iNamed "Hopen".
     iDestruct (map_valid with "Hsrcheap Hinode_state") as "%Hsrc_fh".
@@ -301,7 +305,12 @@ Transparent nfstypes.READ3res.S.
     { eauto. }
 
   - (* Simulate to get Q *)
-    iApply fupd_wpc.
+    iApply ncfupd_wpc.
+    iDestruct "Hcommit" as "[Hcommit _]".
+    iSplit.
+    { iModIntro.
+      iMod (is_inode_crash_prev_own with "Htxncrash [$Hinode_state $Hcommit]") as "H".
+      iModIntro. iFrame. eauto. }
     iInv "Hsrc" as ">Hopen" "Hclose".
     iNamed "Hopen".
     iDestruct (map_valid with "Hsrcheap Hinode_state") as "%Hsrc_fh".
@@ -322,7 +331,6 @@ Transparent nfstypes.READ3res.S.
     { iModIntro. iExists _. iFrame "∗%#". }
     iModIntro.
 
-    iDestruct "Hcommit" as "[Hcommit _]".
     wpc_frame "Hinode_state Hcommit".
     { iModIntro.
       iMod (is_inode_crash_prev_own with "Htxncrash [$Hinode_state $Hcommit]") as "H".

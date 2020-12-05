@@ -38,6 +38,18 @@ Proof.
   iCrash. rewrite /is_txn_durable. iFrame.
 Qed.
 
+Lemma is_source_into_crash P P' γsrc:
+  (∀ σ, P σ -∗ post_crash (λ hG, P' hG σ)) -∗
+  is_source P γsrc -∗ post_crash (λ hG, is_source (P' hG) γsrc).
+Proof.
+  iIntros "HPwand Hsrc".
+  iNamed "Hsrc".
+  iDestruct (post_crash_nodep with "Hnooverflow") as "-#Hnooverflow'".
+  iDestruct (post_crash_nodep with "Hsrcheap") as "Hsrcheap".
+  iDestruct ("HPwand" with "[$]") as "HP".
+  iCrash. iExists _. iFrame. eauto.
+Qed.
+
 End stable.
 
 Section heap.
@@ -92,7 +104,7 @@ Qed.
 Theorem wpc_RecoverExample γ γsrc (d : loc) dinit logm :
   {{{
     is_txn_durable γ dinit logm ∗
-    inv N (is_source P γsrc) ∗
+    is_source P γsrc ∗
     [∗ set] a ∈ covered_inodes, is_inode_stable γsrc γ a
   }}}
     RecoverExample #d @ 10; ⊤
@@ -100,16 +112,21 @@ Theorem wpc_RecoverExample γ γsrc (d : loc) dinit logm :
   {{{
     ∃ γ' logm',
     is_txn_durable γ' dinit logm' ∗
+    is_source P γsrc ∗
     [∗ set] a ∈ covered_inodes, is_inode_stable γsrc γ' a
   }}}.
 Proof using buftxnG0 gen_heapPreG0 ghost_varG0 mapG0 Σ.
-  iIntros (Φ Φc) "(Htxndurable & #Hsrc & Hstable) HΦ".
+  iIntros (Φ Φc) "(Htxndurable & Hsrc & Hstable) HΦ".
+  iMod (ncinv_alloc N  with "Hsrc") as "(#Hsrc&Hcfupd_src)".
   rewrite /RecoverExample.
+  iApply wpc_cfupd.
+  iApply (wpc_crash_frame_wand' with "[-Hcfupd_src] Hcfupd_src"); auto.
+  { lia. }
   wpc_pures.
-  { iDestruct "HΦ" as "[HΦc _]". iModIntro. iApply "HΦc".
+  { iDestruct "HΦ" as "[HΦc _]". iModIntro.
+    iIntros ">H !>". iApply "HΦc".
     iExists _, _. iFrame. }
 
-  iApply wpc_cfupd.
   wpc_apply (wpc_MkTxn Nbuftxn with "Htxndurable").
   { solve_ndisj. }
   { solve_ndisj. }
@@ -118,12 +135,12 @@ Proof using buftxnG0 gen_heapPreG0 ghost_varG0 mapG0 Σ.
   { iDestruct "HΦ" as "[HΦc _]". iModIntro. iIntros "H".
     iDestruct "H" as (γ' logm') "(%Hkinds & Htxndurable)".
     iDestruct "Htxndurable" as "(Hdurable&[%Heq|#Hexch])".
-    { subst. iModIntro. iApply "HΦc". iExists _, _. iFrame. }
+    { subst. iIntros ">H". iModIntro. iApply "HΦc". iExists _, _. iFrame. }
     iMod (big_sepS_impl_cfupd with "Hstable []") as "Hcrash".
     { iModIntro. iIntros (x Hx) "H".
       iApply (is_inode_stable_crash with "[$] H").
     }
-    iModIntro.
+    iIntros ">H". iModIntro.
     iApply "HΦc".
     iExists _, _. iFrame.
   }
@@ -138,11 +155,11 @@ Proof using buftxnG0 gen_heapPreG0 ghost_varG0 mapG0 Σ.
       iMod (is_inode_stable_crash with "Htxncrash H") as "H".
       iModIntro. iExact "H". }
     iMod "Hcfupdcancel" as ">Hcfupdcancel".
-    iModIntro.
+    iIntros ">His_src !>".
     iApply "HΦc".
     iDestruct "Hcfupdcancel" as (?) "H".
     iExists _, _.
-    iFrame "Hcrash H".
+    iFrame.
   }
 
   wpc_apply (wpc_MkLockMap _ covered_inodes (is_inode_stable γsrc γ) (is_inode_stable γsrc γ') with "[Hstable]").
@@ -159,7 +176,7 @@ Proof using buftxnG0 gen_heapPreG0 ghost_varG0 mapG0 Σ.
     iDestruct "H" as ">H".
     iMod "Hcfupdcancel" as ">Hcfupdcancel".
     iDestruct "Hcfupdcancel" as (?) "Hcfupdcancel".
-    iModIntro.
+    iIntros ">His_src !>".
     iApply "HΦc".
     iExists _, _.
     iFrame.
@@ -174,7 +191,8 @@ Proof using buftxnG0 gen_heapPreG0 ghost_varG0 mapG0 Σ.
     { iDestruct "HΦ" as "[HΦc _]". iModIntro.
       rewrite -big_sepS_later.
       iMod "Hlmcrash" as ">Hlmcrash". iMod "Hcfupdcancel" as ">Hcfupdcancel".
-      iModIntro. iApply "HΦc". iDestruct "Hcfupdcancel" as (?) "?". 
+      iIntros ">His_src !>".
+      iApply "HΦc". iDestruct "Hcfupdcancel" as (?) "?".
       iExists _, _. iFrame. }
     { iDestruct "HΦ" as "[_ HΦ]". iExact "HΦ". } }
 

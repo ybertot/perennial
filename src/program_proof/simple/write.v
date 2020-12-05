@@ -92,12 +92,11 @@ Proof using Ptimeless ghost_varG0.
     iIntros "Hreply".
 
     (* Simulate to get Q *)
-    iApply fupd_wp.
+    iApply ncfupd_wp.
     iInv "Hsrc" as ">Hopen" "Hclose".
     iNamed "Hopen".
 
-    iDestruct (own_disc_fupd_level_elim with "Hfupd") as "Hfupd".
-    iMod "Hfupd" as "Hfupd".
+    iMod (own_disc_fupd_elim with "Hfupd") as "Hfupd".
 
     iDestruct ("Hfupd" with "[] HP") as "Hfupd".
     {
@@ -113,6 +112,7 @@ Proof using Ptimeless ghost_varG0.
       rewrite He.
       econstructor. eauto.
     }
+    iDestruct (fupd_level_fupd with "Hfupd") as "Hfupd".
     iMod "Hfupd" as "[HP HQ]".
     iMod ("Hclose" with "[Hsrcheap HP]").
     { iModIntro. iExists _. iFrame "∗%#". }
@@ -201,9 +201,16 @@ Proof using Ptimeless ghost_varG0.
     iNamed 1.
     wpc_pures.
 
+    iApply ncfupd_wpc.
+    iSplit.
+    { crash_case.
+      iDestruct (is_buftxn_durable_to_old_pred with "Hbuftxn_durable") as "[Hold _]".
+      iModIntro.
+      iMod (is_inode_crash_prev with "Htxncrash [$Hinode_state $Hold]") as "H".
+      iModIntro. iModIntro. iSplit; done.
+    }
     iDestruct (is_buftxn_mem_durable with "Hbuftxn_mem Hbuftxn_durable") as "Hbuftxn".
 
-    iApply fupd_wpc.
     iInv "Hsrc" as ">Hopen" "Hclose".
     iNamed "Hopen".
     iDestruct (map_valid with "Hsrcheap Hinode_state") as "%Hsrc_fh".
@@ -242,7 +249,10 @@ Proof using Ptimeless ghost_varG0.
       { iModIntro. iSplit; first by done. iApply is_inode_crash_next. iFrame. }
 
       iIntros "C".
-      iInv "Hsrc" as ">Hopen" "Hclose".
+      iAssert (inv N (is_source P γ.(simple_src)))%I with "[]" as "Hsrc'".
+      { (* TODO need to set up a transition from the ncinv -> a cinv at crash time
+           with tokens per inode addr to allow pending operations to complete *) admit. }
+      iInv "Hsrc'" as ">Hopen" "Hclose".
       iNamed "Hopen".
       iDestruct (map_valid with "Hsrcheap Hinode_state") as "%Hsrc_fh2".
       iDestruct ("Hfupd" with "[] HP") as "Hfupd".
@@ -282,12 +292,14 @@ Proof using Ptimeless ghost_varG0.
     iIntros (ok) "Hcommit".
     destruct ok; subst.
     { (* Simulate to get Q *)
-      iApply fupd_wpc.
+      iApply ncfupd_wpc.
+      iSplit.
+      { admit. }
       iInv "Hsrc" as ">Hopen" "Hclose".
       iNamed "Hopen".
       iDestruct (map_valid with "Hsrcheap Hinode_state") as "%Hsrc_fh2".
 
-      iDestruct (own_disc_fupd_level_elim with "Hfupd") as "Hfupd".
+      iDestruct (own_disc_fupd_elim with "Hfupd") as "Hfupd".
       iMod "Hfupd" as "Hfupd".
 
       iDestruct ("Hfupd" with "[] HP") as "Hfupd".
@@ -307,6 +319,7 @@ Proof using Ptimeless ghost_varG0.
         monad_simpl.
       }
       iMod (map_update with "Hsrcheap Hinode_state") as "[Hsrcheap Hinode_state]".
+      iDestruct (fupd_level_fupd with "Hfupd") as "Hfupd".
       iMod "Hfupd" as "[HP HQ]".
       iMod ("Hclose" with "[Hsrcheap HP]").
       { iModIntro. iExists _. iFrame "∗%#". iSplit.
@@ -356,12 +369,14 @@ Proof using Ptimeless ghost_varG0.
     }
 
     { (* Simulate to get Q *)
-      iApply fupd_wpc.
+      iApply ncfupd_wpc.
+      iSplit.
+      { admit. }
       iInv "Hsrc" as ">Hopen" "Hclose".
       iNamed "Hopen".
       iDestruct (map_valid with "Hsrcheap Hinode_state") as "%Hsrc_fh2".
 
-      iDestruct (own_disc_fupd_level_elim with "Hfupd") as "Hfupd".
+      iDestruct (own_disc_fupd_elim with "Hfupd") as "Hfupd".
       iMod "Hfupd" as "Hfupd".
 
       iDestruct ("Hfupd" with "[] HP") as "Hfupd".
@@ -376,6 +391,7 @@ Proof using Ptimeless ghost_varG0.
         simpl.
         monad_simpl.
       }
+      iDestruct (fupd_level_fupd with "Hfupd") as "Hfupd".
       iMod "Hfupd" as "[HP HQ]".
       iMod ("Hclose" with "[Hsrcheap HP]").
       { iModIntro. iExists _. iFrame "∗%#". }
