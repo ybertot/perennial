@@ -62,6 +62,11 @@ Record buftxn_names {Σ} :=
 
 Arguments buftxn_names Σ : assert, clear implicits.
 
+Notation P0_timeless P0 := (
+  ∀ mapsto, (∀ a v, Timeless (mapsto a v)) → Timeless (P0 mapsto)
+).
+
+
 Section goose_lang.
   Context `{!buftxnG Σ}.
   Context `{!heapG Σ}.
@@ -109,6 +114,9 @@ Section goose_lang.
   Definition durable_mapsto γ (a: addr) obj: iProp Σ :=
     ∃ i, ephemeral_val_from γ.(buftxn_async_name) i a obj ∗
          txn_durable γ i.
+
+  Global Instance durable_mapsto_timeless γ a obj :
+    Timeless (durable_mapsto γ a obj) := _.
 
   Global Instance durable_mapsto_conflicting γ :
     Conflicting (λ a v, durable_mapsto γ a v).
@@ -204,26 +212,33 @@ Section goose_lang.
       "Hdurable" ∷ map_ctx γdurable (1/2) (mspec.committed <$> mT)
   .
 
-  Definition is_buftxn_durable γ γdurable (P0 : (_ -> _ -> iProp Σ) -> iProp Σ) : iProp Σ :=
+  Definition is_buftxn_durable γ γdurable (P0 : (_ → _ → iProp Σ) → iProp Σ) `{!P0_timeless P0} : iProp Σ :=
     ∃ committed_mT,
       "Hdurable_frag" ∷ map_ctx γdurable (1/2) committed_mT ∗
       "Hold_vals" ∷ ([∗ map] a↦v ∈ committed_mT,
                      durable_mapsto γ a v) ∗
-      "#HrestoreP0" ∷ □ (∀ mapsto,
+      "#HrestoreP0" ∷ □ (∀ mapsto (_: ∀ a v, Timeless(mapsto a v)),
                          ([∗ map] a↦v ∈ committed_mT,
                           mapsto a v) -∗
                          P0 mapsto)
   .
 
-  Definition is_buftxn l γ dinit γtxn P0 : iProp Σ :=
+  Global Instance is_buftxn_durable_timeless γ γdurable P0 {P0timeless} :
+    Timeless (@is_buftxn_durable γ γdurable P0 P0timeless).
+  Proof.
+    refine _.
+  Qed.
+
+  Definition is_buftxn l γ dinit γtxn P0 `{!P0_timeless P0} : iProp Σ :=
     ∃ γdurable,
       "Hbuftxn_mem" ∷ is_buftxn_mem l γ dinit γtxn γdurable ∗
       "Hbuftxn_durable" ∷ is_buftxn_durable γ γdurable P0.
 
   Global Instance: Params (@is_buftxn) 4 := {}.
 
+  (*
   Global Instance is_buftxn_durable_proper γ γdurable :
-    Proper (pointwise_relation _ (⊣⊢) ==> (⊣⊢)) (is_buftxn_durable γ γdurable).
+    Proper (pointwise_relation _ (⊣⊢) ==> (⊣⊢)) (λ P0, is_buftxn_durable γ γdurable P0).
   Proof.
     intros P1 P2 Hequiv.
     rewrite /is_buftxn_durable.
@@ -239,8 +254,9 @@ Section goose_lang.
     setoid_rewrite Hequiv.
     reflexivity.
   Qed.
+  *)
 
-  Theorem is_buftxn_durable_wand γ γdurable P1 P2 :
+  Theorem is_buftxn_durable_wand γ γdurable P1 P2 `{!P0_timeless P1} `{!P0_timeless P2} :
     is_buftxn_durable γ γdurable P1 -∗
     □(∀ mapsto, P1 mapsto -∗ P2 mapsto) -∗
     is_buftxn_durable γ γdurable P2.
@@ -248,10 +264,11 @@ Section goose_lang.
     iIntros "Htxn #Hwand".
     iNamed "Htxn".
     iExists _; iFrame "∗#%".
-    iIntros (mapsto) "!> Hm".
-    iApply "Hwand". iApply "HrestoreP0". iFrame.
+    iIntros (mapsto ?) "!> Hm".
+    iApply "Hwand". iApply "HrestoreP0"; iFrame "∗ %".
   Qed.
 
+  (*
   Global Instance is_buftxn_proper l γ dinit γtxn :
     Proper (pointwise_relation _ (⊣⊢) ==> (⊣⊢)) (is_buftxn l γ dinit γtxn).
   Proof.
@@ -269,33 +286,35 @@ Section goose_lang.
     setoid_rewrite Hequiv.
     done.
   Qed.
+  *)
 
-  Theorem is_buftxn_wand l γ dinit γtxn P1 P2 :
+  Theorem is_buftxn_wand l γ dinit γtxn P1 P2 `{!P0_timeless P1} `{!P0_timeless P2} :
     is_buftxn l γ dinit γtxn P1 -∗
     □(∀ mapsto, P1 mapsto -∗ P2 mapsto) -∗
     is_buftxn l γ dinit γtxn P2.
   Proof.
     iIntros "Htxn #Hwand".
     iNamed "Htxn".
-    iDestruct (is_buftxn_durable_wand with "Hbuftxn_durable Hwand") as "Hbuftxn_durable".
+    unshelve (iDestruct (is_buftxn_durable_wand with "Hbuftxn_durable Hwand") as "Hbuftxn_durable").
+    1: assumption.
     iExists _; iFrame.
   Qed.
 
-  Theorem is_buftxn_durable_to_old_pred γ γdurable P0 :
+  Theorem is_buftxn_durable_to_old_pred γ γdurable P0 `{!P0_timeless P0} :
     is_buftxn_durable γ γdurable P0 -∗ P0 (durable_mapsto γ).
   Proof.
     iNamed 1.
-    iApply "HrestoreP0". iFrame.
+    iApply "HrestoreP0". 1: iPureIntro; refine _. iFrame.
   Qed.
 
-  Theorem is_buftxn_to_old_pred l γ dinit γtxn P0 :
+  Theorem is_buftxn_to_old_pred l γ dinit γtxn P0 `{!P0_timeless P0} :
     is_buftxn l γ dinit γtxn P0 -∗ P0 (durable_mapsto_own γ).
   Proof.
     iNamed 1.
     iNamed "Hbuftxn_mem".
     iNamed "Hbuftxn_durable".
     iDestruct (map_ctx_agree with "Hdurable_frag Hdurable") as %->.
-    iApply "HrestoreP0".
+    iApply "HrestoreP0"; first by (iPureIntro; refine _).
     iApply big_sepM_sep. iFrame.
     iDestruct (mspec.is_buftxn_to_committed_mapsto_txn with "Hbuftxn") as "Hmod".
     iApply (big_sepM_mono with "Hmod").
@@ -353,7 +372,7 @@ Section goose_lang.
     congruence.
   Qed.
 
-  Theorem is_buftxn_durable_not_in_map γ a obj γdurable P0 committed_mT :
+  Theorem is_buftxn_durable_not_in_map γ a obj γdurable P0 committed_mT `{!P0_timeless P0} :
     durable_mapsto γ a obj -∗
     is_buftxn_durable γ γdurable P0 -∗
     map_ctx γdurable (1 / 2) committed_mT -∗
@@ -370,7 +389,7 @@ Section goose_lang.
     done.
   Qed.
 
-  Theorem lift_into_txn E l γ dinit γtxn P0 a obj :
+  Theorem lift_into_txn E l γ dinit γtxn P0 a obj `{!P0_timeless P0} :
     ↑N ⊆ E →
     ↑invN ⊆ E →
     N ## invN →
@@ -417,13 +436,13 @@ Section goose_lang.
       iExists _. iFrame "Hdurable_frag".
       rewrite !big_sepM_insert //. iFrame.
       iModIntro.
-      iIntros (mapsto) "H".
+      iIntros (mapsto ?) "H".
       iDestruct (big_sepM_insert with "H") as "[Ha H]"; eauto. iFrame.
-      iApply "HrestoreP0"; iFrame.
+      iApply "HrestoreP0"; iFrame "∗ %".
     }
   Qed.
 
-  Theorem lift_map_into_txn E l γ dinit γtxn P0 m :
+  Theorem lift_map_into_txn E l γ dinit γtxn P0 m `{!P0_timeless P0} :
     ↑invN ⊆ E →
     ↑N ⊆ E →
     N ## invN →
@@ -436,20 +455,21 @@ Section goose_lang.
                          P0 mapsto).
   Proof.
     iIntros (???) "Hctx Hm".
-    iInduction m as [|a v m] "IH" using map_ind forall (P0).
-    - setoid_rewrite big_sepM_empty.
-      rewrite !left_id.
-      setoid_rewrite (@left_id _ _ _ _ emp_sep).
-      by iFrame.
+    iInduction m as [|a v m] "IH" using map_ind.
+    - rewrite !big_sepM_empty.
+      iFrame.
+      iApply (is_buftxn_wand with "Hctx").
+      auto.
     - rewrite !big_sepM_insert //.
       iDestruct "Hm" as "[[Ha_mod Ha_dur] Hm]".
       iAssert (durable_mapsto_own γ a v) with "[Ha_mod Ha_dur]" as "Ha".
       { iFrame. }
-      iMod (lift_into_txn with "Hctx Ha") as "[Ha Hctx]"; [ solve_ndisj .. | ].
       iMod ("IH" with "Hctx Hm") as "[Hm Hctx]".
+      iMod (lift_into_txn with "Hctx Ha") as "[Ha Hctx]"; [ solve_ndisj .. | ].
       iModIntro.
       iFrame.
-      iApply (is_buftxn_mono with "Hctx"); auto.
+      iApply (is_buftxn_wand with "Hctx"); auto.
+      iModIntro.
       iIntros (mapsto) "(H0 & H1 & $)".
       iApply big_sepM_insert; eauto. iFrame.
   Qed.
@@ -466,8 +486,8 @@ Section goose_lang.
     iApply (H with "H1 H2").
   Qed.
 
-  Theorem lift_liftable_into_txn E `{!Liftable P}
-          l γ dinit γtxn P0 :
+  Theorem lift_liftable_into_txn E `{!Liftable P} `{!P0_timeless P}
+          l γ dinit γtxn P0 `{!P0_timeless P0} :
     ↑invN ⊆ E →
     ↑N ⊆ E →
     N ## invN →

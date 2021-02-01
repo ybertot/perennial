@@ -282,7 +282,7 @@ Section goose_lang.
   Qed.
 
 
-  Theorem wp_BufTxn__CommitWait {l γ dinit γtxn} P0 P `{!Liftable P} :
+  Theorem wp_BufTxn__CommitWait {l γ dinit γtxn} P0 P `{!Liftable P} `{!P0_timeless P0} :
     N ## invariant.walN →
     N ## invN →
     {{{ "Hbuftxn" ∷ is_buftxn N l γ dinit γtxn P0 ∗
@@ -374,14 +374,14 @@ Section goose_lang.
         rewrite Hanydirty; eauto.
     - iDestruct "Hpost" as "[Heph Hmod_tokens]".
       iApply "HΦ".
-      iApply "HrestoreP0".
+      iApply "HrestoreP0"; first by (iPureIntro; refine _).
       iApply big_sepM_sep; iFrame.
       iApply (big_sepM_mono with "Hmod_tokens").
       iIntros (k x Hkx) "H".
       iExists _; iFrame.
   Qed.
 
-  Theorem wpc_BufTxn__CommitWait {l γ γ' dinit γtxn} P0 P `{!Liftable P} klevel :
+  Theorem wpc_BufTxn__CommitWait {l γ γ' dinit γtxn} P0 `{!P0_timeless P0} P `{!Liftable P} klevel :
     N ## invariant.walN →
     N ## invN →
     N ## mspec.wpwpcN ->
@@ -464,11 +464,11 @@ Section goose_lang.
         iModIntro.
         iApply "HΦc".
         iDestruct "H" as "[H|H]".
-        - iLeft. iApply "HrestoreP0". iApply "H".
+        - iLeft. iApply "HrestoreP0". 1: iPureIntro; refine _. iApply "H".
         - iRight. iApply "HPrestore". iDestruct (big_sepM_subseteq with "H") as "H"; eauto.
       }
       { iMod (exchange_durable_mapsto with "[$Htxn_cinv $H]") as "H".
-        iModIntro. iApply "HΦc". iLeft. iApply "HrestoreP0". iFrame. }
+        iModIntro. iApply "HΦc". iLeft. iApply "HrestoreP0". 1: iPureIntro; refine _. iFrame. }
     }
     iModIntro.
     iIntros (ok) "Hpost".
@@ -502,7 +502,7 @@ Section goose_lang.
         rewrite Hanydirty; eauto.
     - iDestruct "Hpost" as "[Heph Hmod_tokens]".
       iApply "HΦ".
-      iApply "HrestoreP0".
+      iApply "HrestoreP0". 1: iPureIntro; refine _.
       iApply big_sepM_sep; iFrame.
       iApply (big_sepM_mono with "Hmod_tokens").
       iIntros (k x Hkx) "H".
@@ -511,7 +511,7 @@ Section goose_lang.
       apply _.
   Qed.
 
-  Theorem is_buftxn_mem_durable l γ dinit γtxn P0 γdurable :
+  Theorem is_buftxn_mem_durable l γ dinit γtxn P0 `{!P0_timeless P0} γdurable :
     is_buftxn_mem N l γ dinit γtxn γdurable -∗
     is_buftxn_durable γ γdurable P0 -∗
     is_buftxn N l γ dinit γtxn P0.
