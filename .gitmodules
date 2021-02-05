@@ -1,6 +1,7 @@
 [submodule "external/stdpp"]
 	path = external/stdpp
-	url = https://gitlab.mpi-sws.org/iris/stdpp.git
+	url = https://gitlab.inria.fr/bertot/stdpp.git
+	branch = respect_simpl_never_flags
 [submodule "external/coqutil"]
 	path = external/coqutil
 	url = https://github.com/mit-plv/coqutil
